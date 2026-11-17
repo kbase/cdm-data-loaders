@@ -19,7 +19,7 @@ from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.core.transforms import TransformSettingsMixin
+from cdm_data_loaders.core.transforms.settings_mixin import TransformSettingsMixin
 from cdm_data_loaders.pipelines.xsv.exceptions import (
     InvalidXsvSchemaDefinitionError,
     MissingRequiredColumnsError,
@@ -28,13 +28,13 @@ from cdm_data_loaders.pipelines.xsv.exceptions import (
     UnsupportedXsvDialectError,
     XsvSchemaError,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import resolve_xsv_parsing_config
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
+from cdm_data_loaders.readers.xsv.duckdb_reader import resolve_xsv_parsing_config
+from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError, dereference_schema
+from cdm_data_loaders.validation.jsonschema.models import (
     ValidatedXsvSchema,
     generate_first_pass_schema,
-    validate_jsonschema,
+    validate_xsv_jsonschema,
 )
-from cdm_data_loaders.schemas.jsonschema import DereferencingError
 
 PIPELINE_NAME: Final[str] = "xsv"
 
@@ -91,7 +91,7 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Load and validate the schema file, first-pass schema, parsing config, PyArrow schema, and `_schema_map`."""
         try:
-            self._validated_schema = validate_jsonschema(self.schema_file)
+            self._validated_schema = validate_xsv_jsonschema(self.schema_file)
             self._first_pass_schema = generate_first_pass_schema(self._validated_schema)
             self._parsing_config = resolve_xsv_parsing_config(self._validated_schema)
             if (
@@ -99,6 +99,7 @@ class XsvIngestSettings(FileFormatIngestSettings, TransformSettingsMixin):
                 and self._unreconciled_output_schemas is not None
                 and self.table_name in self._unreconciled_output_schemas.registry
             ):
+                dereference_schema(self._validated_schema.jsonschema)
                 self._pyarrow_schema = self._unreconciled_output_schemas.registry[self.table_name]
             else:
                 self._pyarrow_schema = default_pyarrow_schema or convert_xsv_schema_to_pyarrow(self.validated_schema)

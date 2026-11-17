@@ -35,6 +35,10 @@ errors:
     code: E4
     match: \$ref|MissingDef|Unresolvable
     description: 'Property references missing `#/$defs/MissingDef`.'
+  - file: circular_ref.json
+    code: E4
+    match: "Circular \\$ref"
+    description: 'Self-referential `$defs.Node` cycle rejected by `dereference_schema`.'
   - file: non_struct_root.json
     code: E5
     match: top-level|object|struct

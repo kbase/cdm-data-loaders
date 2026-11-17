@@ -3,7 +3,7 @@
 import pyarrow as pa
 
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from specs.pipelines.jsonlines_pydantic.sample_registry import SampleModel
 
 SAMPLES_SCHEMA = PydanticToPyArrow().convert(SampleModel)

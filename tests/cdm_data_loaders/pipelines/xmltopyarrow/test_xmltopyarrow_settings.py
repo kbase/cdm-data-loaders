@@ -12,35 +12,38 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.xmltopyarrow.settings as xmltopyarrow_settings_module
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
 )
-from cdm_data_loaders.converters.readers.xsd import load_schema
-from cdm_data_loaders.core.fields import DEFAULTS, XML_GZ_FILE_GLOB
-from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
+from cdm_data_loaders.core.fields import DEFAULTS
+from cdm_data_loaders.core.md5_preprocessor import validate_md5_sidecar
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
-    ENTRY_TABLE_NAME,
-    ENTRY_XML_TAG,
+from cdm_data_loaders.pipelines.presets.pubmed import (
     PUBMED_PIPELINE_NAME,
     PUBMED_ROOT_TAG,
     PUBMED_XSD_FILE,
+    PubMedXmlToPyArrowSettings,
+)
+from cdm_data_loaders.pipelines.presets.uniprot_xml import (
     UNIPROT_PIPELINE_NAME,
     UNIPROT_XSD_FILE,
     UNIREF_FIFTY,
     UNIREF_HUNDRED,
     UNIREF_NINETY,
     UNIREF_XSD_FILE,
-    LevelPresetXmlToPyArrowSettings,
-    PresetXmlToPyArrowSettings,
-    PubMedXmlToPyArrowSettings,
     UniProtXmlToPyArrowSettings,
     UniRef50XmlToPyArrowSettings,
     UniRef90XmlToPyArrowSettings,
     UniRef100XmlToPyArrowSettings,
+)
+from cdm_data_loaders.pipelines.xml_common import XML_GZ_FILE_GLOB
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
+    ENTRY_TABLE_NAME,
+    ENTRY_XML_TAG,
+    LevelPresetXmlToPyArrowSettings,
+    PresetXmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
@@ -48,7 +51,9 @@ from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMAS as UNIPROT_SCHEMAS
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMAS as UNIREF_SCHEMAS
-from tests.helpers import register_temp_module, settings_to_argv
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.validation.xsd.traversal import load_schema
+from tests.helpers.cli_assertions import register_temp_module, settings_to_argv
 
 UNIREF_LIKE_XSD: Final[str] = "uniref_like.xsd"
 

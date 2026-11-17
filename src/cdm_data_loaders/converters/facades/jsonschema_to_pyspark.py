@@ -7,20 +7,17 @@ from pydantic import Field, field_validator
 from pyspark.sql.types import DataType, StructType
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords, JsonSchemaConverterBase
+from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords
 from cdm_data_loaders.converters.emitters.pyspark import (
     DEFAULT_FORMAT_MAP,
     PySparkEmitter,
     merge_format_map,
 )
-
-
-class JSONSchemaToPySparkError(ConversionError):
-    """Raised when a JSON Schema construct cannot be converted."""
-
-
-class InvalidJSONSchemaError(JSONSchemaToPySparkError):
-    """Raised when the input document is not a valid JSON Schema."""
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyspark import (
+    InvalidJSONSchemaError,
+    JSONSchemaToPySparkError,
+)
+from cdm_data_loaders.converters.facades._base import JsonSchemaConverterBase
 
 
 class JSONSchemaToPySpark(JsonSchemaConverterBase[StructType]):
@@ -30,7 +27,6 @@ class JSONSchemaToPySpark(JsonSchemaConverterBase[StructType]):
     _invalid_schema_error_cls: ClassVar[type[ConversionError]] = InvalidJSONSchemaError
     _converter_name: ClassVar[str] = "JSONSchemaToPySpark"
     _root_target_label: ClassVar[str] = "a StructType"
-    _dereference_function: ClassVar[str] = "jsonschema_to_pyspark.dereferencing.dereference_schema"
 
     format_map: frozendict[str, DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True

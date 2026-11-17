@@ -16,32 +16,38 @@ from dlt.extract import DltResource
 import cdm_data_loaders.pipelines.xmltopyarrow.pipeline as xmltopyarrow_module
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.settings import CtsSettings
-from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
-    cli,
-    pubmed_cli,
-    run_xmltopyarrow_pipeline,
+from cdm_data_loaders.pipelines.presets.pubmed import (
+    PUBMED_PIPELINE_NAME,
+    PubMedXmlToPyArrowSettings,
+)
+from cdm_data_loaders.pipelines.presets.pubmed import cli as pubmed_cli
+from cdm_data_loaders.pipelines.presets.uniprot_xml import (
+    UNIPROT_PIPELINE_NAME,
+    UNIREF_FIFTY,
+    UNIREF_HUNDRED,
+    UNIREF_NINETY,
+    UniProtXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
     uniprot_cli,
     uniref50_cli,
     uniref90_cli,
     uniref100_cli,
 )
+from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import (
+    cli,
+    run_xmltopyarrow_pipeline,
+)
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
-    PUBMED_PIPELINE_NAME,
-    UNIPROT_PIPELINE_NAME,
-    UNIREF_FIFTY,
-    UNIREF_HUNDRED,
-    UNIREF_NINETY,
-    PubMedXmlToPyArrowSettings,
-    UniProtXmlToPyArrowSettings,
-    UniRef50XmlToPyArrowSettings,
-    UniRef90XmlToPyArrowSettings,
-    UniRef100XmlToPyArrowSettings,
     XmlToPyArrowSettings,
 )
 from cdm_data_loaders.utils.checksums import new_hasher
-from tests.cdm_data_loaders.pipelines.conftest import copy_test_files
-from tests.cdm_data_loaders.pipelines.helpers import (
+from tests.helpers.cli_assertions import register_temp_module, settings_to_argv
+from tests.helpers.fs_backends import FsBackend
+from tests.helpers.paths_and_constants import XSD_SPEC_DIR, copy_test_files
+from tests.helpers.table_readers import (
     assert_binds_filesystem_reader,
     assert_core_run_pipeline_args,
     check_pipeline_report,
@@ -49,10 +55,7 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     read_destination_rows,
     run_with_duckdb_pipeline,
 )
-from tests.conftest import XSD_SPEC_DIR
-from tests.fs_backends import FsBackend
-from tests.helpers import register_temp_module, settings_to_argv
-from tests.xml_samples import TWO_BOOK_LIBRARY_XML
+from tests.helpers.xml_samples import TWO_BOOK_LIBRARY_XML
 
 
 @pytest.mark.parametrize("loader_file_format", list(LoaderFileFormatEnum), ids=str)

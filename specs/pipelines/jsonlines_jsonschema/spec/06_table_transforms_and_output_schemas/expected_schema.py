@@ -5,8 +5,12 @@ import pyarrow as pa
 SAMPLE_SUMMARY_SCHEMA = pa.schema(
     [
         pa.field("sample_id", pa.string(), nullable=False),
-        pa.field("ph", pa.float64(), nullable=False),
+        pa.field("ph", pa.decimal128(4, 2), nullable=False),
         pa.field("ph_bucket", pa.string(), nullable=False),
+        pa.field("collected_date", pa.date32(), nullable=False),
+        pa.field("collected_at", pa.timestamp("us", tz="UTC"), nullable=False),
+        pa.field("sample_time", pa.time64("us"), nullable=False),
+        pa.field("checksum", pa.binary(), nullable=True, metadata={"xsd_type": "xs:hexBinary"}),
     ]
 )
 

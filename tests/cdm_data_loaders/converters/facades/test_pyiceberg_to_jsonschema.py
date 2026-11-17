@@ -26,20 +26,20 @@ from pyiceberg.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT
+from cdm_data_loaders.converters.emitters.json_schema.common import JSON_SCHEMA_DIALECT
 from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import (
     convert_field,
     convert_struct,
     convert_type,
     table_to_json_schema,
 )
-from tests.cdm_data_loaders.converters.conftest import (
+from tests.cdm_data_loaders.converters._helpers import (
     JSON_SCHEMA_KEYWORDS,
     iter_extension_keys,
     iter_schema_keywords,
-    make_table,
     to_snake_case,
 )
+from tests.helpers.iceberg_catalog import make_iceberg_table as make_table
 
 
 @pytest.mark.parametrize(

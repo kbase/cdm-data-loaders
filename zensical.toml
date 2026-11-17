@@ -54,7 +54,6 @@ watch = [
   "docs/js",
   "docs_macros",
   "specs",
-  "tests/dependencies",
 ]
 extra_css = [
   "css/palette.css",

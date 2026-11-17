@@ -15,15 +15,15 @@ from cdm_data_loaders.pipelines.xmltodict.pipeline import (
     run_xmltodict_pipeline,
 )
 from cdm_data_loaders.pipelines.xmltodict.settings import PIPELINE_NAME, XmlToDictSettings
-from tests.cdm_data_loaders.pipelines.helpers import (
+from tests.helpers.cli_assertions import register_temp_module, settings_to_argv
+from tests.helpers.fs_backends import FsBackend
+from tests.helpers.table_readers import (
     assert_binds_filesystem_reader,
     assert_core_run_pipeline_args,
     fetch_all_duckdb,
     run_with_duckdb_pipeline,
 )
-from tests.fs_backends import FsBackend
-from tests.helpers import register_temp_module, settings_to_argv
-from tests.xml_samples import TWO_BOOK_LIBRARY_XML
+from tests.helpers.xml_samples import TWO_BOOK_LIBRARY_XML
 
 
 @pytest.mark.parametrize("loader_file_format", list(LoaderFileFormatEnum), ids=str)

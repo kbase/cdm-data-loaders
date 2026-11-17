@@ -1,75 +1,55 @@
-"""Fixtures shared by the XSV ingestion pipeline tests."""
+"""Fixtures shared by ``tests/cdm_data_loaders/pipelines/xsv``."""
 
-import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Final
 
 import pytest
 
 from cdm_data_loaders.pipelines.xsv.pipeline import XsvWorkPaths
 from cdm_data_loaders.pipelines.xsv.settings import XsvIngestSettings
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
-from tests.helpers import make_cts_settings
-from tests.xsv_fixtures import COLUMNS, write_xsv
+from cdm_data_loaders.validation.jsonschema.models import generate_header
+from tests.helpers.fixtures_xsv import (
+    make_xsv_settings_factory,
+    resolve_qsv_cmd,
+    write_xsv_input_file,
+)
 
-VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2020-12/schema"
 
-# The `float` column is deliberately typed `["string", "null"]`, not `"number"`, matching the
-# convention used throughout the xsv_validator test fixtures: it lets a field hold either a
-# numeric-looking string or a null placeholder without needing float-parsing semantics.
-DEFAULT_XSV_SCHEMA: Final[dict[str, Any]] = {
-    "$schema": VALID_SCHEMA_URI,
-    "title": "XSV integration test schema",
-    "type": "object",
-    "required": COLUMNS,
-    "properties": {
-        "number": {"type": "integer"},
-        "date": {"type": "string"},
-        "float": {"type": ["string", "null"]},
-        "boolean": {"type": "boolean"},
-        "string": {"type": "string"},
-    },
-    "x-xsv-config": {"x-delimiter": ",", "x-has-header": True},
-}
+@pytest.fixture(scope="session")
+def qsv_cmd() -> str:
+    """Resolve the ``qsv`` binary from ``PATH`` or ``QSV_BIN``, calling ``pytest.skip`` when absent.
+
+    :return: Path to the ``qsv`` executable.
+    :rtype: str
+    """
+    return resolve_qsv_cmd()
 
 
 @pytest.fixture
 def settings_factory(tmp_path: Path, dlt_destination_config: str) -> Callable[..., XsvIngestSettings]:
-    """Return a factory that builds a valid XsvIngestSettings, with fields open to override."""
+    """Return a factory building ``XsvIngestSettings`` staged under ``tmp_path``.
 
-    def _factory(
-        schema: dict[str, Any] | None = DEFAULT_XSV_SCHEMA,
-        data_files: dict[str, str] | None = None,
-        **overrides: Any,  # noqa: ANN401
-    ) -> XsvIngestSettings:
-        input_dir = Path(overrides.get("input_dir", tmp_path / "input"))
-        input_dir.mkdir(parents=True, exist_ok=True)
-
-        if schema is not None:
-            (input_dir / "schema.json").write_text(json.dumps(schema), encoding="utf-8")
-        if data_files:
-            for file_name, content in data_files.items():
-                file_path = input_dir / file_name
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                file_path.write_text(content, encoding="utf-8")
-
-        defaults: dict[str, Any] = {
-            "dataset_name": "xsv_test_dataset",
-            "file_glob": "*",
-            "schema_file": str(input_dir / "schema.json"),
-            "table_name": "my_table",
-            "use_destination": dlt_destination_config,
-        }
-        defaults.update(overrides)
-        return make_cts_settings(XsvIngestSettings, tmp_path, **defaults)
-
-    return _factory
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :param dlt_destination_config: Active destination name fixture.
+    :type dlt_destination_config: str
+    :return: Settings factory callable.
+    :rtype: Callable[..., XsvIngestSettings]
+    """
+    return make_xsv_settings_factory(tmp_path, dlt_destination_config)
 
 
 @pytest.fixture
 def work_paths_factory(tmp_path: Path, qsv_cmd: str) -> Callable[[XsvIngestSettings], XsvWorkPaths]:
-    """Return a factory that builds XsvWorkPaths (scratch dirs + header file) for one settings object."""
+    """Return a factory building ``XsvWorkPaths`` (scratch dirs and header file) for one settings object.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :param qsv_cmd: Resolved ``qsv`` executable path fixture.
+    :type qsv_cmd: str
+    :return: Work-paths factory callable.
+    :rtype: Callable[[XsvIngestSettings], XsvWorkPaths]
+    """
 
     def _factory(settings: XsvIngestSettings) -> XsvWorkPaths:
         tmp_dir = tmp_path / "tmp"
@@ -96,5 +76,9 @@ def work_paths_factory(tmp_path: Path, qsv_cmd: str) -> Callable[[XsvIngestSetti
 
 @pytest.fixture
 def write_xsv_file() -> Callable[[XsvIngestSettings, str, str], Path]:
-    """Return a function that writes text content to a new file inside settings.input_dir."""
-    return lambda settings, file_name, content: write_xsv(Path(settings.input_dir), content, file_name)
+    """Return a helper writing text content into ``settings.input_dir``.
+
+    :return: Writer callable ``(settings, file_name, content) -> Path``.
+    :rtype: Callable[[XsvIngestSettings, str, str], Path]
+    """
+    return write_xsv_input_file

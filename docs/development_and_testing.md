@@ -4,7 +4,7 @@ This guide covers local development setup, linting and code generation checks, S
 
 - **Project dependencies, lint rules, and `pytest` markers**: [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml)
 - **Container entrypoint (`test` and `ceph_integration_test` modes)**: [`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh)
-- **Spark container test runner**: [`scripts/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/run_tests.sh)
+- **Spark container test runner**: [`scripts/dev/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/dev/run_tests.sh)
 - **Ceph RGW integration Compose configuration**: [`docker-compose.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.yml)
 
 ---
@@ -20,7 +20,7 @@ uv sync --all-groups
 > [!NOTE]
 > Running XSV reader and pipeline tests directly on the host requires the [`qsv`](https://github.com/dathere/qsv) binary on `PATH` (for example, `brew install qsv` on macOS or downloading a release binary from `dathere/qsv`). The repository [`Dockerfile`](https://github.com/kbase/cdm-data-loaders/blob/develop/Dockerfile) installs `qsv` automatically for containerized test runs.
 
-Run formatting, linting, and committed PyArrow schema codegen checks ([`scripts/gen_pyarrow_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/gen_pyarrow_schema.py)) before opening a pull request:
+Run formatting, linting, and committed PyArrow schema codegen checks ([`src/cdm_data_loaders/cli/xsd_to_pyarrow.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/xsd_to_pyarrow.py)) before opening a pull request:
 
 ```sh
 # format code and check lint rules
@@ -28,16 +28,16 @@ uv run ruff format
 uv run ruff check
 
 # verify committed UniProt, UniRef, and PubMed PyArrow schema.py modules match their bundled XSDs
-uv run python -m scripts.gen_pyarrow_schema --check
+uv run xsd_to_pyarrow --bundled --check
 ```
 
-To regenerate the committed `schema.py` modules after updating a bundled XSD file, run `uv run python -m scripts.gen_pyarrow_schema` without `--check`.
+To regenerate the committed `schema.py` modules after updating a bundled XSD file, run `uv run xsd_to_pyarrow --bundled` without `--check`.
 
 ---
 
 ## Spark Development Container
 
-Code and tests marked with `@pytest.mark.requires_spark` require Apache Spark and Java dependencies provided by the KBase Lakehouse Spark notebook image (`ghcr.io/kbasedatalakehouse/spark_notebook:main`). [`scripts/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/run_tests.sh) creates an isolated `uv` virtual environment inside the container pinned to the container's `pyspark` version and executes `pytest`:
+Code and tests marked with `@pytest.mark.requires_spark` require Apache Spark and Java dependencies provided by the KBase Lakehouse Spark notebook image (`ghcr.io/kbasedatalakehouse/spark_notebook:main`). [`scripts/dev/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/dev/run_tests.sh) creates an isolated `uv` virtual environment inside the container pinned to the container's `pyspark` version and executes `pytest`:
 
 ```sh
 # pull the Spark notebook container image
@@ -47,7 +47,7 @@ docker pull ghcr.io/kbasedatalakehouse/spark_notebook:main
 docker run -it --rm \
   -v "$(pwd)":/cdm-data-loaders \
   ghcr.io/kbasedatalakehouse/spark_notebook:main \
-  /cdm-data-loaders/scripts/run_tests.sh
+  /cdm-data-loaders/scripts/dev/run_tests.sh
 ```
 
 To open an interactive shell or keep the container running so VS Code can attach via the [Dev Containers extension](https://code.visualstudio.com/docs/devcontainers/containers):
@@ -84,33 +84,36 @@ uv run pytest -m "not requires_spark and not requires_ceph and not docs" --cov=s
 
 # run targeted converter, JSONLines, or pipeline specification suites
 uv run pytest tests/cdm_data_loaders/converters/
-uv run pytest tests/cdm_data_loaders/readers/test_jsonlines.py tests/cdm_data_loaders/pipelines/jsonlines/
+uv run pytest tests/cdm_data_loaders/readers/test_jsonl.py tests/cdm_data_loaders/readers/test_jsonl_jsonschema.py tests/cdm_data_loaders/pipelines/jsonlines/
 
 # run Hypothesis property-based tests (use HYPOTHESIS_PROFILE=ci_thorough for 100 examples)
 uv run pytest -m pbt
 HYPOTHESIS_PROFILE=ci_thorough uv run pytest -m pbt
+
+# report tests taking 5 seconds or longer (matching CI workflow reporting)
+uv run pytest -m "not requires_spark and not requires_ceph and not docs" --durations=0 --durations-min=5.0
 ```
 
 For multi-environment pipeline smoke tests (`core`, `cli`, and `docker` modes across `local_fs`, `s3_moto`, `s3_ceph`, and custom `--dlt-config-dir` / Iceberg environments), see the [Pipeline E2E and Smoke Testing Across Environments Guide](pipeline_e2e_testing_guide.md).
 
 ### Global State Mutation Audit
 
-Tests marked with `@pytest.mark.state_audit` ([`tests/test_global_state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/test_global_state_audit.py)) are skipped during normal `pytest` runs unless explicitly selected with `-m state_audit`. When selected, the suite runs clean `pytest` subprocesses with `--state-audit` ([`tests/state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/state_audit.py)) to verify that module collection and test execution leave zero unreverted mutations in environment variables, `sys.argv`, `sys.path`, `sys.modules`, logging state, `dlt` context, `boto3` sessions, S3 client singletons, `jsonschema` validator registries, module globals, caches, or scoped fixtures:
+Tests marked with `@pytest.mark.state_audit` ([`tests/harness/test_global_state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/harness/test_global_state_audit.py)) are skipped during normal `pytest` runs unless selected with `-m state_audit`. When selected, the suite runs clean `pytest` subprocesses with `--state-audit` ([`tests/helpers/state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/helpers/state_audit.py)) to verify that module collection and test execution leave zero unreverted mutations in environment variables, `sys.argv`, `sys.path`, `sys.modules`, logging state, `dlt` context, `boto3` sessions, S3 client singletons, `jsonschema` validator registries, module globals, caches, or scoped fixtures:
 
 ```sh
 # run the full global state mutation audit across all local test slices
 uv run pytest -m state_audit
 
-# run a single audit slice (core-and-converters, pipelines, or integration)
-uv run pytest -m state_audit -k integration
+# run a single audit slice (core-and-converters, pipelines, or e2e)
+uv run pytest -m state_audit -k e2e
 
-# audit a specific test file or directory directly during development
-uv run pytest --state-audit tests/cdm_data_loaders/schemas/test_jsonschema.py
+# audit a specific test file or directory during development
+uv run pytest --state-audit tests/cdm_data_loaders/validation/test_jsonschema.py
 ```
 
 ### Container `test` Mode
 
-[`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) provides a `test` command that runs `uv run --no-sync pytest -m "not requires_spark and not requires_ceph and not docs and not state_audit" --cov=src --cov-report=xml` inside the built image (with `qsv` and all runtime binaries pre-installed):
+[`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) provides a `test` command that runs `uv run --all-groups pytest -m "not requires_spark and not requires_ceph and not docs and not state_audit" --ignore=tests/docs --cov=src --cov-report=xml` inside the built image (with `qsv` and all runtime binaries pre-installed):
 
 ```sh
 docker build -t cdm-data-loaders-test:latest .
@@ -121,7 +124,7 @@ docker run --rm \
   test --cov-report=xml:/out/coverage.xml
 ```
 
-Any extra arguments after `test` (such as `tests/cdm_data_loaders/pipelines/` or `-k xmltopyarrow`) are forwarded directly to `pytest`.
+Any extra arguments after `test` (such as `tests/e2e/` or `-k xmltopyarrow`) are forwarded to `pytest`.
 
 ---
 

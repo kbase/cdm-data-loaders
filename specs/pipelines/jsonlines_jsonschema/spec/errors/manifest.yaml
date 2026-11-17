@@ -48,7 +48,7 @@ errors:
   - file: 08_circular_ref.json
     code: E4
     exception: UnresolvableJsonlSchemaRefError
-    match: "maximum recursion depth exceeded"
+    match: "Circular \\$ref"
     description: Self-referential `$ref` cycle in `$defs` fails `dereference_schema`.
 
   - file: 09_non_object_root_type.json
@@ -62,3 +62,15 @@ errors:
     exception: UnsupportedJsonlArrowSchemaError
     match: "Incompatible branch shape"
     description: Incompatible `anyOf` union branches (`array` and `string`) cannot be converted to a PyArrow column type without a table transform or `OUTPUT_SCHEMAS` override.
+
+  - file: 11_circular_allof_ref.json
+    code: E4
+    exception: UnresolvableJsonlSchemaRefError
+    match: "Circular \\$ref"
+    description: Self-referential `allOf` `$ref` cycle in `$defs` fails `dereference_schema`.
+
+  - file: 12_draft07_without_output_schema.json
+    code: E5
+    exception: UnsupportedJsonlArrowSchemaError
+    match: "2020-12"
+    description: Draft-07 entity schema without `TABLE_TRANSFORMS` or `OUTPUT_SCHEMAS` fails Draft 2020-12 PyArrow conversion.

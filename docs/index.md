@@ -16,7 +16,7 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Common Da
 - **[Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md)**: Running pipelines locally and in CTS containers, `CDL_*` environment variables, `dlt` and Iceberg destination setup, `report.txt`, `_load_info` and `_rejected` tables, and the CTS exit-code-0 contract.
 - **[Table and Column Transformations](table_transforms.md)**: Custom file pre-processors (`FILE_PREPROCESSORS`), record-level filtering, single-table row transformation, multi-table splitting (`TABLE_TRANSFORMS`), and PyArrow schema overrides (`OUTPUT_SCHEMAS`).
 - **[JSONLines Ingestion Pipelines](jsonlines_ingest.md)**: Running `jsonlines_extract`, `jsonlines_jsonschema`, `jsonlines_pydantic`, and `ncbi_datasets` with custom schema and model registries.
-- **[UniProt and UniRef Ingestion Guide](uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`), CDM-normalized multi-table pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`), and metalink/release-note parsers.
+- **[UniProt and UniRef Ingestion Guide](uniprot.md)**: XSD-driven XML-to-PyArrow pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`), CDM-normalized multi-table pipelines (`uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`), the `uniprot_idmapping` XSV preset pipeline, and metalink/release-note parsers.
 - **[Schema Converters Guide](schema_converters.md)**: Running `xsd_to_pyarrow`, `pyiceberg_to_jsonschema`, and `pyiceberg_to_linkml` from the CLI, calling converter facades from Python, and registering custom `x-` extensions.
 - **[NCBI FTP End-to-End Walkthrough](ncbi_ftp_e2e_walkthrough.md)**: Three-phase NCBI assembly manifest generation, FTP download (`ncbi_ftp_sync`), and S3 Lakehouse promotion (`ncbi_ftp_promote`).
 - **[Rclone Bulk Transfer Instructions](rclone_instructions.md)**: Configuring `rclone` remotes and running high-throughput bulk transfers to Lakehouse S3 buckets.
@@ -33,12 +33,12 @@ Data loaders, schema converters, and ingestion wranglers for the KBase Common Da
 
 ### Pipeline Specifications
 
-- **[XSV (CSV/TSV) Schema and Pipeline Specification](xsv_specification.md)**: Auto-generated XSV schema validation, `x-xsv-config` parsing, PyArrow conversion, two-pass `qsv` cleaning/validation, DuckDB coercion, and pipeline execution specification.
+- **[XSV (CSV/TSV) Schema and Pipeline Specification](xsv_specification.md)**: Auto-generated XSV schema validation, `x-xsv-config` parsing, PyArrow conversion, two-pass `qsv` cleaning/validation, DuckDB coercion, `uniprot_idmapping` preset, and pipeline execution specification.
 - **[XML to PyArrow Pipeline Specification](xmltopyarrow_specification.md)**: Auto-generated target selection, preset pipelines, streaming XML-to-PyArrow coercion, MD5 pre-processing, dead-letter routing, and table transform specification.
 - **[XML to Dict Pipeline Specification](xmltodict_specification.md)**: Auto-generated outermost `<xml_tag>` streaming, `xmltodict` parsing (`_` attribute prefix and `_xmlns` stripping), MD5 pre-processing, dead-letter routing, and table transform specification.
 - **[JSONLines Extract Pipeline Specification](jsonlines_extract_specification.md)**: Auto-generated plain JSONL file discovery, `.gz` decompression, MD5 pre-processing, dead-letter routing, and table transform specification.
 - **[JSONLines (JSON Schema) Pipeline Specification](jsonlines_jsonschema_specification.md)**: Auto-generated `ENTITY_SCHEMAS` registry, JSON Schema dialect validation, PyArrow schema conversion, per-line validation, dead-letter routing, and table transform specification.
-- **[JSONLines (Pydantic) Pipeline Specification](jsonlines_pydantic_specification.md)**: Auto-generated `ENTITY_MODELS` registry, `PydanticToPyArrow` schema conversion, single-pass `model_validate` and `coerce_record_for_pyarrow` coercion, dead-letter routing, and table transform specification.
+- **[JSONLines (Pydantic) Pipeline Specification](jsonlines_pydantic_specification.md)**: Auto-generated `ENTITY_MODELS` registry, `PydanticToPyArrow` schema conversion, single-pass `model_validate` and `coerce_pydantic_record_for_pyarrow` coercion, dead-letter routing, and table transform specification.
 
 ## Developer Guides
 

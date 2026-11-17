@@ -1,9 +1,8 @@
-title: Shared Definitions, `$ref` Reuse and Root `$ref`
+title: Shared Definitions, `$ref` Sibling Merging, and Root `$ref`
 schema: schema.json
 rules: [R-ROOT-REF, R-SHAPE-REF, R-META-COMMENT]
 notes: |
-  The root is `"$ref": "#/$defs/Document"`. `lead_author` declares its own `description`, overriding the
-  `Author` definition's; `reviewer` and `co_authors` items inherit it.
+  The root is `"$ref": "#/$defs/Document"`, and `#/$defs/Author` carries `$anchor` and `$dynamicAnchor` identity keywords stripped on resolution. `lead_author` declares sibling `description`, `required`, and `properties` (`affiliation`) merged onto `Author`, while `reviewer` and `co_authors` items inherit `Author` unchanged.
 runs:
   - id: default
     data: data.json

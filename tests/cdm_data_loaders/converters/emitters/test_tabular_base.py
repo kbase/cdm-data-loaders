@@ -38,7 +38,6 @@ from cdm_data_loaders.converters.emitters.pyarrow import (
 )
 from cdm_data_loaders.converters.emitters.pyarrow import (
     PyArrowEmitter,
-    PyArrowEmitterError,
 )
 from cdm_data_loaders.converters.emitters.pyarrow import (
     infer_type_from_enum as arrow_infer_type_from_enum,
@@ -48,12 +47,13 @@ from cdm_data_loaders.converters.emitters.pyspark import (
 )
 from cdm_data_loaders.converters.emitters.pyspark import (
     PySparkEmitter,
-    PySparkEmitterError,
 )
 from cdm_data_loaders.converters.emitters.pyspark import (
     infer_type_from_enum as spark_infer_type_from_enum,
 )
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
+from cdm_data_loaders.converters.exceptions.emitters.pyarrow import PyArrowEmitterError
+from cdm_data_loaders.converters.exceptions.emitters.pyspark import PySparkEmitterError
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 

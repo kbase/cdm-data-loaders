@@ -16,8 +16,9 @@ rules:
   - R-XSV-ARROW-CAST
 notes: |
   - `x-has-header: false` sets `missing_header=True`, causing `clean_validate_file` to prepend a comma-delimited header (`gene_id,reads,organism`) generated from `required`.
-  - `gene_id` and `organism` resolve through local `$defs`/`$ref` via `dereference_schema`.
-  - `organism` uses `anyOf: [{"type": "string"}, {"type": "null"}]`, which is recognized as `nullable=True` in PyArrow and nullable `VARCHAR` in DuckDB.
+  - `gene_id` and `organism` resolve through local `$defs`/`$ref` via `dereference_schema`, stripping `$anchor` from `GeneId` and applying the sibling `description` override on `gene_id`.
+  - `reads` merges `#/$defs/NullableCounter` (`minimum: 0`) with an `allOf` upper bound (`maximum: 1000000`) and outer `description`.
+  - `organism` uses `anyOf: [{"type": "string"}, {"type": "null"}]`, which maps to `nullable=True` in PyArrow and nullable `VARCHAR` in DuckDB.
 runs:
   - id: default
     data: data.csv

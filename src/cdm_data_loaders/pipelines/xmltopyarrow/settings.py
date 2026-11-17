@@ -8,14 +8,13 @@ from xml.etree import ElementTree as ET
 import pyarrow as pa
 import xmlschema
 from lxml.etree import Element
-from pydantic import Field, FilePath, PositiveInt, PrivateAttr
+from pydantic import Field, PositiveInt, PrivateAttr
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.coercion.xml import (
     make_xml_element_converter,
     make_xml_level_converters,
 )
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     XmlTagNotFoundError,
 )
@@ -23,27 +22,23 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
 )
-from cdm_data_loaders.converters.readers.xsd import load_schema
 from cdm_data_loaders.core.fields import (
-    XML_GZ_FILE_GLOB,
-    FileGlob,
     NonEmptyStr,
-    XsdFile,
-    file_glob_description,
 )
-from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
-    FilePreprocessFn,
     RecordTransformFn,
     TransformRegistry,
 )
 from cdm_data_loaders.core.settings import (
-    XML_CLI_SHORTCUTS,
-    XmlIngestSettings,
     default_settings_with_shortcuts,
 )
-from cdm_data_loaders.core.transforms import TransformSettingsMixin
+from cdm_data_loaders.core.transforms.settings_mixin import TransformSettingsMixin
+from cdm_data_loaders.pipelines.xml_common import (
+    XML_CLI_SHORTCUTS,
+    XmlIngestSettings,
+    XsdFile,
+)
 from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
     InvalidXmlPipelineHookError,
     InvalidXmlTargetSelectionError,
@@ -52,28 +47,13 @@ from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
     XmlTargetNotFoundError,
     XmlToPyArrowConfigError,
 )
-from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
-from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
-from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.validation.xsd.traversal import load_schema
 
 PIPELINE_NAME: Final[str] = "xmltopyarrow"
-PUBMED_PIPELINE_NAME: Final[str] = "pubmed"
-UNIPROT_PIPELINE_NAME: Final[str] = "uniprot"
-UNIREF_PIPELINE_NAME: Final[str] = "uniref"
-
 ENTRY_XML_TAG: Final[str] = "entry"
 ENTRY_TABLE_NAME: Final[str] = "entry"
-PUBMED_ROOT_TAG: Final[str] = "PubmedArticleSet"
-
 SCHEMAS_DIR: Final[Path] = Path(__file__).resolve().parents[2] / "schemas"
-PUBMED_XSD_FILE: Final[Path] = SCHEMAS_DIR / "pubmed" / "pubmed.xsd"
-UNIPROT_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniprot" / "uniprot.xsd"
-UNIREF_XSD_FILE: Final[Path] = SCHEMAS_DIR / "uniref" / "uniref.xsd"
-
-
-UNIREF_FIFTY: Final[str] = "uniref50"
-UNIREF_NINETY: Final[str] = "uniref90"
-UNIREF_HUNDRED: Final[str] = "uniref100"
 
 
 def _classify_xmltopyarrow_xsd_error(exc: Exception) -> XmlToPyArrowConfigError:
@@ -328,103 +308,3 @@ class LevelPresetXmlToPyArrowSettings(XmlToPyArrowSettings):
         :rtype : dict[str, pa.Schema]
         """
         return dict(self.PRECOMPUTED_SCHEMAS)
-
-
-class PubMedXmlToPyArrowSettings(LevelPresetXmlToPyArrowSettings):
-    """Settings for the PubMed XML to PyArrow ingestion pipeline."""
-
-    PRECOMPUTED_SCHEMAS: ClassVar[Mapping[str, pa.Schema]] = PUBMED_SCHEMAS
-    DEFAULT_FILE_PREPROCESSORS: ClassVar[tuple[FilePreprocessFn, ...]] = (validate_md5_sidecar,)
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=PUBMED_PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-
-    dataset_name: ClassVar[str] = PUBMED_PIPELINE_NAME
-
-    file_glob: Annotated[
-        FileGlob,
-        Field(
-            default=XML_GZ_FILE_GLOB,
-            description=file_glob_description("Glob pattern for PubMed XML files"),
-        ),
-    ]
-    xsd_file: Annotated[
-        FilePath,
-        Field(
-            default=PUBMED_XSD_FILE,
-            description="Path to the PubMed XSD file describing the XML documents to be imported.",
-        ),
-    ]
-
-
-class UniProtXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
-    """Settings for the UniProt XML to PyArrow ingestion pipeline."""
-
-    PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIPROT_SCHEMA
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIPROT_PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-
-    dataset_name: ClassVar[str] = UNIPROT_PIPELINE_NAME
-
-    xsd_file: Annotated[
-        FilePath,
-        Field(
-            default=UNIPROT_XSD_FILE,
-            description="Path to the UniProt XSD file describing the XML documents to be imported.",
-        ),
-    ]
-
-
-class UniRefXmlToPyArrowSettings(PresetXmlToPyArrowSettings):
-    """Settings for the UniRef XML to PyArrow ingestion pipeline."""
-
-    PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = UNIREF_SCHEMA
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-
-    xsd_file: Annotated[
-        FilePath,
-        Field(
-            default=UNIREF_XSD_FILE,
-            description="Path to the UniRef XSD file describing the XML documents to be imported.",
-        ),
-    ]
-
-
-class UniRef50XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
-    """UniRef 50 XML to PyArrow ingest settings."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_FIFTY,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-
-    dataset_name: ClassVar[str] = UNIREF_FIFTY
-
-
-class UniRef90XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
-    """UniRef 90 XML to PyArrow ingest settings."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_NINETY,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-    dataset_name: ClassVar[str] = UNIREF_NINETY
-
-
-class UniRef100XmlToPyArrowSettings(UniRefXmlToPyArrowSettings):
-    """UniRef 100 XML to PyArrow ingest settings."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=UNIREF_HUNDRED,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )
-    dataset_name: ClassVar[str] = UNIREF_HUNDRED

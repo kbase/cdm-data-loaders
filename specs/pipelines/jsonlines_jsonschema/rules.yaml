@@ -1,5 +1,5 @@
 # Rule catalogue for the JSONLines (JSON Schema) ingestion pipeline
-# (cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline & JsonlJsonschemaIngestSettings).
+# (cdm_data_loaders.pipelines.jsonlines.jsonschema and JsonlJsonschemaIngestSettings).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/jsonlines_jsonschema_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
@@ -8,17 +8,21 @@ title: JSONLines (JSON Schema) Pipeline Specification
 pipeline: jsonlines_jsonschema
 cli_command: jsonlines_jsonschema
 settings_class: cdm_data_loaders.pipelines.jsonlines.settings.JsonlJsonschemaIngestSettings
-pipeline_runner: cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline.run_jsonlines_pipeline
+pipeline_runner: cdm_data_loaders.pipelines.jsonlines.jsonschema.run_jsonlines_pipeline
+schema_lang: json
+data_lang: json
+exceptions_module: cdm_data_loaders.pipelines.jsonlines.exceptions
+errors_attr: JSONLINES_JSONSCHEMA_ERRORS
 intro: |
   This document specifies how an **`ENTITY_SCHEMAS` registry** of JSON Schema documents and the
   **JSONLines JSON Schema validation pipeline**
-  (`cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline` and `JsonlJsonschemaIngestSettings`)
+  (`cdm_data_loaders.pipelines.jsonlines.jsonschema` and `JsonlJsonschemaIngestSettings`)
   determine:
 
   1. **Entity schema registration, JSON Schema dialect validation, and PyArrow schema generation** (`JsonlJsonschemaIngestSettings`, `SchemaRegistry`, `build_output_schema_registry`).
   2. **Per-line JSON parsing, JSON Schema validation with `FormatChecker`, and dead-letter routing (`_rejected`)** (`iter_file_jsonl_records`, `_make_resolve_error`, `make_page_router`).
   3. **Per-entity directory discovery, `.gz` decompression, MD5 sidecar pre-processing, table transforms, and pipeline reporting** (`build_entity_resource`, `run_jsonlines_pipeline`).
-  4. **Preset subclass behavior** (`ncbi_datasets` / `NcbiDatasetsIngestSettings`).
+  4. **Preset subclass behavior** (`ncbi_datasets` / `NcbiDatasetsSettings`).
   5. **Errors** (`JsonlJsonschemaError` subclasses) raised for invalid `ENTITY_SCHEMAS` registries or invalid JSON Schemas.
 
 sections:
@@ -33,12 +37,14 @@ sections:
           cannot be imported, `ENTITY_SCHEMAS` is missing/empty/non-dict, or uses the reserved `_rejected` key).
       - id: R-JSONL-SCHEMA-CONVERT
         statement: |
-          Each entry in `ENTITY_SCHEMAS` is validated by `ValidatedSchema`, requiring an explicit `$schema` keyword
-          for a supported draft (**E2** `UnsupportedJsonlSchemaDialectError`) and passing `validator.check_schema`
-          (**E3** `InvalidJsonlEntitySchemaError`). For each entity not overridden by `TABLE_TRANSFORMS` or
-          `OUTPUT_SCHEMAS`, `convert_schema_to_pyarrow` dereferences local `$ref` pointers and `allOf` branches via
-          `dereference_schema` (**E4** `UnresolvableJsonlSchemaRefError`) and converts the dereferenced Draft 2020-12
-          `object` schema to a `pa.Schema` via `JSONSchemaToPyArrow` (**E5** `UnsupportedJsonlArrowSchemaError`).
+          Each entry in `ENTITY_SCHEMAS` is validated by `ValidatedSchema`, requiring a `$schema` keyword
+          for a supported draft (**E2** `UnsupportedJsonlSchemaDialectError`) and passing metaschema checks via
+          `check_jsonschema_document` (**E3** `InvalidJsonlEntitySchemaError`). For each entity not overridden by
+          `TABLE_TRANSFORMS` or `OUTPUT_SCHEMAS`, `convert_schema_to_pyarrow` resolves `$ref` pointers, strips `$ref`
+          target identity keywords (`$id`, `$anchor`), and deep-merges `allOf` branches and `$ref` sibling keywords via
+          `dereference_schema` (**E4** `UnresolvableJsonlSchemaRefError` on dangling or circular `$ref` chains), then
+          converts the dereferenced Draft 2020-12 (or KBase XSV metaschema) `object` schema to a `pa.Schema` via
+          `JSONSchemaToPyArrow` (**E5** `UnsupportedJsonlArrowSchemaError`).
       - id: R-JSONL-SCHEMA-SKIP
         statement: |
           When `transforms_module` defines a `RecordTransformFn` for an entity in `TABLE_TRANSFORMS` (or provides an
@@ -51,9 +57,10 @@ sections:
       - id: R-JSONL-DIALECT-FORMAT
         statement: |
           `_make_resolve_error` builds a `jsonschema` validator for each entity's raw schema using
-          `validator_for(raw_schema)(raw_schema, format_checker=FormatChecker())`, enforcing string `format`
+          `resolve_jsonschema_validator(raw_schema)(raw_schema, format_checker=FormatChecker())` (including schemas
+          declaring the KBase XSV metaschema or older drafts such as Draft-07), enforcing string `format`
           constraints (such as `date`, `date-time`, `email`, and `uuid`) during record validation while
-          `coerce_record_for_pyarrow` parses `format: "date"` strings into `pa.date32()` (`datetime.date`) and keeps
+          `coerce_json_record_for_pyarrow` parses `format: "date"` strings into `pa.date32()` (`datetime.date`) and keeps
           other formatted strings as `pa.string()`.
       - id: R-JSONL-BLANK-AND-REJECT
         statement: |
@@ -89,7 +96,9 @@ sections:
         statement: |
           When `transforms_module` defines `TABLE_TRANSFORMS`, validated record dicts for that entity are passed to
           its `RecordTransformFn`, which may drop records (`{}`), compute derived fields, or fan out records across
-          multiple destination tables coerced with `OUTPUT_SCHEMAS`.
+          multiple destination tables coerced against `OUTPUT_SCHEMAS` via `coerce_json_record_for_pyarrow`
+          (including `pa.date32()`, UTC and naive `pa.timestamp`, `pa.time64`, scale-quantized
+          `pa.decimal128`/`pa.decimal256`, metadata-decoded binary fields, and numeric strings).
       - id: R-JSONL-REPORT
         statement: |
           Every pipeline execution writes one audit row to `_load_info` and a YAML summary to
@@ -97,17 +106,17 @@ sections:
           `load_errors`, and `pipeline_load_info_errs`.
 
   - id: ncbi_datasets_preset
-    title: NCBI Datasets Preset Subclass (`NcbiDatasetsIngestSettings`)
+    title: NCBI Datasets Preset Subclass (`NcbiDatasetsSettings`)
     rules:
       - id: R-NCBI-PRESET
         statement: |
-          `NcbiDatasetsIngestSettings` (`ncbi_datasets` CLI) subclasses `JsonlJsonschemaIngestSettings`,
-          locking `dataset_name="ncbi_datasets"`, `entity_schemas="cdm_data_loaders.parsers.ncbi_datasets"`,
-          `transforms_module="cdm_data_loaders.parsers.ncbi_datasets"`,
-          `output_schemas_module="cdm_data_loaders.parsers.ncbi_datasets"`, and precomputed `SCHEMAS` for
+          `NcbiDatasetsSettings` (`ncbi_datasets` CLI) subclasses `JsonlJsonschemaIngestSettings`,
+          locking `dataset_name="ncbi_datasets"`, `entity_schemas="cdm_data_loaders.datasets.ncbi_datasets.hooks"`,
+          `transforms_module="cdm_data_loaders.datasets.ncbi_datasets.hooks"`,
+          `output_schemas_module="cdm_data_loaders.datasets.ncbi_datasets.hooks"`, and precomputed `SCHEMAS` for
           `annotation_report` and `dataset_report`.
       - id: R-NCBI-FILTER-EMPTY
         statement: |
-          `filter_annotation_report` in `cdm_data_loaders.parsers.ncbi_datasets` drops `annotation_report`
+          `filter_annotation_report` in `cdm_data_loaders.datasets.ncbi_datasets.hooks` drops `annotation_report`
           records whose `reports` list is missing or empty (such as `{"total_count": 0}`) before buffering,
           retaining only records with a non-empty `reports` list.

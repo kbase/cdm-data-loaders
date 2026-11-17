@@ -21,7 +21,7 @@ from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_linkml import (
     NestedMultivaluedSlotError,
     PyArrowToLinkMLError,
 )
-from cdm_data_loaders.converters.readers.pyarrow import PyArrowReader
+from cdm_data_loaders.converters.sources.pyarrow import PyArrowReader
 
 
 def _reader() -> PyArrowReader:

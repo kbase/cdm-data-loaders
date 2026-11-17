@@ -9,9 +9,18 @@
   ],
   "$defs": {
     "GeneId": {
+      "$anchor": "gene_id",
       "type": "string",
       "pattern": "^G[0-9]{4}$",
       "description": "Standard gene identifier."
+    },
+    "NullableCounter": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Non-negative integer or null."
     },
     "NullableOrganism": {
       "anyOf": [
@@ -27,12 +36,17 @@
   },
   "properties": {
     "gene_id": {
-      "$ref": "#/$defs/GeneId"
+      "$ref": "#/$defs/GeneId",
+      "description": "Locus gene identifier."
     },
     "reads": {
-      "type": [
-        "integer",
-        "null"
+      "allOf": [
+        {
+          "$ref": "#/$defs/NullableCounter"
+        },
+        {
+          "maximum": 1000000
+        }
       ],
       "description": "Read count or null when unmeasured."
     },

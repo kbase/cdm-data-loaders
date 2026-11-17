@@ -9,6 +9,7 @@ from frozendict import frozendict
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
+from cdm_data_loaders.converters.core.constants import DECIMAL128_MAX_PRECISION, INT32_MAX, INT32_MIN
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.inference import decimal_places, is_unconstrained_node, json_type_from_enum
 from cdm_data_loaders.converters.core.io import ExtraMetadataKeywords
@@ -16,11 +17,6 @@ from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import MutableValue, Value, mutable_value
 from cdm_data_loaders.converters.core.metadata import DEFAULT_METADATA_KEYWORDS, ConversionContext
-
-INT32_MIN: Final = -2_147_483_648
-INT32_MAX: Final = 2_147_483_647
-INT32_WIDTH: Final = 32
-DECIMAL128_MAX_PRECISION: Final = 38
 
 DEFAULT_STRING_FORMATS: Final[tuple[str, ...]] = (
     "time",
@@ -373,6 +369,5 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
     def _array_type(self, element_type: DataTypeT, *, element_nullable: bool) -> DataTypeT:
         raise NotImplementedError
 
-    @staticmethod
-    def _emit_logical(node: TypedNode) -> DataTypeT | None:
+    def _emit_logical(self, node: TypedNode) -> DataTypeT | None:
         raise NotImplementedError

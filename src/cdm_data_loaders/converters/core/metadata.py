@@ -6,37 +6,12 @@ from typing import Final
 
 from jsonschema import Draft7Validator
 
-DEFAULT_METADATA_KEYWORDS: Final = frozenset({"title"})
-REF_AND_IDENTITY_KEYWORDS: Final = frozenset(
-    {"$anchor", "$defs", "$dynamicAnchor", "$dynamicRef", "$id", "$ref", "$schema", "$vocabulary", "definitions", "id"}
+from cdm_data_loaders.validation.jsonschema.keywords import (
+    REF_AND_IDENTITY_KEYWORDS,
+    STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS,
 )
-STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS: Final = frozenset(
-    {
-        "additionalItems",
-        "additionalProperties",
-        "allOf",
-        "anyOf",
-        "contains",
-        "contentSchema",
-        "dependencies",
-        "dependentRequired",
-        "dependentSchemas",
-        "else",
-        "if",
-        "items",
-        "not",
-        "oneOf",
-        "patternProperties",
-        "prefixItems",
-        "properties",
-        "propertyNames",
-        "required",
-        "then",
-        "type",
-        "unevaluatedItems",
-        "unevaluatedProperties",
-    }
-)
+
+DEFAULT_METADATA_KEYWORDS: Final[frozenset[str]] = frozenset({"title"})
 
 
 def get_known_jsonschema_keywords(validator_cls: type) -> set[str]:
@@ -74,16 +49,3 @@ class ConversionContext:
     def invalid_extra_metadata_keywords(self) -> frozenset[str]:
         """Return ignored structural, identity and unknown keywords."""
         return self.extra_metadata_keywords - self.allowed_extra_metadata_keywords
-
-
-def decode_field_metadata(metadata: dict[bytes, bytes] | None) -> dict[str, str]:
-    """Decode PyArrow byte key/value metadata into string key/value pairs.
-
-    :param metadata: Optional raw PyArrow field metadata dictionary.
-    :type metadata: dict[bytes, bytes] | None
-    :return: Decoded string-to-string metadata dictionary.
-    :rtype: dict[str, str]
-    """
-    if not metadata:
-        return {}
-    return {k.decode("utf-8"): v.decode("utf-8") for k, v in metadata.items()}

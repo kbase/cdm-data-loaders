@@ -1,3 +1,5 @@
+"""Fixtures for AllTheBacteria pipeline tests."""
+
 from pathlib import Path
 from typing import Any
 
@@ -10,8 +12,9 @@ from cdm_data_loaders.core.fields import (
     USE_DESTINATION,
     LoaderFileFormatEnum,
 )
-from cdm_data_loaders.pipelines.all_the_bacteria import PROJECT_PART_REGEX, AtbSettings, load_patterns
-from tests.conftest import S3
+from cdm_data_loaders.datasets.all_the_bacteria.osf import PROJECT_PART_REGEX, load_patterns
+from cdm_data_loaders.pipelines.all_the_bacteria.settings import AtbSettings
+from tests.helpers.paths_and_constants import S3
 
 
 @pytest.fixture(params=["default", "v1"])

@@ -14,17 +14,17 @@ from dlt.extract import DltResource
 from dlt.sources.filesystem import filesystem
 from dlt.sources.filesystem.helpers import fsspec_from_resource
 
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA, make_rejected_row
 from cdm_data_loaders.core.fields import ICEBERG, PARQUET, REJECTED_TABLE_NAME, LoaderFileFormatEnum
+from cdm_data_loaders.core.file_items import source_id
 from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     InputLocalOutputSettings,
 )
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA, make_rejected_row
-from cdm_data_loaders.utils.file_items import source_id
 
 if TYPE_CHECKING:
     from cdm_data_loaders.core.registry import FilePreprocessFn
-    from cdm_data_loaders.core.transforms import OutputTableHints
+    from cdm_data_loaders.core.transforms.hints import OutputTableHints
 
 logger: Logger = getLogger(__name__)
 
@@ -36,13 +36,13 @@ class FilesystemTracker:
     ingested_files: list[str]
     preprocess_errors: list[str]
 
-    def record_file(self, item: Any) -> Any:  # noqa: ANN401
+    def record_file[T](self, item: T) -> T:
         """Append ``item["relative_path"]`` to ``ingested_files`` if present and return ``item``.
 
         :param item: file item or record yielded by a filesystem resource
-        :type item: Any
+        :type item: T
         :return: unmodified ``item``
-        :rtype: Any
+        :rtype: T
         """
         if isinstance(item, dict) and "relative_path" in item:
             self.ingested_files.append(item["relative_path"])
@@ -156,12 +156,12 @@ def collect_file_listing(
 def build_filesystem_resource(  # noqa: PLR0913
     settings: InputLocalOutputSettings,
     reader_fn: Callable[..., Any] | DltResource,
-    *reader_args: Any,  # noqa: ANN401
+    *reader_args: object,
     name: str,
     file_glob: str | None = None,
     table_name: str | None = None,
     schema_contract: TSchemaContractDict | None = None,
-    **transformer_kwargs: Any,  # noqa: ANN401
+    **transformer_kwargs: object,
 ) -> DltResource:
     """Build a dlt resource that pipes ``filesystem(settings.input_dir, file_glob)`` into a parallelized transformer.
 
@@ -170,7 +170,7 @@ def build_filesystem_resource(  # noqa: PLR0913
     :param reader_fn: transformer function or resource accepting ``(items, settings, *reader_args)``
     :type reader_fn: Callable[..., Any] | DltResource
     :param reader_args: positional arguments bound to the transformer after ``settings``
-    :type reader_args: Any
+    :type reader_args: object
     :param name: name of the resulting dlt transformer resource
     :type name: str
     :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present
@@ -180,7 +180,7 @@ def build_filesystem_resource(  # noqa: PLR0913
     :param schema_contract: optional dlt schema contract hint applied to the resource
     :type schema_contract: TSchemaContractDict | None
     :param transformer_kwargs: additional keyword arguments passed to ``dlt.transformer``
-    :type transformer_kwargs: Any
+    :type transformer_kwargs: object
     :return: configured ``DltResource``
     :rtype: DltResource
     """
@@ -210,8 +210,8 @@ def build_filesystem_resource(  # noqa: PLR0913
 
     def _preprocess_and_read(
         items: Iterable[FileItemDict],
-        *args: Any,  # noqa: ANN401
-        **kwargs: Any,  # noqa: ANN401
+        *args: object,
+        **kwargs: object,
     ) -> Generator[TDataItems, Any, Any]:
         raw_items = [items] if isinstance(items, dict) else list(items)
         valid_items: list[FileItemDict] = []
@@ -253,8 +253,9 @@ def build_filesystem_resource(  # noqa: PLR0913
             if result is not None:
                 yield from result
 
-    parallelized = bool(transformer_kwargs.pop("parallelized", True))
-    reader = dlt.transformer(_preprocess_and_read, name=name, parallelized=parallelized, **transformer_kwargs)
+    extra_transformer_kwargs: dict[str, Any] = dict(transformer_kwargs)
+    parallelized = bool(extra_transformer_kwargs.pop("parallelized", True))
+    reader = dlt.transformer(_preprocess_and_read, name=name, parallelized=parallelized, **extra_transformer_kwargs)
     resource: DltResource = files | reader(settings, *reader_args)
     if schema_contract is not None:
         resource.apply_hints(schema_contract=TSchemaContractDict(**schema_contract))  # pyright: ignore[reportCallIssue]
@@ -279,7 +280,7 @@ def make_per_file_reader(
     :rtype: Callable[..., Generator[TDataItems, Any, Any]]
     """
 
-    def _read_items(items: Iterable[FileItemDict], *args: Any) -> Generator[TDataItems, Any, Any]:  # noqa: ANN401
+    def _read_items(items: Iterable[FileItemDict], *args: object) -> Generator[TDataItems, Any, Any]:
         for file_item in items:
             yield from file_fn(file_item, *args)
 
@@ -289,11 +290,11 @@ def make_per_file_reader(
 def build_per_file_filesystem_resource(
     settings: InputLocalOutputSettings,
     file_fn: Callable[..., Iterable[Any]],
-    *reader_args: Any,  # noqa: ANN401
+    *reader_args: object,
     name: str,
     file_glob: str | None = None,
     schema_contract: TSchemaContractDict | None = None,
-    **transformer_kwargs: Any,  # noqa: ANN401
+    **transformer_kwargs: object,
 ) -> DltResource:
     """Build a dlt resource that runs a single-file reader ``file_fn(file_item, settings, *reader_args)`` over ``filesystem`` items.
 
@@ -302,7 +303,7 @@ def build_per_file_filesystem_resource(
     :param file_fn: single-file reader callable accepting ``(file_item, settings, *reader_args)``
     :type file_fn: Callable[..., Iterable[Any]]
     :param reader_args: positional arguments bound to ``file_fn`` after ``settings``
-    :type reader_args: Any
+    :type reader_args: object
     :param name: name of the resulting dlt transformer resource
     :type name: str
     :param file_glob: glob pattern for files; defaults to ``settings.file_glob`` if present
@@ -310,7 +311,7 @@ def build_per_file_filesystem_resource(
     :param schema_contract: optional dlt schema contract hint applied to the resource
     :type schema_contract: TSchemaContractDict | None
     :param transformer_kwargs: additional keyword arguments passed to ``build_filesystem_resource``
-    :type transformer_kwargs: Any
+    :type transformer_kwargs: object
     :return: configured ``DltResource``
     :rtype: DltResource
     """

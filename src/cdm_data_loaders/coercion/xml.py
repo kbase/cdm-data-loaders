@@ -11,27 +11,33 @@ import xmlschema
 from lxml.etree import Element
 from xmlschema.validators import XsdComplexType, XsdElement, XsdType
 
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
-from cdm_data_loaders.converters.core.ir import NodeHints, NodeType
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     ERROR_BY_CODE,
     XsdToPyArrowError,
 )
-from cdm_data_loaders.converters.readers.xsd import (
-    BUILTIN_LIST_ITEM_TYPES,
-    _builtin_xsd_name,
-    _classify_leaf_element_type,
-    _collect_attributes,
-    _collect_unique_children,
-    _prepare_target_traversal,
-    _require_complex_type,
-    _resolve_child_cardinality,
-    _resolve_scalar_spec,
-    _TraversalContext,
-    _unwrap_item_type,
-    resolve_elements_at_level,
-)
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
 from cdm_data_loaders.utils.xml_utils import local_name
+from cdm_data_loaders.validation.xsd.particles import resolve_child_cardinality
+from cdm_data_loaders.validation.xsd.scalars import (
+    BUILTIN_LIST_ITEM_TYPES,
+    INTEGER_SCALAR_KINDS,
+    XsdScalarKind,
+    builtin_xsd_name,
+    resolve_xsd_scalar_kind,
+    unwrap_item_type,
+)
+from cdm_data_loaders.validation.xsd.traversal import (
+    TraversalContext,
+    check_no_forbidden_types_under_recursion,
+    classify_leaf_element_type,
+    collect_attributes,
+    collect_unique_children,
+    prepare_target_traversal,
+    require_complex_type,
+    resolve_elements_at_level,
+    validate_complex_subtree,
+    validate_target_struct_element,
+)
 
 XSI_NAMESPACE: Final[str] = "{http://www.w3.org/2001/XMLSchema-instance}"
 XSI_NIL: Final[str] = f"{XSI_NAMESPACE}nil"
@@ -121,32 +127,29 @@ def _serialize_inner_xml(element: Element) -> str:
 
 def _coerce_resolved_scalar(
     stripped: str,
-    node_type: NodeType,
-    hints: NodeHints,
+    scalar_kind: XsdScalarKind,
     xsd_name: str,
 ) -> bool | int | float | dt.date | bytes | str:
-    """Coerce a stripped lexical string using its resolved IR ``node_type``, ``hints``, and ``xsd_name``.
+    """Coerce a stripped lexical string using its resolved ``scalar_kind`` and ``xsd_name``.
 
     :param stripped: Whitespace-stripped lexical XML string.
     :type stripped: str
-    :param node_type: Resolved IR node type.
-    :type node_type: NodeType
-    :param hints: Resolved IR node hints.
-    :type hints: NodeHints
+    :param scalar_kind: Resolved XSD scalar kind.
+    :type scalar_kind: XsdScalarKind
     :param xsd_name: Resolved XSD built-in type name.
     :type xsd_name: str
     :return: Coerced Python scalar value.
     :rtype: bool | int | float | dt.date | bytes | str
     """
-    if node_type == "boolean":
+    if scalar_kind == "boolean":
         return stripped in {"true", "1"}
-    if node_type == "integer":
+    if scalar_kind in INTEGER_SCALAR_KINDS:
         return int(stripped)
-    if node_type == "number":
+    if scalar_kind == "float64":
         return float(stripped)
-    if hints.logical_type == "date":
+    if scalar_kind == "date":
         return dt.date.fromisoformat(stripped[:10])
-    if hints.logical_type == "binary":
+    if scalar_kind == "binary":
         return bytes.fromhex(stripped) if xsd_name == "xs:hexBinary" else base64.b64decode(stripped)
     return stripped
 
@@ -164,35 +167,43 @@ def _coerce_scalar_text(raw_text: str, simple_type: XsdType | None) -> object:
     if simple_type is None:
         return raw_text
 
-    builtin_name = _builtin_xsd_name(simple_type)
+    builtin_name = builtin_xsd_name(simple_type)
     if builtin_name in BUILTIN_LIST_ITEM_TYPES:
         return raw_text.split()
 
     if simple_type.is_list():
-        item_type = _unwrap_item_type(simple_type)
+        item_type = unwrap_item_type(simple_type)
         return [_coerce_scalar_text(token, item_type) for token in raw_text.split()]
 
-    node_type, hints, xsd_name = _resolve_scalar_spec(simple_type)
-    return _coerce_resolved_scalar(raw_text.strip(), node_type, hints, xsd_name)
+    scalar_kind, xsd_name = resolve_xsd_scalar_kind(simple_type)
+    return _coerce_resolved_scalar(raw_text.strip(), scalar_kind, xsd_name)
 
 
-def _extract_struct_attributes(element: Element, complex_type: XsdComplexType) -> dict[str, Any]:
+def _extract_struct_attributes(
+    ctx: TraversalContext,
+    element: Element,
+    complex_type: XsdComplexType,
+) -> tuple[dict[str, Any], set[str]]:
     """Extract and coerce declared XML attributes from ``element`` into ``_<name>`` dictionary entries.
 
+    :param ctx: Active XSD traversal context.
+    :type ctx: TraversalContext
     :param element: XML element to inspect.
     :type element: Element
     :param complex_type: XSD complex type declaring the element's attributes.
     :type complex_type: XsdComplexType
-    :return: Dictionary mapping ``_<attr_name>`` to coerced attribute values.
-    :rtype: dict[str, Any]
+    :return: Tuple of ``(coerced_attr_dict, declared_attr_field_names)``.
+    :rtype: tuple[dict[str, Any], set[str]]
     """
-    declared_attrs = {attr.local_name: attr for attr in _collect_attributes(complex_type) if attr.local_name}
+    attrs = collect_attributes(complex_type, error_type=ctx.error_type, error_by_code=ctx.error_by_code)
+    declared_attrs = {attr.local_name: attr for attr in attrs if attr.local_name}
     raw_attrs = {local_name(k): v for k, v in element.attrib.items() if not _is_ignored_attr(k)}
-    return {
+    coerced = {
         f"_{attr_name}": _coerce_scalar_text(raw_attrs[attr_name], attr_decl.type)
         for attr_name, attr_decl in declared_attrs.items()
         if attr_name in raw_attrs
     }
+    return coerced, {f"_{attr_name}" for attr_name in declared_attrs}
 
 
 def _group_child_elements_by_name(element: Element) -> dict[str, list[Element]]:
@@ -211,14 +222,14 @@ def _group_child_elements_by_name(element: Element) -> dict[str, list[Element]]:
 
 
 def _convert_complex_struct(
-    ctx: _TraversalContext,
+    ctx: TraversalContext,
     element: Element,
     complex_type: XsdComplexType,
 ) -> dict[str, Any] | None:
     """Convert an XML ``element`` with a struct-mapped ``complex_type`` into a sparse dictionary.
 
     :param ctx: Active XSD traversal context.
-    :type ctx: _TraversalContext
+    :type ctx: TraversalContext
     :param element: XML element to convert.
     :type element: Element
     :param complex_type: XSD complex type of ``element``.
@@ -226,7 +237,7 @@ def _convert_complex_struct(
     :return: Sparse dictionary of coerced fields, or ``None`` if empty.
     :rtype: dict[str, Any] | None
     """
-    result = _extract_struct_attributes(element, complex_type)
+    result, attr_field_names = _extract_struct_attributes(ctx, element, complex_type)
 
     if _is_xsi_nil(element):
         return result or None
@@ -250,13 +261,24 @@ def _convert_complex_struct(
 
     children_by_name = _group_child_elements_by_name(element)
 
-    for child_decl in _collect_unique_children(ctx.schema, complex_type):
-        child_name = child_decl.local_name
+    for child_decl in collect_unique_children(
+        ctx.schema,
+        complex_type,
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    ):
+        child_name = child_decl.local_name or ""
+        if child_name in attr_field_names:
+            msg = (
+                f"Field name collision in {complex_type.local_name or 'complexType'!r}: "
+                f"attribute and child element both map to {child_name!r}"
+            )
+            ctx.raise_err("E8", msg)
         matching_elements = children_by_name.get(child_name)
         if not matching_elements:
             continue
 
-        is_list, nullable = _resolve_child_cardinality(model_group, child_decl)
+        is_list, nullable = resolve_child_cardinality(model_group, child_decl)
 
         if is_list:
             result[child_name] = [
@@ -299,7 +321,7 @@ def _convert_text_or_empty_leaf(
 
 
 def _convert_child_occurrence(
-    ctx: _TraversalContext,
+    ctx: TraversalContext,
     element: Element,
     xsd_element: XsdElement,
     *,
@@ -308,7 +330,7 @@ def _convert_child_occurrence(
     """Convert a single XML element occurrence according to ``xsd_element``.
 
     :param ctx: Active XSD traversal context.
-    :type ctx: _TraversalContext
+    :type ctx: TraversalContext
     :param element: XML element occurrence to convert.
     :type element: Element
     :param xsd_element: XSD element declaration.
@@ -319,7 +341,11 @@ def _convert_child_occurrence(
     :rtype: object
     """
     elem_type = xsd_element.type
-    leaf_info = _classify_leaf_element_type(elem_type)
+    leaf_info = classify_leaf_element_type(
+        elem_type,
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    )
     if leaf_info is not None:
         kind, simple_type = leaf_info
         if kind == "empty_marker":
@@ -331,26 +357,27 @@ def _convert_child_occurrence(
             nullable=nullable,
         )
 
-    elem_type = _require_complex_type(elem_type, xsd_element.local_name or "")
+    elem_type = require_complex_type(
+        elem_type,
+        xsd_element.local_name or "",
+        error_type=ctx.error_type,
+        error_by_code=ctx.error_by_code,
+    )
     type_id = id(elem_type)
+    if type_id in ctx.type_counts:
+        check_no_forbidden_types_under_recursion(elem_type, ctx)
     next_count = ctx.type_counts.get(type_id, 0) + 1
     if ctx.max_recursion_depth is not None and next_count > ctx.max_recursion_depth:
-        unbounded_ctx = _TraversalContext(schema=ctx.schema, type_counts={}, max_recursion_depth=None)
-        nested = _convert_complex_struct(unbounded_ctx, element, elem_type)
+        nested = _convert_complex_struct(ctx.unbounded(), element, elem_type)
         return json.dumps(nested) if nested is not None else None
 
-    next_ctx = _TraversalContext(
-        schema=ctx.schema,
-        type_counts={**ctx.type_counts, type_id: next_count},
-        max_recursion_depth=ctx.max_recursion_depth,
-    )
-    return _convert_complex_struct(next_ctx, element, elem_type)
+    return _convert_complex_struct(ctx.with_type(type_id), element, elem_type)
 
 
 def _convert_leaf_element_to_dict(
     element: Element,
     *,
-    ctx: _TraversalContext,
+    ctx: TraversalContext,
     target_elem: XsdElement,
 ) -> dict[str, Any]:
     """Convert a scalar or mixed-text XML element into a single-key ``#text`` dictionary.
@@ -358,7 +385,7 @@ def _convert_leaf_element_to_dict(
     :param element: XML element to convert.
     :type element: Element
     :param ctx: Traversal context.
-    :type ctx: _TraversalContext
+    :type ctx: TraversalContext
     :param target_elem: Resolved XSD element declaration.
     :type target_elem: XsdElement
     :return: Dictionary with ``#text`` key if non-null, otherwise empty dictionary.
@@ -371,7 +398,7 @@ def _convert_leaf_element_to_dict(
 def _convert_struct_element_to_dict(
     element: Element,
     *,
-    ctx: _TraversalContext,
+    ctx: TraversalContext,
     elem_type: XsdComplexType,
 ) -> dict[str, Any]:
     """Convert a complex struct XML element into a sparse dictionary.
@@ -379,7 +406,7 @@ def _convert_struct_element_to_dict(
     :param element: XML element to convert.
     :type element: Element
     :param ctx: Traversal context.
-    :type ctx: _TraversalContext
+    :type ctx: TraversalContext
     :param elem_type: Validated XSD complex type.
     :type elem_type: XsdComplexType
     :return: Sparse dictionary of coerced field values.
@@ -408,13 +435,14 @@ def _make_resolved_element_converter(
     :return: Function converting an lxml Element into a dictionary.
     :rtype: Callable[[Element], dict[str, Any]]
     """
-    leaf_info = _classify_leaf_element_type(
+    validate_max_recursion_depth(max_recursion_depth)
+    leaf_info = classify_leaf_element_type(
         target_elem.type,
         error_type=XsdToPyArrowError,
         error_by_code=ERROR_BY_CODE,
     )
     if leaf_info is not None:
-        leaf_ctx = _TraversalContext(
+        leaf_ctx = TraversalContext(
             schema=schema,
             type_counts={},
             max_recursion_depth=max_recursion_depth,
@@ -423,19 +451,20 @@ def _make_resolved_element_converter(
         )
         return functools.partial(_convert_leaf_element_to_dict, ctx=leaf_ctx, target_elem=target_elem)
 
-    elem_type = _require_complex_type(
+    elem_type = require_complex_type(
         target_elem.type,
         tag_name,
         error_type=XsdToPyArrowError,
         error_by_code=ERROR_BY_CODE,
     )
-    ctx = _TraversalContext(
+    ctx = TraversalContext(
         schema=schema,
         type_counts={id(elem_type): 1},
         max_recursion_depth=max_recursion_depth,
         error_type=XsdToPyArrowError,
         error_by_code=ERROR_BY_CODE,
     )
+    validate_complex_subtree(elem_type, ctx)
     return functools.partial(_convert_struct_element_to_dict, ctx=ctx, elem_type=elem_type)
 
 
@@ -456,13 +485,14 @@ def make_xml_element_converter(
     :return: Function converting an lxml Element into a sparse dictionary.
     :rtype: Callable[[Element], dict[str, Any]]
     """
-    _, elem_type, ctx = _prepare_target_traversal(
+    _, elem_type, ctx = prepare_target_traversal(
         schema,
         xml_tag,
         max_recursion_depth=max_recursion_depth,
         error_type=XsdToPyArrowError,
         error_by_code=ERROR_BY_CODE,
     )
+    validate_target_struct_element(elem_type, xml_tag, ctx)
     return functools.partial(_convert_struct_element_to_dict, ctx=ctx, elem_type=elem_type)
 
 
@@ -486,6 +516,7 @@ def make_xml_level_converters(
     :return: Mapping of element local tag name to its element-to-dict converter function.
     :rtype: dict[str, Callable[[Element], dict[str, Any]]]
     """
+    validate_max_recursion_depth(max_recursion_depth)
     elements_at_level = resolve_elements_at_level(
         schema,
         level,

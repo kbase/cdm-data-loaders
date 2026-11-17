@@ -6,7 +6,6 @@ Cases, rules, and error fixtures are declared in manifests under
 ``docs_macros`` Jinja2 templates.
 """
 
-import json
 import math
 from pathlib import Path
 from typing import Any, Final
@@ -18,14 +17,13 @@ from frozendict import frozendict
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import ValidationError
 
-from cdm_data_loaders.coercion.pyarrow import (
+from cdm_data_loaders.coercion.arrow_to_records import (
     serialize_record_for_jsonschema,
     serialize_table_for_jsonschema,
 )
 from cdm_data_loaders.converters.core.extensions import ExtensionRegistry
 from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_jsonschema import (
     ERROR_BY_CODE,
-    PYARROW_TO_JSONSCHEMA_ERRORS,
     InvalidPyArrowSchemaError,
     PyArrowToJSONSchemaError,
     UnsupportedArrowTypeError,
@@ -37,17 +35,22 @@ from cdm_data_loaders.converters.facades.pyarrow_to_jsonschema import (
     generate_json_schema,
     resolve_scalar_type,
 )
-from tests.cdm_data_loaders.converters.conftest import (
+from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
+from tests.cdm_data_loaders.converters._helpers import (
     JSON_SCHEMA_KEYWORDS,
     iter_extension_keys,
     iter_schema_keywords,
 )
-from tests.conftest import BASE_DIR
-from tests.converter_spec import Case, ErrorCase, RuleCatalogue, Run, load_cases, load_error_cases, load_rules
-from tests.pyarrow_spec_helpers import load_fixture_attr, load_input_schema, load_input_table
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_spec import (
+    load_fixture_attr,
+    load_input_schema,
+    load_input_table,
+    load_json_object,
+    load_json_records,
+)
 
 PYARROW_JS_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "pyarrow_to_jsonschema").resolve()
-RULES: Final[RuleCatalogue] = load_rules(PYARROW_JS_DATA_DIR / "rules.yaml")
 CASES: Final[tuple[Case, ...]] = tuple(
     load_cases(PYARROW_JS_DATA_DIR / "spec") + load_cases(PYARROW_JS_DATA_DIR / "examples")
 )
@@ -94,62 +97,6 @@ class _CustomLabelExtensionType(pa.ExtensionType):
         return cls()
 
 
-def _load_json_object(path: Path) -> dict[str, Any]:
-    """Load a JSON object dictionary from disk.
-
-    :param path: Path to the JSON file.
-    :type path: Path
-    :return: Parsed JSON dictionary.
-    :rtype: dict[str, Any]
-    :raises TypeError: If the root JSON value is not an object.
-    """
-    loaded = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, dict):
-        msg = f"Expected a JSON object in {path}, got {type(loaded)}"
-        raise TypeError(msg)
-    return loaded
-
-
-def _load_json_records(path: Path) -> list[dict[str, Any]]:
-    """Load a list of JSON record dictionaries from disk.
-
-    :param path: Path to the JSON file.
-    :type path: Path
-    :return: Parsed list of row dictionaries.
-    :rtype: list[dict[str, Any]]
-    :raises TypeError: If the root JSON value is not a list.
-    """
-    loaded = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, list):
-        msg = f"Expected a list of JSON records in {path}, got {type(loaded)}"
-        raise TypeError(msg)
-    return loaded
-
-
-def test_manifests_pass_consistency() -> None:
-    """Verify rule coverage, fixture file existence, and error code coverage."""
-    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in CASES}
-    assert {name: ids for name, ids in unknown.items() if ids} == {}
-
-    used_rules = {rule_id for case in CASES for rule_id in case.rules}
-    assert sorted(RULES.rules.keys() - used_rules) == []
-
-    paths = [p for case in CASES for p in (case.schema, case.expected_schema)]
-    paths += [p for case in CASES for run in case.runs for p in (run.data, run.expected_json, run.expected_table)]
-    paths += [err.file for err in ERROR_CASES]
-    assert [str(p) for p in paths if not p.is_file()] == []
-
-    listed_errors = {err.file for err in ERROR_CASES}
-    on_disk_errors = set((PYARROW_JS_DATA_DIR / "spec" / "errors").glob("*.py"))
-    assert sorted(str(p) for p in on_disk_errors - listed_errors) == []
-
-    assert len(ERRORS_BY_CODE) == len(PYARROW_TO_JSONSCHEMA_ERRORS)
-    assert all(cls.code and cls.title and cls.__doc__ for cls in PYARROW_TO_JSONSCHEMA_ERRORS)
-    manifest_codes = {err.code for err in ERROR_CASES}
-    assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
-    assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
 def test_fixtures_pass_table_and_ipc_roundtrip(case: Case, run: Run) -> None:
     """Verify each fixture table validates against its input schema and round-trips losslessly through Arrow IPC."""
@@ -170,7 +117,7 @@ def test_fixtures_pass_table_and_ipc_roundtrip(case: Case, run: Run) -> None:
 def test_generate_json_schema_pass_cases(case: Case, run: Run) -> None:
     """Verify generate_json_schema and PyArrowToJSONSchema produce valid Draft 2020-12 schemas matching expected JSON."""
     pa_schema = load_input_schema(case.schema, run.schema_attr)
-    expected_schema = _load_json_object(case.expected_schema)
+    expected_schema = load_json_object(case.expected_schema)
 
     actual = generate_json_schema(pa_schema, **run.params)
     assert actual == expected_schema
@@ -197,8 +144,8 @@ def test_serialize_table_and_record_for_jsonschema_pass_cases(case: Case, run: R
     """Verify serialized Arrow table rows match expected.json and validate against the generated JSON Schema."""
     pa_schema = load_input_schema(case.schema, run.schema_attr)
     table = load_input_table(run.data, run.table_attr)
-    expected_rows = _load_json_records(run.expected_json)
-    js_schema = _load_json_object(case.expected_schema)
+    expected_rows = load_json_records(run.expected_json)
+    js_schema = load_json_object(case.expected_schema)
 
     rows = serialize_table_for_jsonschema(table)
     assert rows == expected_rows
@@ -317,7 +264,7 @@ def test_generate_json_schema_pass_destination_and_file_output(tmp_path: Path) -
     out_file = tmp_path / "schemas" / "ids_table.schema.json"
     converter = PyArrowToJSONSchema(schema_name="IdsTable", schema_id="https://example.org/ids")
     assert converter.convert_to_json_file(schema_a, out_file) == out_file
-    loaded = _load_json_object(out_file)
+    loaded = load_json_object(out_file)
     assert loaded["title"] == "IdsTable"
     assert loaded["$id"] == "https://example.org/ids"
 

@@ -2,23 +2,23 @@
 
 `cdm-data-loaders` provides `dlt` pipelines for ingesting UniProt Knowledgebase (UniProtKB) and UniRef XML datasets (`*.xml` and `*.xml.gz`) as well as tabular UniProt ID mapping releases (`*.dat` and `*.dat.gz`), along with parsers for UniProt release metadata.
 
-| Pipeline CLI        | Mode                          | Source Module                                      | Bundled Schema / Parser                        | Default Dataset / Table                              |
-| :------------------ | :---------------------------- | :------------------------------------------------- | :--------------------------------------------- | :--------------------------------------------------- |
-| `uniprot`           | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniprot/uniprot.xsd` | `uniprot` / `entry`                                  |
-| `uniref50`          | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref50` / `entry`                                 |
-| `uniref90`          | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref90` / `entry`                                 |
-| `uniref100`         | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.xmltopyarrow.pipeline` | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref100` / `entry`                                |
-| `uniprot_cdm`       | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniprot_kb_cdm`        | `cdm_data_loaders.parsers.uniprot.uniprot_kb`  | `uniprot_cdm` (multi-table)                          |
-| `uniref50_cdm`      | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref50_cdm` (multi-table)                         |
-| `uniref90_cdm`      | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref90_cdm` (multi-table)                         |
-| `uniref100_cdm`     | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.uniref_cdm`            | `cdm_data_loaders.parsers.uniprot.uniref`      | `uniref100_cdm` (multi-table)                        |
-| `uniprot_idmapping` | XSV preset (dual-table)       | `cdm_data_loaders.pipelines.uniprot_idmapping`     | `cdm_data_loaders.parsers.uniprot.idmapping`   | `uniprot_idmapping` (`raw_id_mapping`, `id_mapping`) |
+| Pipeline CLI        | Mode                          | Source Module                                         | Bundled Schema / Dataset Module               | Default Dataset / Table                              |
+| :------------------ | :---------------------------- | :---------------------------------------------------- | :-------------------------------------------- | :--------------------------------------------------- |
+| `uniprot`           | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`      | `cdm_data_loaders/schemas/uniprot/uniprot.xsd` | `uniprot` / `entry`                                  |
+| `uniref50`          | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`      | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref50` / `entry`                                 |
+| `uniref90`          | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`      | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref90` / `entry`                                 |
+| `uniref100`         | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`      | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref100` / `entry`                                |
+| `uniprot_cdm`       | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`      | `cdm_data_loaders.datasets.uniprot.kb`         | `uniprot_cdm` (multi-table)                          |
+| `uniref50_cdm`      | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`      | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref50_cdm` (multi-table)                         |
+| `uniref90_cdm`      | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`      | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref90_cdm` (multi-table)                         |
+| `uniref100_cdm`     | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`      | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref100_cdm` (multi-table)                        |
+| `uniprot_idmapping` | XSV preset (dual-table)       | `cdm_data_loaders.pipelines.presets.uniprot_idmapping` | `cdm_data_loaders.datasets.uniprot.idmapping`  | `uniprot_idmapping` (`raw_id_mapping`, `id_mapping`) |
 
 ---
 
 ## XSD-Driven XML-to-PyArrow Pipelines (`uniprot`, `uniref50`, `uniref90`, `uniref100`)
 
-The preset XML-to-PyArrow pipelines (configured in [`src/cdm_data_loaders/pipelines/xmltopyarrow/settings.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltopyarrow/settings.py)) stream `<entry>` elements from UniProtKB or UniRef XML files, validate and coerce each element against its bundled XML Schema (XSD), and emit nested PyArrow tables matching the generated `pyarrow.Schema`. See [XSD to PyArrow Specification](xsd_to_pyarrow_specification.md) and [XML to PyArrow Pipeline Specification](xmltopyarrow_specification.md) for conversion and streaming rules.
+The preset XML-to-PyArrow pipelines (configured in [`src/cdm_data_loaders/pipelines/presets/uniprot_xml.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/presets/uniprot_xml.py)) stream `<entry>` elements from UniProtKB or UniRef XML files, validate and coerce each element against its bundled XML Schema (XSD), and emit nested PyArrow tables matching the generated `pyarrow.Schema`. See [XSD to PyArrow Specification](xsd_to_pyarrow_specification.md) and [XML to PyArrow Pipeline Specification](xmltopyarrow_specification.md) for conversion and streaming rules.
 
 Because the XSD path, target `<entry>` tag, `dataset_name`, and `table_name` are pre-configured, these CLIs only require input, output, and destination settings (and accept all standard options documented in [Core Pipeline and KBase CTS Execution Guide](core_cts_execution.md) and [Table and Column Transformations](table_transforms.md)):
 
@@ -45,7 +45,7 @@ When loading directly into the KBase Common Data Model (CDM) relational table st
 
 ### `uniprot_cdm`
 
-[`uniprot_cdm`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/uniprot_kb_cdm.py) converts each `{https://uniprot.org/uniprot}entry` element against [`uniprot.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/uniprot.xsd) and routes rows via [`parsers/uniprot/uniprot_kb.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers/uniprot/uniprot_kb.py) into normalized tables under dataset `uniprot_cdm`:
+[`uniprot_cdm`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/presets/uniprot_cdm.py) converts each `{https://uniprot.org/uniprot}entry` element against [`uniprot.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/uniprot.xsd) and routes rows via [`datasets/uniprot/kb.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/uniprot/kb.py) into normalized tables under dataset `uniprot_cdm`:
 
 | Table Name             | Contents                                                                                                                                                                                                                                                             |
 | :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -66,7 +66,7 @@ uv run uniprot_cdm \
 
 ### `uniref50_cdm`, `uniref90_cdm`, and `uniref100_cdm`
 
-[`uniref50_cdm`, `uniref90_cdm`, and `uniref100_cdm`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/uniref_cdm.py) convert each `{http://uniprot.org/uniref}entry` element against [`uniref.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniref/uniref.xsd) and route rows via [`parsers/uniprot/uniref.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers/uniprot/uniref.py) into normalized tables under datasets `uniref50_cdm`, `uniref90_cdm`, or `uniref100_cdm`:
+[`uniref50_cdm`, `uniref90_cdm`, and `uniref100_cdm`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/presets/uniprot_cdm.py) convert each `{http://uniprot.org/uniref}entry` element against [`uniref.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniref/uniref.xsd) and route rows via [`datasets/uniprot/uniref.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/uniprot/uniref.py) into normalized tables under datasets `uniref50_cdm`, `uniref90_cdm`, or `uniref100_cdm`:
 
 | Table Name      | Contents                                                                                                                                                                        |
 | :-------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -84,11 +84,11 @@ uv run uniref90_cdm \
 
 ---
 
-## 3. UniProt ID Mapping Pipeline (`uniprot_idmapping`)
+## UniProt ID Mapping Pipeline (`uniprot_idmapping`)
 
-[`uniprot_idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/uniprot_idmapping.py) provides a preset XSV pipeline (`UniProtIdMappingSettings`, sharing `run_xsv_pipeline`) for ingesting headerless, tab-delimited UniProt `idmapping.dat` and `idmapping.dat.gz` files validated against [`idmapping.schema.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/idmapping.schema.json).
+[`presets/uniprot_idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/presets/uniprot_idmapping.py) provides a preset XSV pipeline (`UniProtIdMappingSettings`, sharing `run_xsv_pipeline`) for ingesting headerless, tab-delimited UniProt `idmapping.dat` and `idmapping.dat.gz` files validated against [`idmapping.schema.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/idmapping.schema.json).
 
-Each validated `pyarrow.Table` batch passes through two composed `TABLE_TRANSFORMS` steps ([`emit_raw_table`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py) and [`transform_uniprot_id_mapping`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/parsers/uniprot/idmapping.py)), emitting both a raw table and a standardised cross-reference table under dataset `uniprot_idmapping`. Both tables carry explicit PyArrow schemas ([`schemas/uniprot/idmapping/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/schema.py)) and Iceberg hash-bucket partition specs (`bucket(N, "uniprot_id")`, configurable via `--partition-buckets`).
+Each validated `pyarrow.Table` batch passes through two composed `TABLE_TRANSFORMS` steps ([`emit_raw_table`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/routing.py) and [`transform_uniprot_id_mapping`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/uniprot/idmapping.py)), emitting both a raw table and a standardised cross-reference table under dataset `uniprot_idmapping`. Both tables carry PyArrow schemas ([`schemas/uniprot/idmapping/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/schema.py)) and Iceberg hash-bucket partition specs (`bucket(N, "uniprot_id")`, configurable via `--partition-buckets`).
 
 ### Output Tables
 
@@ -111,15 +111,15 @@ uv run uniprot_idmapping \
 
 ---
 
-## 4. Ancillary UniProt Parsers and Schemas
+## Ancillary UniProt Parsers and Schemas
 
 In addition to the ingestion pipelines, `cdm_data_loaders` includes utilities for UniProt release metadata and raw TSV schemas:
 
-- **Metalink Manifest Parser (`cdm_data_loaders.parsers.uniprot.metalink`)**:
+- **Metalink Manifest Parser (`cdm_data_loaders.parsers.uniprot_metalink`)**:
   - `parse_metalink(path)` parses `RELEASE.metalink` XML manifests using `defusedxml`.
   - `generate_data_source_table(path)` extracts dataset provenance (`license`, `publisher`, `resource_type`, `version`).
   - `get_files(path, files_to_find=...)` extracts download URLs, file sizes, and checksums for release files.
-- **Release Notes Parser (`cdm_data_loaders.parsers.uniprot.relnotes`)**:
+- **Release Notes Parser (`cdm_data_loaders.parsers.uniprot_relnotes`)**:
   - `parse_relnotes(path)` parses UniProt `relnotes.txt` files to extract the release version, release date, and entry counts across `UniProtKB`, `UniProtKB/Swiss-Prot`, `UniProtKB/TrEMBL`, `UniRef100`, `UniRef90`, `UniRef50`, and `UniParc`.
 - **ID Mapping TSV Schema (`cdm_data_loaders/schemas/uniprot/idmapping/idmapping.schema.json`)**:
   - JSON Schema with `x-xsv-config` metadata (tab-delimited, headerless, columns `uniprot_id`, `db_reference_type`, `db_reference_id`) used by `uniprot_idmapping` and usable with the generic `xsv` pipeline:

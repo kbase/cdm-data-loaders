@@ -5,10 +5,8 @@ import logging
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
-from cdm_data_loaders.utils.gz import GzSettings, compress_file, compress_files, decompress_file, main
-from tests.helpers import assert_cli_field_roundtrips, assert_no_cli_clashes
+from cdm_data_loaders.utils.gz import compress_file, compress_files, decompress_file
 
 TEMP_FILE_CONTENT = b"Hello, world!\nThis is a test."
 
@@ -232,73 +230,3 @@ def test_decompress_file_skips_existing_decompressed_file(
     assert len(caplog.records) == 1
     assert caplog.records[0].levelno == logging.INFO
     assert f"Found existing file {file_path!s}: skipping decompression" in caplog.records[0].getMessage()
-
-
-def test_gz_settings_pass_no_cli_clashes() -> None:
-    """GzSettings has no CLI argument or shortcut collisions."""
-    assert_no_cli_clashes(GzSettings)
-
-
-@pytest.mark.parametrize(
-    ("field_name", "raw_value", "expected_value"),
-    [
-        ("source", "some/file.txt", Path("some/file.txt")),
-        ("file_glob", "*.txt", "*.txt"),
-    ],
-    ids=["source", "file_glob"],
-)
-def test_gz_settings_pass_cli_field_roundtrips(
-    field_name: str,
-    raw_value: str,
-    expected_value: Path | str,
-) -> None:
-    """Every registered CLI option and shortcut for each GzSettings field roundtrips to the expected value."""
-    assert_cli_field_roundtrips(
-        GzSettings,
-        field_name,
-        raw_value,
-        expected_value,
-        required={"source": "default.txt"},
-    )
-
-
-@pytest.mark.parametrize("source_flag", ["--source", "-i"])
-def test_cli_single_file(tmp_path: Path, source_flag: str) -> None:
-    """Test the CLI with a valid file."""
-    file_path = tmp_path / "single.txt"
-    file_path.write_text("single file content")
-    main([source_flag, str(file_path)])
-    assert (file_path.with_suffix(file_path.suffix + ".gz")).exists()
-
-
-@pytest.mark.parametrize(
-    ("source_flag", "glob_flag"),
-    [
-        ("--source", "--file-glob"),
-        ("-i", "-f"),
-    ],
-    ids=["long_flags", "short_flags"],
-)
-def test_cli_directory_with_glob(tmp_path: Path, source_flag: str, glob_flag: str) -> None:
-    """Test the CLI with a directory and glob pattern."""
-    sub_dir = tmp_path / "sub"
-    sub_dir.mkdir()
-    for name in ["a.txt", "b.log"]:
-        (sub_dir / name).write_text(name)
-    main([source_flag, str(sub_dir), glob_flag, "*.txt"])
-    # Only the .txt file should be gzipped
-    assert (sub_dir / "a.txt.gz").exists()
-    assert not (sub_dir / "b.log.gz").exists()
-
-
-def test_cli_main_nonexistent_source(tmp_path: Path) -> None:
-    """Test the CLI interface with a missing source."""
-    missing = tmp_path / "doesnotexist"
-    with pytest.raises(RuntimeError, match=f"Path {missing} does not exist"):
-        main(["--source", str(missing)])
-
-
-def test_cli_main_missing_source_arg() -> None:
-    """Test the CLI interface when --source is omitted."""
-    with pytest.raises(ValidationError):
-        main([])

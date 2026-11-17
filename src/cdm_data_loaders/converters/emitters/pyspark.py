@@ -25,6 +25,7 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
+from cdm_data_loaders.converters.core.constants import INT32_WIDTH
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
@@ -32,12 +33,12 @@ from cdm_data_loaders.converters.core.ir_values import mutable_value
 from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.emitters._tabular_base import (
     DEFAULT_STRING_FORMATS,
-    INT32_WIDTH,
     _TabularEmitterBase,
     infer_enum_type,
     merge_format_map_with_defaults,
     resolve_logical_decimal,
 )
+from cdm_data_loaders.converters.exceptions.emitters.pyspark import PySparkEmitterError
 
 DEFAULT_FORMAT_MAP: Final[frozendict[str, DataType]] = frozendict(
     {
@@ -66,10 +67,6 @@ ENUM_TYPE_MAP: Final[frozendict[str, DataType]] = frozendict(
 def merge_format_map(value: object) -> object:
     """Validate format overrides and merge them into the built-in mapping."""
     return merge_format_map_with_defaults(value, DEFAULT_FORMAT_MAP, DataType, "PySpark")
-
-
-class PySparkEmitterError(ConversionError):
-    """A typed schema cannot be represented by the configured Spark policy."""
 
 
 class PySparkEmitter(_TabularEmitterBase[DataType]):
@@ -160,20 +157,21 @@ class PySparkEmitter(_TabularEmitterBase[DataType]):
         key_type: DataType,
         value_type: DataType,
         *,
-        value_nullable: bool,  # noqa: ARG002
+        value_nullable: bool,
     ) -> MapType:
+        del value_nullable
         return MapType(key_type, value_type, valueContainsNull=True)
 
     def _array_type(
         self,
         element_type: DataType,
         *,
-        element_nullable: bool,  # noqa: ARG002
+        element_nullable: bool,
     ) -> ArrayType:
+        del element_nullable
         return ArrayType(element_type, containsNull=True)
 
-    @staticmethod
-    def _emit_logical(node: TypedNode) -> DataType | None:
+    def _emit_logical(self, node: TypedNode) -> DataType | None:
         """Preserve physical widths and logical source types without a JSON encoding."""
         if node.provenance is not None and node.provenance.source == "json-schema":
             return None

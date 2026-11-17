@@ -4,7 +4,7 @@ from typing import Any, Final
 
 import pyarrow as pa
 
-from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
+from cdm_data_loaders.core.md5_preprocessor import validate_md5_sidecar
 from cdm_data_loaders.core.registry import FilePreprocessFn, RecordTransformFn
 
 FILE_PREPROCESSORS: tuple[FilePreprocessFn, ...] = (validate_md5_sidecar,)

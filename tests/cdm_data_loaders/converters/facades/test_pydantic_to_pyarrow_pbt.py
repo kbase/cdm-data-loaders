@@ -34,10 +34,10 @@ from pydantic import (
     SecretStr,
 )
 
-from cdm_data_loaders.coercion.pydantic import (
-    _comparable_sort_key,
-    _to_jsonable_recursive,
-    coerce_record_for_pyarrow,
+from cdm_data_loaders.coercion._arrow_core import comparable_sort_key
+from cdm_data_loaders.coercion.pydantic_to_arrow import (
+    coerce_pydantic_record_for_pyarrow,
+    to_jsonable_recursive,
 )
 from cdm_data_loaders.converters.exceptions.facades.pydantic_to_pyarrow import (
     RecursiveNonJsonTypeError,
@@ -46,15 +46,15 @@ from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import (
     PydanticToPyArrow,
     generate_pyarrow_schema,
 )
-from cdm_data_loaders.converters.readers.pydantic import (
+from cdm_data_loaders.converters.sources.pydantic.annotations import (
     BASE64_BYTES_MARKERS,
     NAIVE_DATETIME_MARKERS,
-    _collect_meta_items,
-    _ensure_model_complete,
+    collect_meta_items,
 )
-from tests.conftest import BASE_DIR
-from tests.converter_spec import Case, Run, load_cases
-from tests.pyarrow_pbt_helpers import (
+from cdm_data_loaders.converters.sources.pydantic.model_synthesis import ensure_model_complete
+from specs._loader.converter_spec import Case, Run, load_cases
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_pbt import (
     INT64_MAX,
     INT64_MIN,
     MAX_SAFE_DATE,
@@ -66,7 +66,7 @@ from tests.pyarrow_pbt_helpers import (
     safe_text_strategy,
     stripped_text_strategy,
 )
-from tests.pyarrow_spec_helpers import load_fixture_attr
+from tests.helpers.pyarrow_spec import load_fixture_attr
 
 PYDANTIC_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "pydantic_to_pyarrow").resolve()
 CASES: Final[tuple[Case, ...]] = tuple(
@@ -141,11 +141,11 @@ def _unwrap_annotation(annotation: Any, extra_meta: list[Any] | None = None) -> 
         if get_origin(cur) is Annotated:
             args = get_args(cur)
             cur = args[0]
-            collected.extend(_collect_meta_items(args[1:]))
+            collected.extend(collect_meta_items(args[1:]))
             continue
         break
     if extra_meta:
-        collected.extend(_collect_meta_items(extra_meta))
+        collected.extend(collect_meta_items(extra_meta))
 
     if cur is str and any(any(m is item or m == item for m in BASE64_STR_MARKERS) for item in collected):
         cur = Base64Str
@@ -412,7 +412,7 @@ def _base_model_dict_strategy(
     :return: Hypothesis strategy yielding raw dicts (or unwrapped root values).
     :rtype: SearchStrategy[Any]
     """
-    _ensure_model_complete(model_cls)
+    ensure_model_complete(model_cls)
     if issubclass(model_cls, RootModel):
         root_annotation = model_cls.model_fields["root"].annotation
         return _annotation_strategy(root_annotation, None, model_counts, max_depth)
@@ -482,7 +482,7 @@ def pydantic_raw_inputs_for_model(model_cls: type[BaseModel], *, max_depth: int 
 @pytest.mark.pbt
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
 @given(data=st.data())
-def test_coerce_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, data: st.DataObject) -> None:
+def test_coerce_pydantic_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, data: st.DataObject) -> None:
     """Generated inputs for every Pydantic spec/example model validate, coerce, and round-trip through Parquet."""
     model_cls = _load_model_class(case.schema)
     depth = int(run.params.get("max_recursion_depth", 2))
@@ -492,8 +492,8 @@ def test_coerce_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, data: st
     raw_input = data.draw(pydantic_raw_inputs_for_model(model_cls, max_depth=depth + 1))
     validated_instance = model_cls.model_validate(raw_input)
 
-    row_from_dict = coerce_record_for_pyarrow(raw_input, pa_schema, model=model_cls, by_alias=by_alias)
-    row_from_model = coerce_record_for_pyarrow(validated_instance, pa_schema, by_alias=by_alias)
+    row_from_dict = coerce_pydantic_record_for_pyarrow(raw_input, pa_schema, model=model_cls, by_alias=by_alias)
+    row_from_model = coerce_pydantic_record_for_pyarrow(validated_instance, pa_schema, by_alias=by_alias)
 
     assert row_from_dict == row_from_model
     assert_coerced_rows_roundtrip([row_from_model], pa_schema)
@@ -508,11 +508,11 @@ def test_coerce_record_for_pyarrow_pbt_spec_cases(case: Case, run: Run, data: st
     )
 )
 def test_set_coercion_sort_key_pbt_deterministic(items: list[int | str | None]) -> None:
-    """_comparable_sort_key sorts heterogeneous and nullable set elements deterministically without TypeError."""
+    """comparable_sort_key sorts heterogeneous and nullable set elements without TypeError."""
     unique_items = list(dict.fromkeys(items))
     reversed_items = unique_items[::-1]
-    sorted_forward = sorted(unique_items, key=_comparable_sort_key)
-    sorted_reverse = sorted(reversed_items, key=_comparable_sort_key)
+    sorted_forward = sorted(unique_items, key=comparable_sort_key)
+    sorted_reverse = sorted(reversed_items, key=comparable_sort_key)
     assert sorted_forward == sorted_reverse
     if None in unique_items:
         assert sorted_forward[-1] is None
@@ -521,18 +521,18 @@ def test_set_coercion_sort_key_pbt_deterministic(items: list[int | str | None]) 
 @pytest.mark.pbt
 @given(data=st.data(), depth=st.integers(min_value=1, max_value=3))
 def test_to_jsonable_recursive_pbt_always_serializable(data: st.DataObject, depth: int) -> None:
-    """_to_jsonable_recursive converts arbitrary RecursiveCladeRecord instances into valid JSON structures."""
+    """to_jsonable_recursive converts arbitrary RecursiveCladeRecord instances into valid JSON structures."""
     schema_path = PYDANTIC_DATA_DIR / "spec" / "10_bounded_recursion" / "schema.py"
     model_cls = _load_model_class(schema_path)
     raw_input = data.draw(pydantic_raw_inputs_for_model(model_cls, max_depth=depth + 2))
     instance = model_cls.model_validate(raw_input)
 
-    jsonable = _to_jsonable_recursive(instance)
+    jsonable = to_jsonable_recursive(instance)
     encoded = json.dumps(jsonable)
     assert isinstance(json.loads(encoded), dict)
 
     pa_schema = generate_pyarrow_schema(model_cls, max_recursion_depth=depth)
-    row = coerce_record_for_pyarrow(instance, pa_schema)
+    row = coerce_pydantic_record_for_pyarrow(instance, pa_schema)
     assert_coerced_rows_roundtrip([row], pa_schema)
 
 

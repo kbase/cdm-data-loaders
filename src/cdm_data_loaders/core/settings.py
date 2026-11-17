@@ -2,16 +2,14 @@
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Any, Final
+from typing import Any, Final
 
 from frozendict import frozendict
-from pydantic import AliasChoices, AliasPath, Field, computed_field
+from pydantic import AliasChoices, AliasPath, computed_field
 from pydantic.fields import FieldInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
 from cdm_data_loaders.core.fields import (
-    DEFAULT_XML_FILE_GLOB,
-    FILE_GLOB,
     FILE_LISTING_FILE_NAME,
     INPUT_DIR,
     LOADER_FILE_FORMAT,
@@ -23,21 +21,17 @@ from cdm_data_loaders.core.fields import (
     BufferSize,
     DatasetName,
     DltDevMode,
-    FileGlob,
     LoaderFileFormat,
     LogConfigFile,
     LogInterval,
-    TableName,
     UseDestination,
     UseOutputDirForPipelineMetadata,
-    XmlTag,
-    file_glob_description,
 )
 from cdm_data_loaders.core.path_fields import InputDir, LocalOutputDir
-from cdm_data_loaders.core.transforms import TransformSettingsMixin, uses_pyarrow_format
+from cdm_data_loaders.core.transforms.settings_mixin import uses_pyarrow_format
 
 # cli_parse_args stays disabled so instantiating settings in Python never reads sys.argv
-DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
+DEFAULT_SETTINGS_CONFIG_DICT: Final[frozendict[str, Any]] = frozendict(
     {
         "cli_exit_on_error": False,
         "cli_ignore_unknown_args": False,
@@ -48,7 +42,7 @@ DEFAULT_SETTINGS_CONFIG_DICT = frozendict(
     }
 )
 
-CLI_SHORTCUTS: frozendict[str, str] = frozendict(
+CLI_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
     {
         INPUT_DIR: "i",
         OUTPUT_DIR: "o",
@@ -56,16 +50,10 @@ CLI_SHORTCUTS: frozendict[str, str] = frozendict(
         USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: "p",
     }
 )
-FILE_FORMAT_CLI_SHORTCUTS: frozendict[str, str] = frozendict(
+FILE_FORMAT_CLI_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
     {
         **CLI_SHORTCUTS,
         LOADER_FILE_FORMAT: "f",
-    }
-)
-XML_CLI_SHORTCUTS: frozendict[str, str] = frozendict(
-    {
-        **FILE_FORMAT_CLI_SHORTCUTS,
-        FILE_GLOB: "g",
     }
 )
 
@@ -78,8 +66,16 @@ def default_settings_with_shortcuts(
     cli_prog_name: str | None = None,
     cli_shortcuts: dict[str, str | list[str]] | frozendict[str, str | list[str]] | None = None,
 ) -> SettingsConfigDict:
-    """Build a SettingsConfigDict with the default settings config and the given CLI shortcuts."""
-    extra_args = {}
+    """Build a ``SettingsConfigDict`` with default settings config and optional CLI shortcuts.
+
+    :param cli_prog_name: console-script program name
+    :type cli_prog_name: str | None
+    :param cli_shortcuts: field-to-shortcut flag mapping
+    :type cli_shortcuts: dict[str, str | list[str]] | frozendict[str, str | list[str]] | None
+    :return: configured ``SettingsConfigDict``
+    :rtype: SettingsConfigDict
+    """
+    extra_args: dict[str, Any] = {}
     if cli_prog_name is not None:
         extra_args["cli_prog_name"] = cli_prog_name
     if cli_shortcuts is not None:
@@ -94,12 +90,28 @@ def select_cli_shortcuts(
     *keys: str,
     base: Mapping[str, str] = FILE_FORMAT_CLI_SHORTCUTS,
 ) -> dict[str, str]:
-    """Merge ``base`` shortcuts with the subset of ``shortcuts`` matching ``keys``."""
+    """Merge ``base`` shortcuts with the subset of ``shortcuts`` matching ``keys``.
+
+    :param shortcuts: extra shortcut mapping
+    :type shortcuts: Mapping[str, str]
+    :param keys: field keys selected from ``shortcuts``
+    :type keys: str
+    :param base: base shortcut mapping
+    :type base: Mapping[str, str]
+    :return: merged shortcut mapping
+    :rtype: dict[str, str]
+    """
     return {**base, **{k: shortcuts[k] for k in keys if k in shortcuts}}
 
 
 def _alias_names(alias: str | AliasChoices | AliasPath | None) -> set[str]:
-    """Top-level names introduced by a field alias or validation alias."""
+    """Return top-level names introduced by a field alias or validation alias.
+
+    :param alias: Pydantic alias specification
+    :type alias: str | AliasChoices | AliasPath | None
+    :return: set of top-level string alias names
+    :rtype: set[str]
+    """
     if alias is None:
         return set()
     if isinstance(alias, str):
@@ -110,45 +122,57 @@ def _alias_names(alias: str | AliasChoices | AliasPath | None) -> set[str]:
 
 
 class CdmDataLoadersBase(BaseSettings):
-    """Base for all CDM Data Loaders settings classes.
-
-    - Sets up some basic CLI parsing defaults
-    - Adds a class method to check for conflicting aliases
-    """
+    """Base for all CDM Data Loaders settings classes."""
 
     model_config = SettingsConfigDict(**DEFAULT_SETTINGS_CONFIG_DICT)
 
     @classmethod
-    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
-        """Validate the subclass's cli shortcuts and aliases."""
-        super().__pydantic_init_subclass__(**kwargs)
+    def __pydantic_init_subclass__(cls, **kwargs: object) -> None:
+        """Validate the subclass's CLI shortcuts and aliases.
+
+        :param kwargs: subclass keyword arguments forwarded to ``BaseSettings``
+        :type kwargs: object
+        :return: ``None``
+        :rtype: None
+        """
+        super().__pydantic_init_subclass__(**kwargs)  # pyright: ignore[reportArgumentType]
         cls.check_aliases()
 
     @classmethod
     def _cli_name(cls, name: str) -> str:
-        """Get the CLI argument name pydantic-settings registers for a field or alias name."""
+        """Return the CLI argument name ``pydantic-settings`` registers for ``name``.
+
+        :param name: field or alias name
+        :type name: str
+        :return: kebab-case or raw CLI argument name
+        :rtype: str
+        """
         return name.replace("_", "-") if cls.model_config.get("cli_kebab_case") else name
 
     @classmethod
     def _field_cli_names(cls, field_name: str, field_info: FieldInfo) -> set[str]:
-        """CLI argument names a field may register: its name plus any aliases.
+        """Return CLI argument names a field registers from its name and aliases.
 
-        Deliberately over-inclusive -- reserving a name that is never registered can only cause
-        a false positive, never a missed collision.
+        :param field_name: field attribute name
+        :type field_name: str
+        :param field_info: Pydantic field descriptor
+        :type field_info: FieldInfo
+        :return: set of normalized CLI argument names
+        :rtype: set[str]
         """
         names = {field_name} | _alias_names(field_info.alias) | _alias_names(field_info.validation_alias)
         return {cls._cli_name(name) for name in names}
 
     @classmethod
     def check_aliases(cls) -> None:
-        """Raise `SettingsError` if the class's CLI argument names or shortcuts are invalid or collide.
+        """Raise ``SettingsError`` if CLI argument names or shortcuts are invalid or collide.
 
-        pydantic-settings silently drops shortcuts whose target does not match a registered argument
-        name, and silently drops any name already registered by an earlier argument, so both are
-        checked here. Names differing only in '_' vs '-' are treated as the same name.
+        :return: ``None``
+        :rtype: None
+        :raises SettingsError: if any CLI name or shortcut is invalid, reserved, or collides
         """
         owners: dict[str, str] = {}
-        errors = []
+        errors: list[str] = []
 
         def claim(name: str, owner: str, errors: list[str]) -> None:
             key = name.replace("_", "-")
@@ -225,10 +249,10 @@ class CtsSettings(InputLocalOutputSettings):
     @computed_field
     @property
     def pipeline_dir(self) -> Path | None:
-        """Custom directory to save pipeline metadata to.
+        """Return custom directory for pipeline metadata, or ``None`` for the ``dlt`` default.
 
-        If use_output_dir_for_pipeline_metadata is true, this is ``<output_dir>/<PIPELINE_DIR_NAME>``;
-        otherwise None, and dlt uses its default.
+        :return: ``<output_dir>/<PIPELINE_DIR_NAME>`` when enabled, else ``None``
+        :rtype: Path | None
         """
         if self.use_output_dir_for_pipeline_metadata:
             return self.output_dir / PIPELINE_DIR_NAME
@@ -237,10 +261,10 @@ class CtsSettings(InputLocalOutputSettings):
     @computed_field
     @property
     def report_path(self) -> Path:
-        """Path to the report file.
+        """Return path to ``report.txt`` in ``pipeline_dir`` or ``output_dir``.
 
-        If use_output_dir_for_pipeline_metadata is true, the report is saved in the pipelines dir;
-        Otherwise, it is saved directly to the output directory.
+        :return: path to ``report.txt``
+        :rtype: Path
         """
         if self.pipeline_dir:
             return self.pipeline_dir / REPORT_FILE_NAME
@@ -249,10 +273,7 @@ class CtsSettings(InputLocalOutputSettings):
     @computed_field
     @property
     def file_listing_path(self) -> Path:
-        """Path to the file listing output file.
-
-        If ``use_output_dir_for_pipeline_metadata`` is true, the listing is saved in ``pipeline_dir``;
-        otherwise, it is saved to ``output_dir``.
+        """Return path to ``file_listing.txt`` in ``pipeline_dir`` or ``output_dir``.
 
         :return: path to ``file_listing.txt``
         :rtype: Path
@@ -272,26 +293,9 @@ class FileFormatIngestSettings(CtsSettings):
 
     @property
     def use_pyarrow(self) -> bool:
-        """Return whether this pipeline yields ``pyarrow.Table`` pages instead of row dicts."""
+        """Return whether this pipeline yields ``pyarrow.Table`` pages instead of row dicts.
+
+        :return: ``True`` when PyArrow page output is enabled
+        :rtype: bool
+        """
         return uses_pyarrow_format(self)
-
-
-class XmlIngestSettings(FileFormatIngestSettings):
-    """Configuration for DLT pipelines that import XML files."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=XML_CLI_SHORTCUTS)
-
-    file_glob: Annotated[
-        FileGlob,
-        Field(
-            default=DEFAULT_XML_FILE_GLOB,
-            description=file_glob_description("Glob pattern for XML files"),
-        ),
-    ]
-
-
-class SingleTableXmlIngestSettings(XmlIngestSettings, TransformSettingsMixin):
-    """Configuration for DLT pipelines that import XML elements into a single target table."""
-
-    table_name: TableName
-    xml_tag: XmlTag

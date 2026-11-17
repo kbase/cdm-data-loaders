@@ -1,5 +1,5 @@
 # Rule catalogue for the XML to Dict ingestion pipeline
-# (cdm_data_loaders.pipelines.xmltodict.pipeline & cdm_data_loaders.readers.xml).
+# (cdm_data_loaders.pipelines.xmltodict.pipeline and cdm_data_loaders.readers.xml).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/xmltodict_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
@@ -12,7 +12,7 @@ pipeline_runner: cdm_data_loaders.pipelines.xmltodict.pipeline.run_xmltodict_pip
 intro: |
   This document specifies how the **XML to Dict ingestion pipeline**
   (`cdm_data_loaders.pipelines.xmltodict.pipeline`, `cdm_data_loaders.pipelines.xmltodict.settings.XmlToDictSettings`,
-  and `cdm_data_loaders.readers.xml.process_xml_file_to_dict`) discovers, pre-processes, streams, parses, transforms,
+  and `cdm_data_loaders.pipelines.xmltodict.processors.process_xml_file_to_dict`) discovers, pre-processes, streams, parses, transforms,
   and loads XML (`.xml` and `.xml.gz`) files without an XSD schema:
 
   1. **Target selection, file discovery, `.gz` decompression, and file pre-processing** (`XmlToDictSettings`, `build_per_file_filesystem_resource`, `REJECTED_PYARROW_SCHEMA`).

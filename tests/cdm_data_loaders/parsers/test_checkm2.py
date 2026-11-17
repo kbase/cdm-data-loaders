@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from cdm_data_loaders.parsers.checkm2 import get_checkm2_data
-from tests.cdm_data_loaders.parsers.conftest import RESULTS
+from tests.cdm_data_loaders.parsers._helpers import RESULTS
 
 
 def test_get_checkm2_data_empty(tmp_path: Path) -> None:

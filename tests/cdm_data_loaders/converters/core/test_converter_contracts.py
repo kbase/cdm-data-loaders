@@ -10,7 +10,15 @@ from pyspark.sql.types import ArrayType, DataType, DoubleType, LongType, NullTyp
 
 from cdm_data_loaders.converters.core.errors import ConversionError, build_error_by_code
 from cdm_data_loaders.converters.core.inference import decimal_places, infer_implicit_type
-from cdm_data_loaders.converters.facades import dlt_to_jsonschema as reverse_module
+from cdm_data_loaders.converters.exceptions.facades.dlt_to_jsonschema import DltToJSONSchemaError
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_dlt import (
+    InvalidJSONSchemaError as InvalidDltSchemaError,
+)
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_dlt import JSONSchemaToDltError
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyspark import (
+    InvalidJSONSchemaError as InvalidPySparkSchemaError,
+)
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyspark import JSONSchemaToPySparkError
 from cdm_data_loaders.converters.facades import jsonschema_to_dlt as dlt_module
 from cdm_data_loaders.converters.facades import jsonschema_to_pyspark as spark_module
 
@@ -27,11 +35,11 @@ def property_schema(fragment: dict[str, Any]) -> dict[str, Any]:
 @pytest.mark.parametrize(
     "error",
     [
-        dlt_module.JSONSchemaToDltError,
-        dlt_module.InvalidJSONSchemaError,
-        spark_module.JSONSchemaToPySparkError,
-        spark_module.InvalidJSONSchemaError,
-        reverse_module.DltToJSONSchemaError,
+        JSONSchemaToDltError,
+        InvalidDltSchemaError,
+        JSONSchemaToPySparkError,
+        InvalidPySparkSchemaError,
+        DltToJSONSchemaError,
     ],
     ids=["dlt", "invalid-dlt", "pyspark", "invalid-pyspark", "reverse-dlt"],
 )
@@ -47,10 +55,10 @@ def test_conversion_error_pass_shared_base(error: type[ConversionError]) -> None
     [
         (
             dlt_module.JSONSchemaToDlt(schema_name="test"),
-            dlt_module.InvalidJSONSchemaError,
-            spark_module.InvalidJSONSchemaError,
+            InvalidDltSchemaError,
+            InvalidPySparkSchemaError,
         ),
-        (spark_module.JSONSchemaToPySpark(), spark_module.InvalidJSONSchemaError, dlt_module.InvalidJSONSchemaError),
+        (spark_module.JSONSchemaToPySpark(), InvalidPySparkSchemaError, InvalidDltSchemaError),
     ],
     ids=["dlt", "pyspark"],
 )
@@ -174,7 +182,7 @@ def test_convert_type_fail_strict_pyspark_fallback(schema: dict[str, Any]) -> No
     permissive = spark_module.JSONSchemaToPySpark()
     strict = spark_module.JSONSchemaToPySpark(treat_unknown_as_string=False)
     assert permissive.convert(document)["value"].dataType == StringType()
-    with pytest.raises(spark_module.JSONSchemaToPySparkError):
+    with pytest.raises(JSONSchemaToPySparkError):
         strict.convert(document)
 
 

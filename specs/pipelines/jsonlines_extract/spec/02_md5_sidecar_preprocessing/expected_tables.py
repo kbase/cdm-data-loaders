@@ -2,7 +2,7 @@
 
 import pyarrow as pa
 
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 
 EVENTS_SCHEMA = pa.schema(
     [

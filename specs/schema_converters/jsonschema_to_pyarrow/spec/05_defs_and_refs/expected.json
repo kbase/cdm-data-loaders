@@ -4,7 +4,8 @@
         "published_on": "2025-07-01",
         "lead_author": {
             "name": "Ada Lovelace",
-            "orcid": "0000-0001-2345-6789"
+            "orcid": "0000-0001-2345-6789",
+            "affiliation": "Analytical Engine Lab"
         },
         "reviewer": {
             "name": "Grace Hopper"
@@ -19,8 +20,8 @@
     {
         "doc_id": "doc2",
         "lead_author": {
-            "name": "Barbara Liskov"
+            "name": "Barbara Liskov",
+            "affiliation": "MIT CSAIL"
         }
     }
 ]
-

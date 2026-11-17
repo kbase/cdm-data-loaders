@@ -3,13 +3,10 @@
 from typing import Any, ClassVar, Literal
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.io import JsonSchemaConverterBase
-from cdm_data_loaders.converters.emitters.json_schema import JsonSchemaEmitter
-from cdm_data_loaders.converters.readers.dlt import DltReader
-
-
-class DltToJSONSchemaError(ConversionError):
-    """Raised when a dlt schema construct cannot be converted."""
+from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
+from cdm_data_loaders.converters.exceptions.facades.dlt_to_jsonschema import DltToJSONSchemaError
+from cdm_data_loaders.converters.facades._base import JsonSchemaConverterBase
+from cdm_data_loaders.converters.sources.dlt import DltReader
 
 
 class DltToJSONSchema(JsonSchemaConverterBase[dict[str, dict[str, Any]]]):

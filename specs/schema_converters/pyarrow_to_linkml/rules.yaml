@@ -1,6 +1,6 @@
 # Rule catalogue for the PyArrow -> LinkML converter
 # (cdm_data_loaders.converters.facades.pyarrow_to_linkml: generate_linkml_schema, generate_linkml_yaml;
-#  cdm_data_loaders.coercion.pyarrow: serialize_table_for_linkml, serialize_record_for_linkml).
+#  cdm_data_loaders.coercion.arrow_to_records: serialize_table_for_linkml, serialize_record_for_linkml).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/pyarrow_to_linkml_specification.md, rendered via docs_macros and docs/_templates/pages/converter_spec.md.j2.

@@ -1,4 +1,4 @@
-"""Unit and rendering tests for ``docs_macros.dlt_nested_output_context`` and ``docs/dlt_nested_output_behaviour.md``."""
+"""Unit and rendering tests for ``docs_macros.tables.dlt_nested`` and ``docs/dlt_nested_output_behaviour.md``."""
 
 import markdown
 import pyarrow as pa
@@ -16,18 +16,20 @@ from pyiceberg.types import (
 )
 
 from docs_macros.constants import DOCS_DIR
-from docs_macros.dlt_nested_output_context import (
+from docs_macros.tables.dlt_nested import (
     build_dlt_nested_placement_rows,
     build_dlt_nested_single_table_column_rows,
     build_dlt_unnested_table_rows,
+    summarize_json_value_sample,
+)
+from docs_macros.tables.dlt_shared import (
     format_arrow_schema_fields,
     format_compact_arrow_type,
     format_compact_iceberg_type,
     format_iceberg_schema_fields,
-    summarize_json_value_sample,
 )
-from docs_macros.tables_context import TABLE_TEMPLATE_REGISTRY
-from tests.dependencies.test_dlt_nested_output_behaviour import (
+from docs_macros.tables.registry import TABLE_TEMPLATE_REGISTRY
+from specs._loader.dlt_contracts import (
     ALL_NESTING_PLACEMENTS,
     EXPECTED_ARROW_SCHEMA_DICT_NESTING_0,
     EXPECTED_DLT_COLUMNS_DICT_UNNESTED,

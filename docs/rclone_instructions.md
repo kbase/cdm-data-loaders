@@ -89,7 +89,7 @@ rclone sync \
   lakehouse:cdm-lake/users-general-warehouse/<username>/pdb/raw_data/06/
 ```
 
-Verify the synced objects with `rclone ls` (or [`scripts/s3_local.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/s3_local.py) when testing against a local S3 endpoint):
+Verify the synced objects with `rclone ls` (or `aws s3 ls ...` when testing against a local S3 endpoint):
 
 ```sh
 rclone ls lakehouse:cdm-lake/users-general-warehouse/<username>/pdb/raw_data/06/

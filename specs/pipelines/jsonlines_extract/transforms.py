@@ -4,7 +4,7 @@ from typing import Any, Final
 
 import pyarrow as pa
 
-from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
+from cdm_data_loaders.core.md5_preprocessor import validate_md5_sidecar
 from cdm_data_loaders.core.registry import FilePreprocessFn, RecordTransformFn
 
 HIGH_LATENCY_MS: Final[int] = 100
@@ -16,6 +16,9 @@ EVENTS_SUMMARY_SCHEMA: Final[pa.Schema] = pa.schema(
         pa.field("event_id", pa.string(), nullable=False),
         pa.field("service", pa.string(), nullable=False),
         pa.field("latency_ms", pa.int64(), nullable=False),
+        pa.field("cost_usd", pa.decimal128(6, 2), nullable=False),
+        pa.field("occurred_at", pa.timestamp("us", tz="UTC"), nullable=False),
+        pa.field("payload", pa.large_binary(), nullable=True),
         pa.field("is_slow", pa.bool_(), nullable=False),
     ]
 )
@@ -40,17 +43,17 @@ def transform_event(row: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         return {}
     event_id = str(row["event_id"]).upper()
     service = str(row["service"]).lower()
-    latency_ms = int(row["latency_ms"])
-    routed: dict[str, list[dict[str, Any]]] = {
-        "events": [
-            {
-                "event_id": event_id,
-                "service": service,
-                "latency_ms": latency_ms,
-                "is_slow": latency_ms >= HIGH_LATENCY_MS,
-            }
-        ]
+    summary_row: dict[str, Any] = {
+        "event_id": event_id,
+        "service": service,
+        "latency_ms": row["latency_ms"],
+        "cost_usd": row["cost_usd"],
+        "occurred_at": row["occurred_at"],
+        "is_slow": int(row["latency_ms"]) >= HIGH_LATENCY_MS,
     }
+    if row.get("payload_b64") is not None:
+        summary_row["payload"] = row["payload_b64"]
+    routed: dict[str, list[dict[str, Any]]] = {"events": [summary_row]}
     tags = row.get("tags") or []
     if tags:
         routed["event_tags"] = [{"event_id": event_id, "tag": str(tag)} for tag in tags]

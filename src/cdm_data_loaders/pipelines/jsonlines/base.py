@@ -18,22 +18,22 @@ from dlt.common.typing import TDataItems
 from dlt.extract.resource import DltResource
 from pydantic import BaseModel
 
-from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
+from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
 from cdm_data_loaders.core.filesystem import build_file_ingest_kwargs, build_filesystem_resource
 from cdm_data_loaders.core.registry import (
     RegistryKey,
 )
-from cdm_data_loaders.core.transforms import RecordCoercerFn
-from cdm_data_loaders.pipelines.core import (
+from cdm_data_loaders.core.transforms.routing import RecordCoercerFn
+from cdm_data_loaders.pipelines.jsonlines.routing import make_page_router
+from cdm_data_loaders.pipelines.runner import (
     DEFAULT_SCHEMA_CONTRACT,
     run_pipeline,
 )
-from cdm_data_loaders.readers.jsonlines import (
+from cdm_data_loaders.readers.jsonl import (
     ParseErrorResolver,
-    make_page_router,
     stream_jsonl_lines,
 )
-from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
+from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 
 ResourceFactory = Callable[[str, Any, Any], DltResource]
 
@@ -49,7 +49,7 @@ def build_entity_resource(
     resolve_error: ParseErrorResolver,
     *,
     transform_valid: Callable[[Any], Any] | None = None,
-    record_coercer: RecordCoercerFn = coerce_record_for_pyarrow,
+    record_coercer: RecordCoercerFn = coerce_json_record_for_pyarrow,
 ) -> DltResource:
     """Read plain or gzip JSONL files for one entity and route validated pages.
 

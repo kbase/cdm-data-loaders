@@ -2,14 +2,18 @@
 
 import base64
 import hashlib
+import re
 from dataclasses import dataclass
 from logging import Logger, getLogger
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import IO, Any, Final, Protocol, runtime_checkable
 
 from awscrt.checksums import crc64nvme as _crc64nvme
 
 HASH_CHUNK_BYTES: Final[int] = 1 << 20
+
+MD5_BSD_RE: Final[re.Pattern[str]] = re.compile(r"^MD5\s*\(.+\)\s*=\s*(?P<digest>[0-9a-fA-F]{32})$")
+MD5_GNU_OR_BARE_RE: Final[re.Pattern[str]] = re.compile(r"^(?P<digest>[0-9a-fA-F]{32})(?:\s+\*?.+)?$")
 
 # Algorithms handled outside hashlib but exposed through the same interface.
 EXTRA_ALGORITHMS = frozenset({"crc64nvme"})
@@ -235,10 +239,65 @@ def new_hasher(algorithm: str, include_extras: bool = True) -> Hasher:  # noqa: 
     :type algorithm: str
     :param include_extras: whether to include the non-hashlib algorithms, defaults to True
     :type include_extras: bool, optional
-    :return: _description_
+    :return: initialized hasher instance
     :rtype: Hasher
     """
     algorithm = validate_checksum_fn(algorithm, include_extras=include_extras)
     if algorithm == "crc64nvme":
         return Crc64NvmeHasher()
     return hashlib.new(algorithm)
+
+
+def parse_md5_sidecar(
+    content: str,
+    source_file: str,
+    *,
+    error_cls: type[Exception] = ValueError,
+) -> str:
+    """Extract the 32-character hex MD5 digest from sidecar file text.
+
+    Supports BSD/NCBI format (``MD5(file.xml.gz)= <hex>``), GNU ``md5sum`` format
+    (``<hex>  file.xml.gz`` or ``<hex> *file.xml.gz``), and bare 32-character hex digests.
+
+    :param content: raw text content of the ``.md5`` sidecar file
+    :type content: str
+    :param source_file: relative path of the data file being validated
+    :type source_file: str
+    :param error_cls: exception class to raise when ``content`` is empty or malformed
+    :type error_cls: type[Exception]
+    :return: lowercase 32-character hexadecimal MD5 digest
+    :rtype: str
+    :raises Exception: instance of ``error_cls`` if ``content`` is empty or invalid
+    """
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = MD5_BSD_RE.match(line) or MD5_GNU_OR_BARE_RE.match(line)
+        if match is not None:
+            return match.group("digest").lower()
+        msg = f"Invalid MD5 sidecar content for {source_file}: {line!r}"
+        raise error_cls(msg)
+
+    msg = f"Empty MD5 sidecar file for {source_file}"
+    raise error_cls(msg)
+
+
+def parse_md5_checksums_file(text: str) -> dict[PurePosixPath, str]:
+    """Parse an ``md5checksums.txt`` file into a relative-path-to-MD5 mapping.
+
+    Each entry line uses the two-space GNU format ``<md5>  ./<filename>`` or ``<md5>  <filename>``.
+
+    :param text: raw text of the ``md5checksums.txt`` file
+    :type text: str
+    :return: dictionary mapping ``PurePosixPath`` relative file path to MD5 hex digest
+    :rtype: dict[PurePosixPath, str]
+    """
+    expected_columns = 2
+    checksums: dict[PurePosixPath, str] = {}
+    for raw_line in text.strip().splitlines():
+        parts = raw_line.strip().split("  ", maxsplit=1)
+        if len(parts) == expected_columns:
+            md5_hash, filename = parts
+            checksums[PurePosixPath(filename.removeprefix("./"))] = md5_hash.strip()
+    return checksums

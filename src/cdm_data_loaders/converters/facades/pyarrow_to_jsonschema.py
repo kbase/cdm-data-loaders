@@ -5,17 +5,22 @@ from pathlib import Path
 from typing import Any, cast
 
 import pyarrow as pa
-from pydantic import BaseModel, ConfigDict, InstanceOf
+from pydantic import BaseModel, ConfigDict, Field, InstanceOf
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionRegistry
-from cdm_data_loaders.converters.emitters.json_schema import JsonSchemaEmitter
+from cdm_data_loaders.converters.core.extensions import (
+    DEFAULT_EXTENSIONS,
+    ExtensionError,
+    ExtensionRegistry,
+    default_extension_registry,
+)
+from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
 from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_jsonschema import (
     ERROR_BY_CODE,
     InvalidPyArrowSchemaError,
     PyArrowToJSONSchemaError,
 )
-from cdm_data_loaders.converters.readers.pyarrow import PyArrowReader
+from cdm_data_loaders.converters.sources.pyarrow import PyArrowReader
 
 
 def _reader(
@@ -181,7 +186,7 @@ class PyArrowToJSONSchema(BaseModel):
     schema_name: str | None = None
     schema_id: str | None = None
     include_pyarrow_metadata: bool = True
-    extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
+    extension_registry: InstanceOf[ExtensionRegistry] = Field(default_factory=default_extension_registry)
 
     def _emit_schema(
         self,

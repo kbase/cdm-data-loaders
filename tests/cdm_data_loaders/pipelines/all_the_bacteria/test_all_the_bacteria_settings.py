@@ -6,10 +6,10 @@ import pytest
 from frozendict import frozendict
 from pydantic import ValidationError
 
-from cdm_data_loaders.pipelines.all_the_bacteria import (
+from cdm_data_loaders.pipelines.all_the_bacteria.settings import (
     AtbSettings,
 )
-from tests.helpers import assert_cli_field_roundtrips
+from tests.helpers.cli_assertions import assert_cli_field_roundtrips
 
 
 @pytest.mark.parametrize("field_name", [f for f in AtbSettings.model_fields if f != "pattern_file"])

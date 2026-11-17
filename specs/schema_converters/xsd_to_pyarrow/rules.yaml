@@ -171,7 +171,7 @@ sections:
           target or type) is whitespace-normalized and stored in `metadata["comment"]`.
 
   - id: codegen
-    title: Component-Based Python Schema Code Generation (`cdm_data_loaders.converters.cli.xsd_to_pyarrow`)
+    title: Component-Based Python Schema Code Generation (`cdm_data_loaders.cli.xsd_to_pyarrow`)
     rules:
       - id: R-CODEGEN-COMPONENT
         statement: |

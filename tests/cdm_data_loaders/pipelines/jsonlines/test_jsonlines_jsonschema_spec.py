@@ -1,14 +1,10 @@
-"""Specification tests for the JSONLines (JSON Schema) reader, settings, and ingestion pipeline.
-
-Cases, rules, and error fixtures are declared in manifests under ``specs/pipelines/jsonlines_jsonschema``
-(``rules.yaml``, ``spec/*/case.yaml``, and ``spec/errors/manifest.yaml``). The same manifests render
-``docs/jsonlines_jsonschema_specification.md`` via ``docs_macros`` Jinja2 templates.
-"""
+"""Specification tests for the JSONLines (JSON Schema) reader, settings, and ingestion pipeline."""
 
 import json
 import shutil
 import sys
 import types
+from operator import itemgetter
 from pathlib import Path
 from typing import Any
 
@@ -19,36 +15,41 @@ from _pytest.mark.structures import ParameterSet
 from dlt.sources.filesystem import filesystem
 
 import cdm_data_loaders.pipelines.jsonlines.base as jsonl_base_module
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.pipelines.jsonlines.exceptions import (
     JSONLINES_JSONSCHEMA_ERRORS,
     JsonlJsonschemaError,
 )
-from cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline import (
+from cdm_data_loaders.pipelines.jsonlines.jsonschema import (
     _make_resolve_error,
     run_jsonlines_pipeline,
 )
+from cdm_data_loaders.pipelines.jsonlines.routing import make_page_router
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     JSONSCHEMA_PIPELINE_NAME,
     JsonlJsonschemaIngestSettings,
 )
-from cdm_data_loaders.readers.jsonlines import make_page_router, stream_jsonl_lines
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
-from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
-from tests.conftest import PIPELINE_SPECS_DIR
-from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
-from tests.helpers import make_cts_settings
-from tests.pipeline_spec import load_pipeline_cases
-from tests.pyarrow_spec_helpers import (
+from cdm_data_loaders.readers.jsonl import stream_jsonl_lines
+from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
+from tests.helpers.cli_assertions import make_cts_settings
+from tests.helpers.paths_and_constants import PIPELINE_SPECS_DIR
+from tests.helpers.pyarrow_spec import (
     assert_schema_matches_expected,
     json_default,
     load_expected_table,
     load_fixture_attr,
+    load_json_records,
     load_module,
+)
+from tests.helpers.table_readers import (
+    assert_duckdb_table_counts,
+    fetch_all_duckdb,
+    run_with_duckdb_pipeline,
 )
 
 JSONL_SPEC_DIR = (PIPELINE_SPECS_DIR / "jsonlines_jsonschema").resolve()
-RULES = load_rules(JSONL_SPEC_DIR / "rules.yaml")
 CASES: list[Case] = load_cases(JSONL_SPEC_DIR / "spec")
 ERROR_CASES: list[ErrorCase] = load_error_cases(JSONL_SPEC_DIR / "spec" / "errors" / "manifest.yaml")
 ERRORS_BY_CODE: dict[str, type[JsonlJsonschemaError]] = {cls.code: cls for cls in JSONLINES_JSONSCHEMA_ERRORS}
@@ -57,15 +58,6 @@ RUN_PARAMS: list[ParameterSet] = [
     pytest.param(case, run, id=f"{case.suite}-{case.name}-{run.id}") for case in CASES for run in case.runs
 ]
 ERROR_PARAMS: list[ParameterSet] = [pytest.param(err, id=f"{err.code}-{err.file.stem}") for err in ERROR_CASES]
-
-
-def _load_json_records(path: Path) -> list[dict[str, Any]]:
-    """Load a list of JSON record objects from disk."""
-    loaded = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, list):
-        msg = f"Expected a list of JSON records in {path}, got {type(loaded)}"
-        raise TypeError(msg)
-    return loaded
 
 
 def _load_module_attr(py_file: Path, attr: str) -> dict[str, Any]:
@@ -102,7 +94,7 @@ def _stage_run_settings(
     case: Case,
     run: Run,
 ) -> JsonlJsonschemaIngestSettings:
-    """Copy a spec run's JSONL data file(s) into ``input_dir`` and build ``JsonlJsonschemaIngestSettings``."""
+    """Copy a spec run's JSONL data files into ``input_dir`` and build ``JsonlJsonschemaIngestSettings``."""
     input_dir = tmp_path / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
 
@@ -137,55 +129,6 @@ def _stage_run_settings(
     return make_cts_settings(JsonlJsonschemaIngestSettings, tmp_path, **defaults)
 
 
-# Manifest consistency
-
-
-def test_manifests_pass_every_case_rule_exists() -> None:
-    """Every rule referenced by a case manifest is defined in rules.yaml."""
-    all_cases = load_pipeline_cases(JSONL_SPEC_DIR)
-    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in all_cases}
-    assert {name: ids for name, ids in unknown.items() if ids} == {}
-
-
-def test_manifests_pass_every_rule_is_exercised() -> None:
-    """Every rule in rules.yaml is exercised by at least one case."""
-    all_cases = load_pipeline_cases(JSONL_SPEC_DIR)
-    used = {rule_id for case in all_cases for rule_id in case.rules}
-    assert sorted(RULES.rules.keys() - used) == []
-
-
-def test_manifests_pass_every_case_file_exists() -> None:
-    """Every file or directory referenced by a case or error manifest exists."""
-    files = [p for case in CASES for p in (case.schema, case.expected_schema)]
-    files += [p for case in CASES for run in case.runs for p in (run.expected_json, run.expected_table)]
-    files += [run.expected_rejected for case in CASES for run in case.runs if run.expected_rejected is not None]
-    files += [extra_path for case in CASES for run in case.runs for extra_path in run.extra_expected_json.values()]
-    files += [err.file for err in ERROR_CASES]
-    assert [str(p) for p in files if not p.is_file()] == []
-
-    data_paths = [run.data for case in CASES for run in case.runs]
-    assert [str(p) for p in data_paths if not p.exists()] == []
-
-
-def test_manifests_pass_every_error_fixture_listed() -> None:
-    """Every JSON file in spec/errors is listed in the error manifest."""
-    listed = {err.file for err in ERROR_CASES}
-    on_disk = set((JSONL_SPEC_DIR / "spec" / "errors").glob("*.json"))
-    assert sorted(str(p) for p in on_disk - listed) == []
-
-
-def test_manifests_pass_error_codes_unique_and_covered() -> None:
-    """Error codes are unique, every manifest entry uses a known code, and every code has a fixture."""
-    assert len(ERRORS_BY_CODE) == len(JSONLINES_JSONSCHEMA_ERRORS)
-    assert all(cls.code and cls.title and cls.__doc__ for cls in JSONLINES_JSONSCHEMA_ERRORS)
-    manifest_codes = {err.code for err in ERROR_CASES}
-    assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
-    assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
-# Schema resolution
-
-
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
 def test_jsonl_jsonschema_settings_schema_resolution_pass_cases(
     case: Case,
@@ -194,7 +137,7 @@ def test_jsonl_jsonschema_settings_schema_resolution_pass_cases(
     dlt_destination_config: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """JsonlJsonschemaIngestSettings resolves the expected PyArrow schema(s) in schema_map."""
+    """``JsonlJsonschemaIngestSettings`` resolves the expected PyArrow schema(s) in ``schema_map``."""
     settings = _stage_run_settings(tmp_path, dlt_destination_config, monkeypatch, case, run)
     assert settings.schema_map is not None
 
@@ -211,9 +154,6 @@ def test_jsonl_jsonschema_settings_schema_resolution_pass_cases(
         assert_schema_matches_expected(actual_pa_schema, case.expected_schema, run.schema_attr)
 
 
-# Per-entity streaming, JSON Schema validation, pre-processing, and PyArrow coercion
-
-
 def _collect_routed_jsonl_batches(settings: JsonlJsonschemaIngestSettings) -> dict[str, list[pa.Table]]:
     """Run file pre-processors, JSONL line streaming, and page routing across all configured entity tables."""
     batches_by_table: dict[str, list[pa.Table]] = {}
@@ -228,7 +168,7 @@ def _collect_routed_jsonl_batches(settings: JsonlJsonschemaIngestSettings) -> di
         )
         file_items = sorted(
             filesystem(bucket_url=str(settings.input_dir), file_glob=f"{table_name}/{settings.file_glob}"),
-            key=lambda item: item["relative_path"],
+            key=itemgetter("relative_path"),
         )
         preprocessors = settings.get_file_preprocessors(table_name)
         valid_items = []
@@ -238,7 +178,7 @@ def _collect_routed_jsonl_batches(settings: JsonlJsonschemaIngestSettings) -> di
             for preprocess_fn in preprocessors:
                 try:
                     curr_item = preprocess_fn(curr_item)
-                except Exception as exc:  # noqa: BLE001
+                except FilePreprocessError as exc:
                     rejected_row = {
                         "table_name": table_name,
                         "source_file": item["relative_path"],
@@ -269,13 +209,13 @@ def test_stream_and_route_jsonl_pass_cases(
     dlt_destination_config: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Streaming, pre-processing, and routing JSONL records yields PyArrow tables matching expected_table and expected JSON."""
+    """Streaming, pre-processing, and routing JSONL records yields PyArrow tables matching ``expected_table`` and JSON."""
     settings = _stage_run_settings(tmp_path, dlt_destination_config, monkeypatch, case, run)
     batches_by_table = _collect_routed_jsonl_batches(settings)
 
     entity_type = run.params["entity_type"]
     expected_table: pa.Table = load_expected_table(run.expected_table, run.table_attr)
-    expected_rows = _load_json_records(run.expected_json)
+    expected_rows = load_json_records(run.expected_json)
     target_batches = batches_by_table.get(entity_type, [])
     actual_table = (
         pa.concat_tables(target_batches) if target_batches else pa.Table.from_pylist([], schema=expected_table.schema)
@@ -302,7 +242,7 @@ def test_stream_and_route_jsonl_pass_cases(
             )
             assert actual_pa.schema.equals(expected_pa.schema, check_metadata=True)
             assert actual_pa.equals(expected_pa, check_metadata=True)
-            assert json.loads(json.dumps(actual_pa.to_pylist(), default=json_default)) == _load_json_records(
+            assert json.loads(json.dumps(actual_pa.to_pylist(), default=json_default)) == load_json_records(
                 extra_json_path
             )
 
@@ -317,10 +257,7 @@ def test_stream_and_route_jsonl_pass_cases(
         assert rejected_batches
         rejected_table = pa.concat_tables(rejected_batches)
         assert rejected_table.schema.equals(REJECTED_PYARROW_SCHEMA)
-        assert rejected_table.to_pylist() == _load_json_records(run.expected_rejected)
-
-
-# End-to-end pipeline execution
+        assert rejected_table.to_pylist() == load_json_records(run.expected_rejected)
 
 
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
@@ -331,7 +268,7 @@ def test_run_jsonlines_pipeline_end_to_end_pass_cases(
     dlt_destination_config: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """run_jsonlines_pipeline loads all expected entity, transformed, and _rejected rows into the destination."""
+    """``run_jsonlines_pipeline`` loads all expected entity, transformed, and ``_rejected`` rows into DuckDB."""
     settings = _stage_run_settings(tmp_path, dlt_destination_config, monkeypatch, case, run)
 
     load_info = run_with_duckdb_pipeline(
@@ -344,23 +281,15 @@ def test_run_jsonlines_pipeline_end_to_end_pass_cases(
     )
 
     entity_type = run.params["entity_type"]
-    expected_rows = _load_json_records(run.expected_json)
+    expected_rows = load_json_records(run.expected_json)
     if expected_rows:
-        ((loaded_count,),) = fetch_all_duckdb(
-            load_info.pipeline,
-            f"SELECT COUNT(*) FROM {entity_type}",  # noqa: S608
-        )
-        assert loaded_count == len(expected_rows)
+        assert_duckdb_table_counts(load_info.pipeline, {entity_type: len(expected_rows)})
     else:
         assert entity_type not in load_info.pipeline.default_schema.tables
 
     for extra_table_name, extra_json_path in run.extra_expected_json.items():
-        expected_extra = _load_json_records(extra_json_path)
-        ((extra_count,),) = fetch_all_duckdb(
-            load_info.pipeline,
-            f"SELECT COUNT(*) FROM {extra_table_name}",  # noqa: S608
-        )
-        assert extra_count == len(expected_extra)
+        expected_extra = load_json_records(extra_json_path)
+        assert_duckdb_table_counts(load_info.pipeline, {extra_table_name: len(expected_extra)})
 
     if "missing_entity" in settings.schema_registry.registry:
         assert "missing_entity" not in load_info.pipeline.default_schema.tables
@@ -368,7 +297,7 @@ def test_run_jsonlines_pipeline_end_to_end_pass_cases(
     if run.expected_rejected is None:
         assert REJECTED_TABLE_NAME not in load_info.pipeline.default_schema.tables
     else:
-        expected_rejected = _load_json_records(run.expected_rejected)
+        expected_rejected = load_json_records(run.expected_rejected)
         rejected_rows = fetch_all_duckdb(
             load_info.pipeline,
             "SELECT table_name, source_file, line_no, raw_record, error_detail FROM _rejected ORDER BY source_file, line_no, error_detail",
@@ -389,9 +318,6 @@ def test_run_jsonlines_pipeline_end_to_end_pass_cases(
         )
 
 
-# Errors
-
-
 @pytest.mark.parametrize("err", ERROR_PARAMS)
 def test_jsonl_jsonschema_errors_fail_error_manifest(
     err: ErrorCase,
@@ -399,7 +325,7 @@ def test_jsonl_jsonschema_errors_fail_error_manifest(
     dlt_destination_config: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each error fixture raises the expected JsonlJsonschemaError subclass when initializing JsonlJsonschemaIngestSettings."""
+    """Each error fixture raises the expected ``JsonlJsonschemaError`` subclass when initializing settings."""
     input_dir = tmp_path / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
 

@@ -1,23 +1,10 @@
 """Pytest collection hooks for documentation generation and content tests."""
 
-from functools import partial
 from pathlib import Path
 
 import pytest
-from _pytest.mark.expression import Expression
 
-
-def _matches_docs_marker(name: str, **_kwargs: str | int | bool | None) -> bool:
-    """Evaluate a marker identifier as ``True`` iff it equals ``docs``.
-
-    :param name: Marker identifier passed by ``Expression.evaluate``.
-    :type name: str
-    :param _kwargs: Optional marker keyword arguments passed by ``Expression.evaluate``.
-    :type _kwargs: str | int | bool | None
-    :return: ``True`` when ``name == "docs"``.
-    :rtype: bool
-    """
-    return name == "docs"
+from tests.docs.helpers import should_ignore_docs_collect
 
 
 def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
@@ -34,13 +21,4 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
     :rtype: bool | None
     """
     _ = collection_path
-    stripped = config.option.markexpr.strip()
-    if not stripped:
-        return None
-    try:
-        compiled = Expression.compile(stripped)
-    except SyntaxError:
-        return None
-    if not compiled.evaluate(partial(_matches_docs_marker)):
-        return True
-    return None
+    return should_ignore_docs_collect(config.option.markexpr)

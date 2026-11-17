@@ -17,8 +17,9 @@ import yaml
 from dlt.sources.filesystem import filesystem
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xsv.pipeline import (
     XsvWorkPaths,
     _process_xsv_file,
@@ -26,17 +27,16 @@ from cdm_data_loaders.pipelines.xsv.pipeline import (
     run_xsv_pipeline,
 )
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import CleanerValidatorArgs
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
-from tests.cdm_data_loaders.pipelines.helpers import (
+from cdm_data_loaders.readers.xsv.models import CleanerValidatorArgs
+from cdm_data_loaders.readers.xsv.qsv import clean_validate_file
+from tests.helpers.cli_assertions import register_temp_module, settings_to_argv
+from tests.helpers.fixtures_xsv import VALID_SCHEMA_URI
+from tests.helpers.fs_backends import FsBackend
+from tests.helpers.table_readers import (
     fetch_all_duckdb,
     make_file_item,
     run_with_duckdb_pipeline,
 )
-from tests.cdm_data_loaders.pipelines.xsv.conftest import VALID_SCHEMA_URI
-from tests.fs_backends import FsBackend
-from tests.helpers import register_temp_module, settings_to_argv
 
 SIMPLE_SCHEMA: dict[str, Any] = {
     "$schema": VALID_SCHEMA_URI,
@@ -347,8 +347,8 @@ def test_run_xsv_pipeline_pass_no_matching_files_loads_nothing(
 
 
 def test_cli_pass_calls_run_cli_with_settings_class_and_pipeline_fn() -> None:
-    """Cli is a PipelineCli wired to XsvIngestSettings and run_xsv_pipeline."""
-    assert isinstance(cli, PipelineCli)
+    """Cli is a CliRunner wired to XsvIngestSettings and run_xsv_pipeline."""
+    assert isinstance(cli, CliRunner)
     assert cli.settings_cls is XsvIngestSettings
     assert cli.pipeline_fn is run_xsv_pipeline
 

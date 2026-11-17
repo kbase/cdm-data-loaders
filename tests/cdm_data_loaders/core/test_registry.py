@@ -1,8 +1,9 @@
 """Unit tests for registry models and the load_registry_dict loader."""
 
 from collections.abc import Callable
+from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Final
 from uuid import uuid4
 
 import pyarrow as pa
@@ -17,10 +18,12 @@ from cdm_data_loaders.core.registry import (
     SchemaRegistry,
     TransformContext,
     TransformRegistry,
+    load_python_module,
     load_registry_dict,
+    split_module_attr_spec,
 )
-from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
-from tests.helpers import register_temp_module
+from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
+from tests.helpers.cli_assertions import register_temp_module
 
 WIDGET_PA_SCHEMA = pa.schema([pa.field("id", pa.string())])
 
@@ -530,3 +533,30 @@ def test_transform_registry_fail_invalid_transform_sequence(entry: object, match
     """TransformRegistry rejects empty transform sequences and sequences containing non-callables."""
     with pytest.raises(ValidationError, match=match):
         TransformRegistry(registry={"widget": entry})  # type: ignore[dict-item]
+
+
+EXPECTED_SAMPLE_VALUE: Final[int] = 42
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        pytest.param("pkg.mod:ATTR", ("pkg.mod", "ATTR"), id="module-with-attr"),
+        pytest.param("pkg.mod", ("pkg.mod", None), id="module-without-attr"),
+        pytest.param("/opt/mod.py:MY_SCHEMA", ("/opt/mod.py", "MY_SCHEMA"), id="posix-file-with-attr"),
+        pytest.param(r"C:\work\mod.py", (r"C:\work\mod.py", None), id="windows-drive-letter"),
+        pytest.param(r"C:\work\mod.py:ATTR", (r"C:\work\mod.py", "ATTR"), id="windows-drive-with-attr"),
+        pytest.param("http://example.com/a", ("http://example.com/a", None), id="slash-in-tail"),
+    ],
+)
+def test_split_module_attr_spec(spec: str, expected: tuple[str, str | None]) -> None:
+    """Split module or path specs into target and attribute while preserving drive letters."""
+    assert split_module_attr_spec(spec) == expected
+
+
+def test_load_python_module_from_file_path(tmp_path: Path) -> None:
+    """Load a Python module from a .py file path on disk."""
+    mod_file = tmp_path / "dynamic_schema_mod.py"
+    mod_file.write_text(f"SAMPLE_VALUE = {EXPECTED_SAMPLE_VALUE}\n", encoding="utf-8")
+    loaded = load_python_module(str(mod_file))
+    assert loaded.SAMPLE_VALUE == EXPECTED_SAMPLE_VALUE

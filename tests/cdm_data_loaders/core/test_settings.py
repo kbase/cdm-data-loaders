@@ -13,30 +13,30 @@ from cdm_data_loaders.core.fields import FILE_LISTING_FILE_NAME, PIPELINE_DIR_NA
 from cdm_data_loaders.core.settings import (
     DEFAULT_SETTINGS_CONFIG_DICT,
     FILE_FORMAT_CLI_SHORTCUTS,
-    XML_CLI_SHORTCUTS,
     CdmDataLoadersBase,
     CtsSettings,
     FileFormatIngestSettings,
     InputLocalOutputSettings,
     LoggerSettings,
-    SingleTableXmlIngestSettings,
-    XmlIngestSettings,
     default_settings_with_shortcuts,
     select_cli_shortcuts,
 )
-from tests.cdm_data_loaders.conftest import (
+from cdm_data_loaders.pipelines.xml_common import (
+    XML_CLI_SHORTCUTS,
+    SingleTableXmlIngestSettings,
+    XmlIngestSettings,
+)
+from tests.helpers.cli_assertions import (
     SETTINGS_SOURCES,
     SettingsFactory,
+    assert_cli_field_roundtrips,
+    assert_no_cli_clashes,
     check_settings,
     cts_expected,
     local_io_expected,
-)
-from tests.conftest import S3
-from tests.helpers import (
-    assert_cli_field_roundtrips,
-    assert_no_cli_clashes,
     settings_to_argv,
 )
+from tests.helpers.paths_and_constants import S3
 
 
 @pytest.mark.parametrize(

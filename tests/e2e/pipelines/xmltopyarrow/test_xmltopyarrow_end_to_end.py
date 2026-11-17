@@ -1,0 +1,142 @@
+"""End-to-end tests for the xmltopyarrow pipeline."""
+
+from collections.abc import Callable
+from pathlib import Path
+
+import pytest
+
+from cdm_data_loaders.pipelines.presets.uniprot_xml import (
+    UNIPROT_PIPELINE_NAME,
+    UNIREF_FIFTY,
+    UNIREF_HUNDRED,
+    UNIREF_NINETY,
+    UniProtXmlToPyArrowSettings,
+    UniRef50XmlToPyArrowSettings,
+    UniRef90XmlToPyArrowSettings,
+    UniRef100XmlToPyArrowSettings,
+)
+from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
+    PIPELINE_NAME,
+    XmlToPyArrowSettings,
+)
+from tests.e2e.framework import PipelineTestRunner
+from tests.helpers.cli_assertions import settings_to_argv
+from tests.helpers.paths_and_constants import DEFAULT_DLT_TABLES, XSD_SPEC_DIR, copy_test_files
+from tests.helpers.table_readers import (
+    LOADER_FILE_FORMATS,
+    assert_pipeline_report_written,
+    assert_run_ok,
+    check_book_list_results,
+)
+from tests.helpers.xml_samples import SIMPLE_LIBRARY_XML
+
+
+@pytest.mark.parametrize("loader_file_format", LOADER_FILE_FORMATS)
+def test_run_xmltopyarrow_pipeline_pass_writes_expected_output(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    loader_file_format: str,
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """Running the pipeline on xml files loads one row per matching element into the configured table."""
+    settings = settings_factory(loader_file_format=loader_file_format)
+    input_dir = Path(settings.input_dir)
+    input_dir.mkdir(exist_ok=True)
+    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+
+    load_info = pipeline_runner.run(PIPELINE_NAME, settings=settings)
+    book_df = check_book_list_results(load_info, expected_columns={"_id", "title"})
+    assert sorted(book_df["_id"].tolist()) == ["1", "2", "3"]
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=["library.xml"])
+
+
+def test_run_xmltopyarrow_pipeline_pass_gzip_files_are_loaded(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    write_gzip_file: Callable[[Path, str, str], Path],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """Gzip-compressed xml files matching the glob are decompressed and loaded."""
+    settings = settings_factory()
+    input_dir = Path(settings.input_dir)
+    input_dir.mkdir(exist_ok=True)
+    (input_dir / "plain.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+    write_gzip_file(input_dir, "library.xml.gz", SIMPLE_LIBRARY_XML)
+
+    load_info = pipeline_runner.run(PIPELINE_NAME, settings=settings)
+    book_df = check_book_list_results(load_info, expected_columns={"_id", "title"})
+    # one copy of the three books from the plain file, one from the gzipped copy
+    assert sorted(book_df["_id"].tolist()) == ["1", "1", "2", "2", "3", "3"]
+
+
+def test_run_xmltopyarrow_pipeline_pass_no_matching_files_yields_no_data_table(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """An input dir with no matching xml files does not fail the run and creates no data table."""
+    settings = settings_factory()
+    Path(settings.input_dir).mkdir(exist_ok=True)
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
+    dataset = load_info.pipeline.dataset()
+    # only dlt's own metadata tables exist; the data table is never created
+    assert set(dataset.tables) == DEFAULT_DLT_TABLES
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=[])
+
+
+def test_run_xmltopyarrow_pipeline_pass_custom_table_name_is_respected(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """Rows land in the table named by table_name, not in a name derived from the xml tag."""
+    settings = settings_factory(table_name="library_entries")
+    input_dir = Path(settings.input_dir)
+    input_dir.mkdir(exist_ok=True)
+    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+
+    load_info = pipeline_runner.run(PIPELINE_NAME, settings=settings)
+    book_df = check_book_list_results(load_info, "library_entries", expected_columns={"_id", "title"})
+    assert sorted(book_df["_id"].tolist()) == ["1", "2", "3"]
+
+
+def test_cli_pass_runs_end_to_end_from_command_line_arguments(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """cli() reads command-line arguments and runs the pipeline, producing the expected output."""
+    settings = settings_factory(dataset_name="cli_dataset")
+    input_dir = Path(settings.input_dir)
+    input_dir.mkdir(exist_ok=True)
+    (input_dir / "library.xml").write_text(SIMPLE_LIBRARY_XML, encoding="utf-8")
+
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, cli_args=settings_to_argv(settings)))
+    book_df = check_book_list_results(load_info, expected_columns={"_id", "title"})
+    assert sorted(book_df["_id"].tolist()) == ["1", "2", "3"]
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=["library.xml"])
+
+
+@pytest.mark.parametrize(
+    ("target_name", "settings_cls", "sample_xml_rel_dir"),
+    [
+        (UNIPROT_PIPELINE_NAME, UniProtXmlToPyArrowSettings, "examples/uniprot"),
+        (UNIREF_FIFTY, UniRef50XmlToPyArrowSettings, "examples/uniref"),
+        (UNIREF_NINETY, UniRef90XmlToPyArrowSettings, "examples/uniref"),
+        (UNIREF_HUNDRED, UniRef100XmlToPyArrowSettings, "examples/uniref"),
+    ],
+)
+def test_run_subclass_pipeline_pass_end_to_end(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    pipeline_runner: PipelineTestRunner,
+    *,
+    target_name: str,
+    settings_cls: type[XmlToPyArrowSettings],
+    sample_xml_rel_dir: str,
+) -> None:
+    """UniProt and UniRef pipelines load XML entries into the 'entry' table using precomputed PyArrow schemas."""
+    settings = settings_factory(settings_cls)
+    copy_test_files(XSD_SPEC_DIR / sample_xml_rel_dir, ["minimal.xml.gz"], Path(settings.input_dir))
+
+    load_info = assert_run_ok(pipeline_runner.run(target_name, settings=settings))
+    dataset = load_info.pipeline.dataset()
+    assert set(dataset.tables) == {"entry", *DEFAULT_DLT_TABLES}
+    entry_df = dataset.table("entry").df()
+    assert len(entry_df) == 1
+    assert_pipeline_report_written(Path(settings.output_dir), load_info, ingested_files=["minimal.xml.gz"])

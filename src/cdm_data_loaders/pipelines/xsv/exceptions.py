@@ -2,16 +2,15 @@
 
 from typing import ClassVar, Final
 
+from cdm_data_loaders.core.cli import SpecError
 
-class XsvSchemaError(RuntimeError):
+
+class XsvSchemaError(SpecError, RuntimeError):
     """Raised when an XSV JSON Schema cannot be validated or converted to a PyArrow schema.
 
     Subclasses carry a stable specification ``code`` and a short ``title``; their docstrings state
     why the schema is rejected. The XSV specification document is generated from these attributes.
     """
-
-    code: ClassVar[str] = ""
-    title: ClassVar[str] = ""
 
 
 class UnsupportedXsvDialectError(XsvSchemaError):

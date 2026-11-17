@@ -1,44 +1,50 @@
 """Emit PyArrow schema objects from immutable typed schema nodes."""
 
+import functools
 import json
-from collections.abc import Mapping, Sequence
-from decimal import Decimal
-from pathlib import Path
+from collections.abc import Mapping
 from typing import ClassVar, Final
 
 import pyarrow as pa
 from frozendict import frozendict
 from pydantic import Field, field_validator
 
+from cdm_data_loaders.converters.core.constants import (
+    DECIMAL128_MAX_PRECISION,
+    DECIMAL256_MAX_PRECISION,
+    INT8_WIDTH,
+    INT16_WIDTH,
+    INT32_WIDTH,
+    MAX_MICROS_DIGITS,
+    MAX_MILLIS_DIGITS,
+    WEI_PRECISION,
+)
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.metadata import ConversionContext
 from cdm_data_loaders.converters.emitters._tabular_base import (
-    DECIMAL128_MAX_PRECISION,
     DEFAULT_STRING_FORMATS,
-    INT32_WIDTH,
     _TabularEmitterBase,
     element_nullable,
     infer_enum_type,
     merge_format_map_with_defaults,
     resolve_logical_decimal,
 )
-from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
-    render_python_schema_module,
-    write_python_schema_file,
-)
+from cdm_data_loaders.converters.exceptions.emitters.pyarrow import PyArrowEmitterError
+from cdm_data_loaders.utils.json_utils import json_default_scalar
 
-INT8_WIDTH: Final = 8
-INT16_WIDTH: Final = 16
-DECIMAL256_MAX_PRECISION: Final = 76
-WEI_PRECISION: Final = DECIMAL256_MAX_PRECISION
-MAX_MILLIS_DIGITS: Final = 3
-MAX_MICROS_DIGITS: Final = 6
 DEFAULT_FORMAT_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
     {
         "date": pa.date32(),
         "date-time": pa.timestamp("us", tz="UTC"),
+        **dict.fromkeys(DEFAULT_STRING_FORMATS, pa.string()),
+    }
+)
+STRICT_DEFAULT_FORMAT_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
+    {
+        "date": pa.date32(),
+        "date-time": pa.string(),
         **dict.fromkeys(DEFAULT_STRING_FORMATS, pa.string()),
     }
 )
@@ -89,30 +95,16 @@ def merge_format_map(value: object) -> object:
     return merge_format_map_with_defaults(value, DEFAULT_FORMAT_MAP, pa.DataType, "PyArrow")
 
 
-class PyArrowEmitterError(ConversionError):
-    """A typed schema cannot be represented by the configured Arrow policy."""
+def merge_strict_format_map(value: object) -> object:
+    """Validate format overrides and merge them into the strict specification format mapping.
 
-
-def assemble_pyarrow_schema(
-    component: pa.StructType | Sequence[pa.Field],
-    *,
-    metadata: Mapping[str, str | bytes] | None = None,
-) -> pa.Schema:
-    """Assemble a PyArrow table schema from a ``pa.StructType`` component or sequence of ``pa.Field``s.
-
-    :param component: struct component or sequence of PyArrow fields
-    :type component: pa.StructType | Sequence[pa.Field]
-    :param metadata: optional schema-level metadata
-    :type metadata: Mapping[str, str | bytes] | None
-    :return: assembled PyArrow schema
-    :rtype: pa.Schema
-    :raises PyArrowEmitterError: if ``component`` contains no fields
+    :param value: a mapping from JSON Schema format names to PyArrow types
+    :type value: object
+    :return: the merged mapping, or ``value`` unchanged when it is not a mapping
+    :rtype: object
+    :raises ValueError: if a key is not a string or a value is not a PyArrow ``DataType``
     """
-    fields = list(component)
-    if not fields:
-        msg = "Cannot assemble a PyArrow schema from an empty component"
-        raise PyArrowEmitterError(msg)
-    return pa.schema(fields, metadata=metadata)
+    return merge_format_map_with_defaults(value, STRICT_DEFAULT_FORMAT_MAP, pa.DataType, "PyArrow")
 
 
 class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
@@ -167,45 +159,6 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
         :raises PyArrowEmitterError: if the root does not resolve to a struct
         """
         return self.emit(document).empty_table()
-
-    def emit_python(
-        self,
-        document: SchemaDocument | Mapping[str, SchemaDocument],
-        *,
-        docstring: str | None = None,
-    ) -> str:
-        """Render a static Python module defining PyArrow struct components and schemas.
-
-        :param document: A single ``SchemaDocument`` or a mapping of table names to ``SchemaDocument``s.
-        :type document: SchemaDocument | Mapping[str, SchemaDocument]
-        :param docstring: Optional module docstring header.
-        :type docstring: str | None
-        :return: Formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``.
-        :rtype: str
-        :raises PyArrowEmitterError: If any document root does not resolve to a struct.
-        """
-        return render_python_schema_module(self, document, docstring=docstring)
-
-    def emit_python_file(
-        self,
-        document: SchemaDocument | Mapping[str, SchemaDocument],
-        output: str | Path,
-        *,
-        docstring: str | None = None,
-    ) -> Path:
-        """Render and write a static Python schema module to ``output``.
-
-        :param document: A single ``SchemaDocument`` or a mapping of table names to ``SchemaDocument``s.
-        :type document: SchemaDocument | Mapping[str, SchemaDocument]
-        :param output: Destination file path for the generated Python module.
-        :type output: str | Path
-        :param docstring: Optional module docstring header.
-        :type docstring: str | None
-        :return: Resolved output ``Path``.
-        :rtype: Path
-        :raises PyArrowEmitterError: If any document root does not resolve to a struct.
-        """
-        return write_python_schema_file(self, document, output, docstring=docstring)
 
     def build_metadata(
         self, node: TypedNode, ctx: ConversionContext, field: SchemaField | None = None
@@ -307,16 +260,10 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
             )
         )
 
-    @staticmethod
-    def _emit_logical(node: TypedNode) -> pa.DataType | None:
+    def _emit_logical(self, node: TypedNode) -> pa.DataType | None:
         """Preserve physical widths and logical source types without a JSON encoding."""
         if node.provenance is not None and node.provenance.source == "json-schema":
-            logical_key = node.hints.logical_type
-            return (
-                JSON_SCHEMA_LOGICAL_TYPE_MAP.get(logical_key)
-                if logical_key is not None and "jsonschema_type" in node.provenance.metadata
-                else None
-            )
+            return _emit_jsonschema_logical(node, self.format_map)
         hints = node.hints
         logical = hints.logical_type
         if logical in {"decimal", "wei"}:
@@ -331,6 +278,23 @@ class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):
             return pa.float32()
         fixed = pa.binary(hints.length) if hints.length is not None else pa.binary()
         return {"date": pa.date32(), "time": pa.time64("us"), "binary": pa.binary(), "fixed": fixed}.get(logical)
+
+
+def _emit_jsonschema_logical(node: TypedNode, format_map: Mapping[str, pa.DataType]) -> pa.DataType | None:
+    """Resolve PyArrow scalar type for a strict ``json-schema`` node using ``format_map``."""
+    logical_key = node.hints.logical_type
+    jsonschema_label = node.provenance.metadata.get("jsonschema_type") if node.provenance is not None else None
+    if logical_key is None or not isinstance(jsonschema_label, str):
+        return None
+    if (
+        logical_key in {"string", "date"}
+        and jsonschema_label.startswith("string (")
+        and jsonschema_label.endswith(")")
+        and " | " not in jsonschema_label
+    ):
+        fmt = jsonschema_label[len("string (") : -1]
+        return format_map.get(fmt, pa.string())
+    return JSON_SCHEMA_LOGICAL_TYPE_MAP.get(logical_key)
 
 
 def _emit_logical_integer(hints: NodeHints) -> pa.DataType | None:
@@ -383,14 +347,6 @@ def _integer_type(bit_width: int) -> pa.DataType:
     return pa.int32() if bit_width <= INT32_WIDTH else pa.int64()
 
 
-def _json_default(value: object) -> str:
-    """Encode exact decimals as strings; reject all other unsupported objects."""
-    if isinstance(value, Decimal):
-        return str(value)
-    msg = f"Object of type {type(value).__name__} is not JSON serializable"
-    raise TypeError(msg)
-
-
 def _dump_json(value: object) -> str:
     """Serialize metadata without converting decimals to binary floats."""
-    return json.dumps(value, default=_json_default)
+    return json.dumps(value, default=functools.partial(json_default_scalar, bytes_encoding="disallow"))

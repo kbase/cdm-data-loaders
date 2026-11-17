@@ -6,7 +6,7 @@ This guide explains how `cdm-data-loaders` pipelines are configured and executed
 
 ## Execution Modes
 
-Every pipeline under [`src/cdm_data_loaders/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines) exposes a `PipelineCli` instance (`cli = PipelineCli(...)`) registered under `[project.scripts]` in [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml). See the [CLI Reference](cli_reference.md) for the complete list of registered commands and options.
+Every pipeline under [`src/cdm_data_loaders/pipelines`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines) exposes a `CliRunner` instance (`cli = CliRunner(...)`, defined in [`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)) registered under `[project.scripts]` in [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml). See the [CLI Reference](cli_reference.md) for the complete list of registered commands and options.
 
 ### Local CLI Execution (`uv run`)
 
@@ -30,7 +30,7 @@ Inside the Docker container (or when running [`./scripts/entrypoint.sh`](https:/
 | Mode | Invocation | Description |
 | :--- | :--- | :--- |
 | `pipeline` | `./scripts/entrypoint.sh pipeline <cli_command> [args...]` | Copies `/input_dir/dlt_conf/{config.toml,secrets.toml,.pyiceberg.yaml}` into `$HOME/.dlt` / `$HOME/.pyiceberg.yaml` (if present) and runs `uv run <cli_command> [args...]`. |
-| `xml_split` | `./scripts/entrypoint.sh xml_split <n_elements> <tag> <file_1> [<file_2> ...]` | Splits XML files into chunks containing `<n_elements>` `<tag>` elements using `xml_split`. |
+| `xml_split` | `./scripts/entrypoint.sh xml_split [args...]` | Splits XML files into chunks via `xml_file_splitter`. |
 | `bash` | `./scripts/entrypoint.sh bash` | Launches an interactive shell inside the container. |
 
 Container test modes (`test` and `ceph_integration_test`) are covered in the [Development and Testing Guide](development_and_testing.md).
@@ -53,13 +53,11 @@ docker run --rm \
 
 ### Programmatic Execution in Python
 
-In Python, instantiate the pipeline's settings class and pass it to the pipeline runner (or call `PipelineCli.run()` from [`src/cdm_data_loaders/pipelines/core.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/core.py)):
+In Python, instantiate the pipeline's settings class and pass it to the pipeline runner (or call `CliRunner.run()` from [`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)):
 
 ```python
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import (
-    JsonlExtractSettings,
-    run_jsonlines_pipeline,
-)
+from cdm_data_loaders.pipelines.jsonlines.extract import run_jsonlines_pipeline
+from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 
 settings = JsonlExtractSettings(
     input_dir="/path/to/input_dir",
@@ -80,12 +78,12 @@ Pipelines in production run on the **KBase CDM Task Service (CTS)**. CTS enforce
 
 > **CTS only uploads the contents of `/output_dir` (and pipeline artifacts written there) if the container exits with exit code `0`.** If a container exits with a non-zero exit code, CTS captures `STDOUT` and `STDERR` logs, **but discards everything written to `/output_dir`**.
 
-To preserve diagnostic artifacts, `PipelineCli` and `run_pipeline()` in [`src/cdm_data_loaders/pipelines/core.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/core.py) separate failures by phase:
+To preserve diagnostic artifacts, `CliRunner` ([`src/cdm_data_loaders/core/cli.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/cli.py)) and `run_pipeline()` ([`src/cdm_data_loaders/pipelines/runner.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/runner.py)) separate failures by phase:
 
 - **Pre-execution configuration, CLI, and destination validation errors (non-zero exit)**:
-  Errors raised during CLI settings parsing (missing required flags, invalid file paths, unknown options, or invalid transform/preprocessor modules) or invalid `use_destination` lookup occur before pipeline extraction starts. Because no output artifacts exist yet, these errors raise immediately and terminate the process with a non-zero exit code so CTS flags the task failure and records `STDERR`.
+  Errors raised during CLI settings parsing (missing required flags, invalid file paths, unknown options, or invalid transform/preprocessor modules) or invalid `use_destination` lookup occur before pipeline extraction starts. Because no output artifacts exist yet, these errors raise and terminate the process with a non-zero exit code so CTS flags the task failure and records `STDERR`.
 - **Runtime pipeline and `dlt` load errors (exit code `0`)**:
-  Once `pipeline.run()` begins inside `run_pipeline()`, runtime step failures (`PipelineStepFailed`) and failed jobs (`load_info.has_failed_jobs`) are caught and logged. `save_pipeline_metadata()` writes the `LoadInfo` record to `_load_info` and writes `PipelineReport` YAML to `settings.report_path` (`report.txt`) with `status: error` or `status: completed with errors`, `pipeline_err_msg`, and `load_errors`. `PipelineCli.__call__()` returns cleanly so the container exits with code `0`, preserving `report.txt`, logs, `_load_info`, and `_rejected` tables in `/output_dir` for CTS to upload.
+  Once `pipeline.run()` begins inside `run_pipeline()`, runtime step failures (`PipelineStepFailed`) and failed jobs (`load_info.has_failed_jobs`) are caught and logged. [`save_pipeline_metadata()`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/reporting.py) writes the `LoadInfo` record to `_load_info` and writes `PipelineReport` YAML to `settings.report_path` (`report.txt`) with `status: error` or `status: completed with errors`, `pipeline_err_msg`, and `load_errors`. `CliRunner.__call__()` returns so the container exits with code `0`, preserving `report.txt`, logs, `_load_info`, and `_rejected` tables in `/output_dir` for CTS to upload.
 
 ---
 
@@ -177,7 +175,7 @@ Every pipeline run produces standardized observability artifacts in `output_dir`
 
 ### `report.txt` (`PipelineReport`)
 
-At the end of `run_pipeline()`, `write_pipeline_report()` writes a YAML-serialized `PipelineReport` to `settings.report_path` (`<output_dir>/report.txt` or `<output_dir>/pipeline_metadata/report.txt`):
+At the end of `run_pipeline()`, [`write_pipeline_report()`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/reporting.py) writes a YAML-serialized `PipelineReport` to `settings.report_path` (`<output_dir>/report.txt` or `<output_dir>/pipeline_metadata/report.txt`):
 
 ```yaml
 pipeline: jsonlines_extract
@@ -196,7 +194,7 @@ If `pipeline.run()` fails or reports failed jobs, `status` is set to `"error"` o
 
 ### `file_listing.txt` (`--loader-file-format file_listing`)
 
-Passing `--loader-file-format file_listing` (`-f file_listing`) on any `filesystem`-backed pipeline discovers input files and exits without opening files, running `FILE_PREPROCESSORS` or `TABLE_TRANSFORMS`, initializing a `dlt` destination, writing `report.txt` or `_load_info`, or sending Slack alerts. `write_file_listing()` writes YAML to `settings.file_listing_path` (`<output_dir>/file_listing.txt`, or `<output_dir>/pipeline_metadata/file_listing.txt` when `-p` is set):
+Passing `--loader-file-format file_listing` (`-f file_listing`) on any `filesystem`-backed pipeline discovers input files via [`collect_file_listing()`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/filesystem.py) and exits without opening files, running `FILE_PREPROCESSORS` or `TABLE_TRANSFORMS`, initializing a `dlt` destination, writing `report.txt` or `_load_info`, or sending Slack alerts. [`write_file_listing()`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/reporting.py) writes YAML to `settings.file_listing_path` (`<output_dir>/file_listing.txt`, or `<output_dir>/pipeline_metadata/file_listing.txt` when `-p` is set):
 
 ```yaml
 input_dir_files:
@@ -208,21 +206,21 @@ matched_files:
   - sub/batch_02.jsonl.gz
 ```
 
-`input_dir_files` lists all files discovered under `input_dir` via `dlt` `filesystem(..., file_glob="**")` as sorted POSIX relative paths, and `matched_files` lists the subset matched by the pipeline's `dlt` `filesystem` glob(s). Pipelines that do not read via `dlt.sources.filesystem` (such as `all_the_bacteria`) reject `file_listing` during settings validation.
+`input_dir_files` lists all files discovered under `input_dir` via `dlt` `filesystem(..., file_glob="**")` as sorted POSIX relative paths, and `matched_files` lists the subset matched by the pipeline's [`build_filesystem_resource()`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/filesystem.py) glob(s). Pipelines that do not read via `dlt.sources.filesystem` (such as `all_the_bacteria`) reject `file_listing` during settings validation.
 
 ### `_load_info` Destination Table
 
-When `save_pipeline_metadata()` runs and `load_info` is present, it writes `[load_info.asdict()]` as JSONL into the `_load_info` table (`max_table_nesting=0`) inside the target dataset so warehouse queries can audit load history directly inside the destination.
+When [`save_pipeline_metadata()`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/reporting.py) runs and `load_info` is present, it writes `[load_info.asdict()]` as JSONL into the `_load_info` table (`max_table_nesting=0`) inside the target dataset so warehouse queries can audit load history inside the destination.
 
 ### Dead-Letter Rejection Table (`_rejected`)
 
-Pipelines that validate or parse individual files and records route failures to the unified `_rejected` table (`REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py): `table_name`, `source_file`, `line_no`, `raw_record`, `error_detail`) rather than aborting the entire batch:
+Pipelines that validate or parse individual files and records route failures to the unified `_rejected` table (`REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py): `table_name`, `source_file`, `line_no`, `raw_record`, `error_detail`) rather than aborting the entire batch:
 
 - **File pre-processors (`FILE_PREPROCESSORS`)**: Raising `FilePreprocessError` (such as an MD5 sidecar mismatch) writes a diagnostic row to `_rejected` with `source_file` and `error_detail` and skips the file.
 - **JSONLines and XML pipelines (`jsonlines_extract`, `jsonlines_jsonschema`, `jsonlines_pydantic`, `xmltodict`, `xmltopyarrow`)**: Unparseable records or schema/model validation errors are routed to `_rejected` with `table_name`, `source_file`, `line_no`, `raw_record`, and `error_detail`.
-- **XSV pipeline (`xsv`)**: When `qsv` two-pass validation detects structural errors or JSON Schema violations in a file, diagnostic rows are routed to `_rejected` while valid files continue loading into `<table_name>`.
+- **XSV pipelines (`xsv` and `uniprot_idmapping`)**: When `qsv` two-pass validation detects structural errors or JSON Schema violations in a file, diagnostic rows are routed to `_rejected` while valid files continue loading into the target table(s).
 
 ### Structured Logging and Slack Alerts
 
-- **Logging ([`src/cdm_data_loaders/utils/cdm_logger.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/cdm_logger.py))**: `init_logger(settings)` initializes structured JSON logging from `--log-config-file` (or the default bundled `logger_config.json`).
+- **Logging ([`src/cdm_data_loaders/utils/logging.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/logging.py))**: `init_logger(log_config_file)` initializes structured JSON logging from `--log-config-file` (or `CDL_LOG_CONFIG_FILE` / the built-in fallback configuration).
 - **Slack notifications**: When `runtime.slack_incoming_hook` (`RUNTIME__SLACK_INCOMING_HOOK`) is configured in `dlt`, `run_pipeline()` posts a completion or error summary alert.

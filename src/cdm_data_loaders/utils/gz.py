@@ -1,46 +1,20 @@
-"""File compression utils."""
+"""Pure gzip file compression and decompression helpers."""
 
 import gzip
 import shutil
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Annotated, Final
-
-from frozendict import frozendict
-from pydantic import BeforeValidator, Field
-from pydantic_settings import CliApp, SettingsConfigDict
-
-from cdm_data_loaders.core.fields import FILE_GLOB, GZIP_SUFFIX, FileGlob
-from cdm_data_loaders.core.path_fields import check_local_path
-from cdm_data_loaders.core.settings import CdmDataLoadersBase, default_settings_with_shortcuts
+from typing import Final
 
 logger: Logger = getLogger(__name__)
 
-GZ_CLI_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
-    {
-        "source": "i",
-        FILE_GLOB: "f",
-    }
-)
-
-
-class GzSettings(CdmDataLoadersBase):
-    """Settings for compressing a file or directory from the command line."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(cli_shortcuts=GZ_CLI_SHORTCUTS)
-
-    source: Annotated[
-        Path,
-        Field(description="Input file(s) to process"),
-        BeforeValidator(check_local_path),
-    ]
-    file_glob: FileGlob
+GZIP_SUFFIX: Final[str] = ".gz"
 
 
 def decompress_file(file: str | Path) -> None:
-    """Decompress a gzip file.
+    """Decompress a gzip file in place unless the uncompressed target exists.
 
-    :param file: file to decompress
+    :param file: file path to decompress
     :type file: str | Path
     """
     if not isinstance(file, Path):
@@ -70,13 +44,13 @@ def decompress_file(file: str | Path) -> None:
 
 
 def compress_files(directory: Path | str, file_glob: str) -> None:
-    """Compress all files matching a certain pattern in a directory.
+    """Compress all files matching ``file_glob`` inside ``directory``.
 
-    :param directory: directory to look in
+    :param directory: directory to scan
     :type directory: Path | str
-    :param file_glob: pattern to match
+    :param file_glob: glob pattern to match
     :type file_glob: str
-    :raises ValueError: if the directory is not found
+    :raises FileNotFoundError: if ``directory`` does not exist or is not a directory
     """
     if not isinstance(directory, Path):
         directory = Path(directory)
@@ -96,7 +70,7 @@ def compress_files(directory: Path | str, file_glob: str) -> None:
 
 
 def compress_file(file: Path) -> None:
-    """Compress a file using gzip.
+    """Compress ``file`` using gzip unless ``<file>.gz`` exists.
 
     :param file: file to compress
     :type file: Path
@@ -108,25 +82,3 @@ def compress_file(file: Path) -> None:
     with file.open("rb") as f_in, gzip.open(str(file) + GZIP_SUFFIX, "wb") as f_out:
         shutil.copyfileobj(f_in, f_out)
     logger.info("Created output file %s.gz", str(file))
-
-
-def main(cli_args: list[str] | None = None) -> None:
-    """Compress a file or directory from the command line.
-
-    :param cli_args: command-line arguments; defaults to ``sys.argv[1:]`` when None
-    :type cli_args: list[str] | None
-    :raises RuntimeError: if the source path does not exist
-    """
-    settings = CliApp.run(GzSettings, cli_args=cli_args)
-    if not settings.source.exists():
-        msg = f"Path {settings.source} does not exist"
-        raise RuntimeError(msg)
-
-    if settings.source.is_dir():
-        compress_files(settings.source, settings.file_glob or "*")
-    else:
-        compress_file(settings.source)
-
-
-if __name__ == "__main__":
-    main()

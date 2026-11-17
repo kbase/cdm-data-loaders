@@ -1,19 +1,18 @@
-"""Shared fixtures and functions for cdm_data_loaders tests."""
+"""Shared fixtures for ``tests/cdm_data_loaders``."""
 
-import os
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Final
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 from frozendict import frozendict
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, CliApp
 
 from cdm_data_loaders.core import reporting
 from cdm_data_loaders.core.fields import (
     BUFFER_SIZE,
-    DEFAULTS,
     DLT_DEV_MODE,
     FILE_LISTING_FILE_NAME,
     INPUT_DIR,
@@ -26,36 +25,28 @@ from cdm_data_loaders.core.fields import (
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
 )
 from cdm_data_loaders.core.settings import CtsSettings
-from tests.conftest import LOCAL_FS
-from tests.helpers import make_cli_arg, make_cts_settings
-
-HOOK_ENV_VAR: Final[str] = "RUNTIME__SLACK_INCOMING_HOOK"
-HOOK_PART_ENV_VARS: Final[tuple[str, ...]] = ("VARIABLE_B", "VARIABLE_T", "CHAR_STR")
-SLACK_HOOK: Final[str] = "https://slack.hook/what/ever"
-LOAD_INFO_SAVE_FAILED: Final[str] = "Loading pipeline load info failed: "
-LOAD_INFO_SAVE_FAILED_JOBS: Final[str] = "Loading pipeline load info had failed jobs: "
-
-
-def check_settings(
-    settings_object: BaseSettings,
-    expected: dict[str, Any] | frozendict[str, Any],
-) -> None:
-    """Check that the settings object has the expected values."""
-    assert settings_object.model_dump() == expected
-
-
-# ways of supplying values to a settings class
-INIT: Final[str] = "init"
-ENV: Final[str] = "env"
-CLI: Final[str] = "cli"
-SETTINGS_SOURCES: Final[tuple[str, ...]] = (INIT, ENV, CLI)
-
-type SettingsFactory = Callable[[type[BaseSettings], str, Mapping[str, str]], BaseSettings]
+from tests.helpers.cli_assertions import (
+    CLI,
+    ENV,
+    INIT,
+    SettingsFactory,
+    make_cli_arg,
+    make_cts_settings,
+)
+from tests.helpers.fixtures_jsonlines import Widget, make_entity_models_factory
+from tests.helpers.fixtures_jsonschema import build_widget_schema, make_entity_schemas_factory
+from tests.helpers.paths_and_constants import LOCAL_FS
 
 
 @pytest.fixture
 def make_settings(monkeypatch: pytest.MonkeyPatch) -> SettingsFactory:
-    """Build a settings object from string values supplied as init kwargs, env vars, or CLI args."""
+    """Build a settings object from string values supplied as init kwargs, env vars, or CLI args.
+
+    :param monkeypatch: Active pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    :return: Settings factory callable.
+    :rtype: SettingsFactory
+    """
 
     def _make(settings_cls: type[BaseSettings], source: str, values: Mapping[str, str]) -> BaseSettings:
         if source == INIT:
@@ -74,42 +65,15 @@ def make_settings(monkeypatch: pytest.MonkeyPatch) -> SettingsFactory:
     return _make
 
 
-def local_io_expected(input_dir: Path | str, output_dir: Path) -> dict[str, Any]:
-    """Expected model_dump of InputLocalOutputSettings with default logging."""
-    resolved_input = str(input_dir.resolve()) if isinstance(input_dir, Path) else input_dir
-    return {
-        "log_config_file": DEFAULTS[LOG_CONFIG_FILE],
-        "input_dir": resolved_input,
-        "output_dir": output_dir.resolve(),
-    }
-
-
-def cts_expected(input_dir: Path | str, output_dir: Path, **overrides: Any) -> dict[str, Any]:  # noqa: ANN401
-    """Expected model_dump of CtsSettings: defaults, the given dirs, and any overrides."""
-    resolved_output_dir = output_dir.resolve()
-    use_pipeline_dir = overrides.get(
-        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA, DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA]
-    )
-    pipeline_dir = overrides.get(
-        "pipeline_dir",
-        resolved_output_dir / PIPELINE_DIR_NAME if use_pipeline_dir else None,
-    )
-    return {
-        **local_io_expected(input_dir, output_dir),
-        BUFFER_SIZE: DEFAULTS[BUFFER_SIZE],
-        DLT_DEV_MODE: DEFAULTS[DLT_DEV_MODE],
-        LOG_INTERVAL: DEFAULTS[LOG_INTERVAL],
-        USE_OUTPUT_DIR_FOR_PIPELINE_METADATA: DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
-        "pipeline_dir": pipeline_dir,
-        "report_path": (pipeline_dir or resolved_output_dir) / REPORT_FILE_NAME,
-        "file_listing_path": (pipeline_dir or resolved_output_dir) / FILE_LISTING_FILE_NAME,
-        **overrides,
-    }
-
-
 @pytest.fixture
 def input_dir(tmp_path: Path) -> Path:
-    """Existing input directory."""
+    """Create and return an existing input directory under ``tmp_path``.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :return: Resolved input directory path.
+    :rtype: Path
+    """
     path = tmp_path / "input"
     path.mkdir(exist_ok=True)
     return path.resolve()
@@ -117,19 +81,41 @@ def input_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def output_dir(tmp_path: Path) -> Path:
-    """Output directory that does not exist yet."""
+    """Return a resolved output directory path under ``tmp_path`` that does not exist yet.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :return: Resolved output directory path.
+    :rtype: Path
+    """
     return (tmp_path / "output").resolve()
 
 
 @pytest.fixture
 def test_defaults(input_dir: Path, output_dir: Path) -> dict[str, Any]:
-    """Defaults for required fields, used for testing."""
+    """Return defaults for required ``CtsSettings`` fields.
+
+    :param input_dir: Existing input directory fixture.
+    :type input_dir: Path
+    :param output_dir: Target output directory fixture.
+    :type output_dir: Path
+    :return: Dictionary of required field defaults.
+    :rtype: dict[str, Any]
+    """
     return {INPUT_DIR: input_dir, OUTPUT_DIR: output_dir, USE_DESTINATION: LOCAL_FS}
 
 
 @pytest.fixture
 def test_cts_settings(input_dir: Path, output_dir: Path) -> frozendict[str, Any]:
-    """Settings dictionary with all CtsSettings fields specified."""
+    """Return a raw settings dictionary with all ``CtsSettings`` fields specified.
+
+    :param input_dir: Existing input directory fixture.
+    :type input_dir: Path
+    :param output_dir: Target output directory fixture.
+    :type output_dir: Path
+    :return: Frozen dictionary of raw field values.
+    :rtype: frozendict[str, Any]
+    """
     return frozendict(
         {
             DLT_DEV_MODE: "false",
@@ -146,7 +132,13 @@ def test_cts_settings(input_dir: Path, output_dir: Path) -> frozendict[str, Any]
 
 @pytest.fixture
 def test_cts_settings_reconciled(test_cts_settings: frozendict[str, Any]) -> frozendict[str, Any]:
-    """Reconciled CtsSettings dictionary matching model_dump()."""
+    """Return reconciled ``CtsSettings`` dictionary matching ``model_dump()``.
+
+    :param test_cts_settings: Raw ``CtsSettings`` dictionary fixture.
+    :type test_cts_settings: frozendict[str, Any]
+    :return: Expected ``model_dump()`` dictionary.
+    :rtype: frozendict[str, Any]
+    """
     pipeline_dir = test_cts_settings[OUTPUT_DIR] / PIPELINE_DIR_NAME
     return frozendict(
         {
@@ -162,19 +154,17 @@ def test_cts_settings_reconciled(test_cts_settings: frozendict[str, Any]) -> fro
     )
 
 
-@pytest.fixture(autouse=True)
-def clean_env() -> Iterator[None]:
-    """Remove Slack hook env vars, disable dlt telemetry, and restore the environment afterwards."""
-    with patch.dict(os.environ):
-        for name in (*HOOK_PART_ENV_VARS, HOOK_ENV_VAR):
-            os.environ.pop(name, None)
-        os.environ["RUNTIME__DLTHUB_TELEMETRY"] = "false"
-        yield
-
-
 @pytest.fixture
 def dlt_test_settings(tmp_path: Path, dlt_destination_config: str) -> CtsSettings:
-    """Settings that load into the local_fs destination and keep pipeline metadata in a separate output_dir."""
+    """Return ``CtsSettings`` configured for ``local_fs`` with pipeline metadata in ``output_dir``.
+
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :param dlt_destination_config: Active destination name fixture.
+    :type dlt_destination_config: str
+    :return: Configured ``CtsSettings`` instance.
+    :rtype: CtsSettings
+    """
     return make_cts_settings(
         CtsSettings,
         tmp_path,
@@ -185,14 +175,60 @@ def dlt_test_settings(tmp_path: Path, dlt_destination_config: str) -> CtsSetting
 
 
 @pytest.fixture
-def destination_bucket(tmp_path: Path, dlt_destination_config: str) -> Path:  # noqa: ARG001
-    """The bucket_url of the local_fs destination in dlt.config."""
-    return tmp_path / "bucket"
-
-
-@pytest.fixture
 def slack_mock(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    """Replace the dlt Slack sender used by send_slack_message_carefully."""
+    """Replace the dlt Slack sender used by ``send_slack_message_carefully``.
+
+    :param monkeypatch: Active pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    :return: Installed ``MagicMock``.
+    :rtype: MagicMock
+    """
     mock = MagicMock()
     monkeypatch.setattr(reporting, "send_slack_message", mock)
     return mock
+
+
+@pytest.fixture
+def widget_model() -> type[BaseModel]:
+    """Return the sample ``Widget`` Pydantic entity model.
+
+    :return: ``Widget`` model class.
+    :rtype: type[BaseModel]
+    """
+    return Widget
+
+
+@pytest.fixture
+def entity_models_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[dict[str, type[BaseModel]]], str]:
+    """Return a factory registering synthetic ``ENTITY_MODELS`` modules in ``sys.modules``.
+
+    :param monkeypatch: Active pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    :return: Module-registration callable.
+    :rtype: Callable[[dict[str, type[BaseModel]]], str]
+    """
+    return make_entity_models_factory(monkeypatch)
+
+
+@pytest.fixture
+def widget_schema() -> dict[str, Any]:
+    """Return a fresh ``widget`` JSON Schema dictionary.
+
+    :return: JSON Schema mapping.
+    :rtype: dict[str, Any]
+    """
+    return build_widget_schema()
+
+
+@pytest.fixture
+def entity_schemas_factory(monkeypatch: pytest.MonkeyPatch) -> Callable[[object], str]:
+    """Return a factory registering synthetic ``ENTITY_SCHEMAS`` modules in ``sys.modules``.
+
+    :param monkeypatch: Active pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    :return: Module-registration callable.
+    :rtype: Callable[[object], str]
+    """
+    return make_entity_schemas_factory(monkeypatch)

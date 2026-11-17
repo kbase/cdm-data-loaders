@@ -5,16 +5,12 @@ from enum import StrEnum
 from typing import Annotated, Final
 
 from frozendict import frozendict
-from pydantic import AfterValidator, Field, FilePath, PositiveInt, StringConstraints
+from pydantic import AfterValidator, Field, PositiveInt, StringConstraints
 
 INPUT_MOUNT: Final[str] = "/input_dir"
 OUTPUT_MOUNT: Final[str] = "/output_dir"
 
-DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
-XML_GZ_FILE_GLOB: Final[str] = "*.xml.gz"
-DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
 REJECTED_TABLE_NAME: Final[str] = "_rejected"
-GZIP_SUFFIX: Final[str] = ".gz"
 
 CTS_GLOBSTAR: Final[str] = "__GLOBSTAR__"
 CTS_STAR: Final[str] = "__STAR__"
@@ -235,7 +231,14 @@ PreprocessorsModuleSpec = Annotated[
 
 
 def _reject_reserved_table_name(value: str) -> str:
-    """Reject the reserved _rejected table name."""
+    """Reject the reserved ``_rejected`` table name.
+
+    :param value: table name to check
+    :type value: str
+    :return: ``value`` when valid
+    :rtype: str
+    :raises ValueError: if ``value`` equals ``_rejected``
+    """
     if value == REJECTED_TABLE_NAME:
         msg = f"Table name {REJECTED_TABLE_NAME!r} is reserved for pipeline error records."
         raise ValueError(msg)
@@ -270,17 +273,5 @@ UseOutputDirForPipelineMetadata = Annotated[
     Field(
         default=DEFAULTS[USE_OUTPUT_DIR_FOR_PIPELINE_METADATA],
         description="Store pipeline metadata in `<output_dir>/<PIPELINE_DIR_NAME>`. output_dir must be set and on the local filesystem.",
-    ),
-]
-XmlTag = Annotated[
-    NonEmptyStr,
-    Field(
-        description="XML tag to capture the contents of",
-    ),
-]
-XsdFile = Annotated[
-    FilePath,
-    Field(
-        description="Path to the XSD file describing the XML documents to be imported.",
     ),
 ]

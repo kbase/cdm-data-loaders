@@ -16,10 +16,10 @@ from pyiceberg.types import BinaryType, DecimalType, ListType, NestedField, Time
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
-from cdm_data_loaders.converters.readers.dlt import DltReader
-from cdm_data_loaders.converters.readers.iceberg import IcebergReader
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
-from tests.cdm_data_loaders.converters.conftest import base_object_schema
+from cdm_data_loaders.converters.sources.dlt import DltReader
+from cdm_data_loaders.converters.sources.iceberg import IcebergReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
+from tests.cdm_data_loaders.converters._helpers import base_object_schema
 
 
 @pytest.mark.parametrize(

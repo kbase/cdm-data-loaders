@@ -73,7 +73,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY --chown=nonroot:nonroot .dlt /app/.dlt
 COPY --chown=nonroot:nonroot docs /app/docs
 COPY --chown=nonroot:nonroot notebooks /app/notebooks
-COPY --chown=nonroot:nonroot scripts /app/scripts
+COPY --chown=nonroot:nonroot scripts/entrypoint.sh /app/scripts/entrypoint.sh
 COPY --chown=nonroot:nonroot specs /app/specs
 COPY --chown=nonroot:nonroot src /app/src
 COPY --chown=nonroot:nonroot tests /app/tests
@@ -86,7 +86,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable
 
 RUN chown -R nonroot:nonroot /app
-RUN chmod +x ./scripts/*.sh
+RUN chmod +x ./scripts/entrypoint.sh
 
 # create a home dir for the user for dlt config files
 # files in $HOME override those in the execution directory

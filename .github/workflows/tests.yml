@@ -50,10 +50,10 @@ jobs:
         suite:
           - name: pipelines
             args: tests/cdm_data_loaders/pipelines/
-          - name: integration
-            args: tests/integration/
+          - name: e2e
+            args: tests/e2e/
           - name: everything else
-            args: --ignore=tests/integration --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs
+            args: --ignore=tests/e2e --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs
 
     steps:
       - name: Checkout
@@ -97,19 +97,19 @@ jobs:
           - name: pipelines
             markers: "not requires_spark and not requires_ceph and not docs and not state_audit"
             args: --cov tests/cdm_data_loaders/pipelines/
-          - name: integration
+          - name: e2e
             markers: "not requires_spark and not requires_ceph and not docs and not state_audit"
-            args: --cov tests/integration/
+            args: --cov tests/e2e/
           - name: everything else
             markers: "not requires_spark and not requires_ceph and not docs and not state_audit"
-            args: --cov --ignore=tests/integration --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs
+            args: --cov --ignore=tests/e2e --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs
         include:
           - python-version: "3.13"
             os: "ubuntu-latest"
             suite:
               name: state_audit
               markers: "state_audit"
-              args: --no-cov tests/test_global_state_audit.py
+              args: --no-cov tests/harness/test_global_state_audit.py
 
     steps:
       - name: Checkout

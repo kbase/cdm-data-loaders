@@ -9,7 +9,7 @@ from typing import Final
 
 import pytest
 
-from tests.fs_backends import S3_DRIVERS, FsBackend
+from tests.helpers.fs_backends import S3_DRIVERS, FsBackend
 
 CONTENT: Final[bytes] = b'<?xml version="1.0"?>\n<root><entry>caf\xc3\xa9</entry></root>\n'
 GZ_CONTENT: Final[bytes] = gzip.compress(CONTENT)

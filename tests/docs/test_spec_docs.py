@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Final
 
+import pyarrow as pa
 import pytest
 from frozendict import frozendict
 
@@ -34,19 +35,17 @@ from cdm_data_loaders.pipelines.xsv.exceptions import (
     XSV_SCHEMA_ERRORS,
     XsvSchemaError,
 )
-from docs_macros.env import (
-    build_generated_docs_plan,
+from docs_macros.formatting import pyarrow_to_python_type_label
+from docs_macros.render import (
     render_converter_spec,
     render_pipeline_spec,
     render_reference_table,
 )
-from docs_macros.spec_context import (
-    CONVERTER_SPECS,
-    PIPELINE_SPECS,
-    PipelineSpecConfig,
-)
-from tests.converter_spec import load_cases, load_rules
-from tests.pipeline_spec import load_pipeline_cases
+from docs_macros.specs.discovery import discover_converter_specs, discover_pipeline_specs
+from docs_macros.specs.models import PipelineSpecConfig
+from docs_macros.sync import build_generated_docs_plan
+from specs._loader.converter_spec import load_cases, load_rules
+from specs._loader.pipeline_spec import load_pipeline_cases
 
 pytestmark = pytest.mark.docs
 
@@ -76,8 +75,8 @@ PIPELINE_ERRORS_BY_FAMILY: Final[frozendict[str, tuple[SpecErrorClass, ...]]] = 
 
 def test_converter_and_pipeline_spec_error_registries_cover_all_specs() -> None:
     """Every converter and pipeline specification in docs_macros is covered by the spec doc test registries."""
-    assert set(CONVERTER_ERRORS_BY_SPEC) == set(CONVERTER_SPECS)
-    assert set(PIPELINE_ERRORS_BY_FAMILY) == set(PIPELINE_SPECS)
+    assert set(CONVERTER_ERRORS_BY_SPEC) == set(discover_converter_specs())
+    assert set(PIPELINE_ERRORS_BY_FAMILY) == set(discover_pipeline_specs())
 
 
 @pytest.mark.parametrize(
@@ -89,7 +88,7 @@ def test_converter_specification_document_pass_up_to_date(
     error_classes: tuple[type[ConversionError], ...],
 ) -> None:
     """Each converter specification stub invokes render_converter_spec and renders all rules, cases, and errors."""
-    spec_cfg = CONVERTER_SPECS[spec_name]
+    spec_cfg = discover_converter_specs()[spec_name]
     stub_text = build_generated_docs_plan()[Path(spec_cfg.output.name)]
     assert "render_macros: true" in stub_text
     assert f'render_converter_spec("{spec_name}")' in stub_text
@@ -118,7 +117,7 @@ def test_pipeline_specification_document_pass_up_to_date(
     error_classes: tuple[SpecErrorClass, ...],
 ) -> None:
     """Each pipeline specification stub invokes render_pipeline_spec and renders all rules, cases, and errors."""
-    spec = PIPELINE_SPECS[family_name]
+    spec = discover_pipeline_specs()[family_name]
     stub_text = build_generated_docs_plan()[Path(spec.output_path.name)]
     assert "render_macros: true" in stub_text
     assert f'render_pipeline_spec("{spec.name}")' in stub_text
@@ -143,11 +142,12 @@ def test_pipeline_specification_document_pass_up_to_date(
 
 def test_render_pipeline_spec_custom_config_and_unknown_name() -> None:
     """render_pipeline_spec accepts a custom PipelineSpecConfig and raises KeyError on unknown names."""
+    xml_spec = discover_pipeline_specs()["xmltopyarrow"]
     custom_spec = PipelineSpecConfig(
         name="xmltopyarrow",
-        data_dir=PIPELINE_SPECS["xmltopyarrow"].data_dir,
-        output_path=PIPELINE_SPECS["xmltopyarrow"].output_path,
-        presets=PIPELINE_SPECS["xmltopyarrow"].presets,
+        data_dir=xml_spec.data_dir,
+        output_path=xml_spec.output_path,
+        presets=xml_spec.presets,
     )
     rendered = render_pipeline_spec(custom_spec)
     assert "# XML to PyArrow Pipeline Specification" in rendered
@@ -191,6 +191,14 @@ def test_render_pipeline_spec_custom_config_and_unknown_name() -> None:
             ),
             id="pyarrow_to_linkml_scalar_table",
         ),
+        pytest.param(
+            "presets_table",
+            (
+                "| `pubmed` | `PubMedXmlToPyArrowSettings` |",
+                "| `validate_md5_sidecar` |",
+            ),
+            id="presets_table",
+        ),
     ],
 )
 def test_render_reference_table_expected_rows(table_id: str, expected_fragments: tuple[str, ...]) -> None:
@@ -198,3 +206,41 @@ def test_render_reference_table_expected_rows(table_id: str, expected_fragments:
     rendered = render_reference_table(table_id)
     for fragment in expected_fragments:
         assert fragment in rendered
+
+
+def test_render_pipeline_spec_preset_overrides_pass() -> None:
+    """Preset hierarchy tables render public preset bindings and added preset fields."""
+    xml_rendered = render_pipeline_spec("xmltopyarrow")
+    assert "`PRECOMPUTED_SCHEMAS`" in xml_rendered
+    assert "`DEFAULT_FILE_PREPROCESSORS`" in xml_rendered
+    assert "`(validate_md5_sidecar,)`" in xml_rendered
+
+    xsv_rendered = render_pipeline_spec("xsv")
+    assert "### Preset Pipeline: `uniprot_idmapping` (`UniProtIdMappingSettings`)" in xsv_rendered
+    assert "| `partition_buckets` | Added preset field | — | `64` |" in xsv_rendered
+
+
+@pytest.mark.parametrize(
+    ("data_type", "expected_label"),
+    [
+        pytest.param(pa.bool_(), "`bool`", id="bool"),
+        pytest.param(pa.int32(), "`int`", id="int32"),
+        pytest.param(pa.uint64(), "`int`", id="uint64"),
+        pytest.param(pa.float64(), "`float`", id="float64"),
+        pytest.param(pa.decimal128(10, 2), "`decimal.Decimal`", id="decimal128"),
+        pytest.param(pa.date32(), "`datetime.date`", id="date32"),
+        pytest.param(pa.time64("us"), "`datetime.time`", id="time64"),
+        pytest.param(pa.timestamp("us", tz="UTC"), "`datetime.datetime` (UTC)", id="timestamp-utc"),
+        pytest.param(pa.timestamp("us"), "`datetime.datetime` (naive)", id="timestamp-naive"),
+        pytest.param(pa.binary(), "`bytes`", id="binary"),
+        pytest.param(pa.string(), "`str`", id="string"),
+        pytest.param(pa.list_(pa.string()), "`list[str]`", id="list-str"),
+        pytest.param(pa.null(), "`null`", id="fallback-null"),
+    ],
+)
+def test_pyarrow_to_python_type_label_pass_scalar_list_and_fallback_types(
+    data_type: pa.DataType,
+    expected_label: str,
+) -> None:
+    """pyarrow_to_python_type_label maps scalar, list, and fallback Arrow DataTypes to Python type labels."""
+    assert pyarrow_to_python_type_label(data_type) == expected_label

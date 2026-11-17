@@ -6,7 +6,6 @@ Cases, rules, and error fixtures are declared in manifests under
 ``docs_macros`` Jinja2 templates.
 """
 
-import json
 import math
 from pathlib import Path
 from typing import Any, Final
@@ -21,13 +20,12 @@ from linkml_runtime.linkml_model.meta import SchemaDefinition, SlotDefinition
 from linkml_runtime.loaders import yaml_loader
 from linkml_runtime.utils.formatutils import camelcase
 
-from cdm_data_loaders.coercion.pyarrow import (
+from cdm_data_loaders.coercion.arrow_to_records import (
     serialize_record_for_linkml,
     serialize_table_for_linkml,
 )
 from cdm_data_loaders.converters.exceptions.facades.pyarrow_to_linkml import (
     ERROR_BY_CODE,
-    PYARROW_TO_LINKML_ERRORS,
     EmptyFieldNameError,
     InvalidPyArrowSchemaError,
     NestedMultivaluedSlotError,
@@ -42,12 +40,16 @@ from cdm_data_loaders.converters.facades.pyarrow_to_linkml import (
     generate_linkml_yaml,
     resolve_scalar_type,
 )
-from tests.conftest import BASE_DIR
-from tests.converter_spec import Case, ErrorCase, RuleCatalogue, Run, load_cases, load_error_cases, load_rules
-from tests.pyarrow_spec_helpers import load_fixture_attr, load_input_schema, load_input_table
+from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_spec import (
+    load_fixture_attr,
+    load_input_schema,
+    load_input_table,
+    load_json_records,
+)
 
 PYARROW_LML_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "pyarrow_to_linkml").resolve()
-RULES: Final[RuleCatalogue] = load_rules(PYARROW_LML_DATA_DIR / "rules.yaml")
 CASES: Final[tuple[Case, ...]] = tuple(
     load_cases(PYARROW_LML_DATA_DIR / "spec") + load_cases(PYARROW_LML_DATA_DIR / "examples")
 )
@@ -94,46 +96,6 @@ class _CustomAccessionExtensionType(pa.ExtensionType):
         return cls()
 
 
-def _load_json_records(path: Path) -> list[dict[str, Any]]:
-    """Load a list of JSON record dictionaries from disk.
-
-    :param path: Path to the JSON file.
-    :type path: Path
-    :return: Parsed list of row dictionaries.
-    :rtype: list[dict[str, Any]]
-    :raises TypeError: If the root JSON value is not a list.
-    """
-    loaded = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, list):
-        msg = f"Expected a list of JSON records in {path}, got {type(loaded)}"
-        raise TypeError(msg)
-    return loaded
-
-
-def test_manifests_pass_consistency() -> None:
-    """Verify rule coverage, fixture file existence, and error code coverage."""
-    unknown = {f"{case.suite}/{case.name}": sorted(set(case.rules) - RULES.rules.keys()) for case in CASES}
-    assert {name: ids for name, ids in unknown.items() if ids} == {}
-
-    used_rules = {rule_id for case in CASES for rule_id in case.rules}
-    assert sorted(RULES.rules.keys() - used_rules) == []
-
-    paths = [p for case in CASES for p in (case.schema, case.expected_schema)]
-    paths += [p for case in CASES for run in case.runs for p in (run.data, run.expected_json, run.expected_table)]
-    paths += [err.file for err in ERROR_CASES]
-    assert [str(p) for p in paths if not p.is_file()] == []
-
-    listed_errors = {err.file for err in ERROR_CASES}
-    on_disk_errors = set((PYARROW_LML_DATA_DIR / "spec" / "errors").glob("*.py"))
-    assert sorted(str(p) for p in on_disk_errors - listed_errors) == []
-
-    assert len(ERRORS_BY_CODE) == len(PYARROW_TO_LINKML_ERRORS)
-    assert all(cls.code and cls.title and cls.__doc__ for cls in PYARROW_TO_LINKML_ERRORS)
-    manifest_codes = {err.code for err in ERROR_CASES}
-    assert sorted(manifest_codes - ERRORS_BY_CODE.keys()) == []
-    assert sorted(ERRORS_BY_CODE.keys() - manifest_codes) == []
-
-
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
 def test_fixtures_pass_table_and_ipc_roundtrip(case: Case, run: Run) -> None:
     """Verify each fixture table validates against its input schema and round-trips losslessly through Arrow IPC."""
@@ -172,7 +134,7 @@ def test_serialize_table_and_record_for_linkml_pass_cases(case: Case, run: Run) 
     """Verify serialized Arrow table rows match expected.json and validate against compiled LinkML Pydantic models."""
     pa_schema = load_input_schema(case.schema, run.schema_attr)
     table = load_input_table(run.data, run.table_attr)
-    expected_rows = _load_json_records(run.expected_json)
+    expected_rows = load_json_records(run.expected_json)
 
     rows = serialize_table_for_linkml(table)
     assert rows == expected_rows

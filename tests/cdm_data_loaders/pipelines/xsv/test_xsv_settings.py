@@ -24,15 +24,14 @@ from cdm_data_loaders.pipelines.xsv.settings import (
     PIPELINE_NAME,
     XsvIngestSettings,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
-from cdm_data_loaders.schemas.jsonschema import (
+from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError
+from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,
-    DereferencingError,
     get_xsv_meta_schema,
 )
-from tests.cdm_data_loaders.pipelines.xsv.conftest import DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
-from tests.helpers import register_temp_module
-from tests.xsv_fixtures import COLUMNS
+from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
+from tests.helpers.cli_assertions import register_temp_module
+from tests.helpers.fixtures_xsv import COLUMNS, DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
 
 """defaults and basic construction"""
 

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json",
+  "title": "XsvDialectBatchMeta",
+  "type": "object",
+  "required": [
+    "batch_id",
+    "created_date"
+  ],
+  "properties": {
+    "batch_id": {
+      "type": "string"
+    },
+    "created_date": {
+      "type": "string",
+      "format": "date"
+    }
+  },
+  "x-xsv-config": {
+    "x-delimiter": ","
+  }
+}

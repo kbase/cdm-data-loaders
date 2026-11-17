@@ -34,28 +34,29 @@ dependencies = [
 ]
 
 [project.scripts]
-all_the_bacteria = "cdm_data_loaders.pipelines.all_the_bacteria:cli"
-jsonlines_extract = "cdm_data_loaders.pipelines.jsonlines.extract_pipeline:cli"
-jsonlines_jsonschema = "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:cli"
-jsonlines_pydantic = "cdm_data_loaders.pipelines.jsonlines.extract_pydantic_validate_pipeline:cli"
-ncbi_datasets = "cdm_data_loaders.pipelines.jsonlines.extract_jsonschema_validate_pipeline:ncbi_datasets_cli"
-ncbi_ftp_promote = "cdm_data_loaders.pipelines.ncbi_ftp_promote:cli"
-ncbi_ftp_sync = "cdm_data_loaders.pipelines.ncbi_ftp_download:cli"
-pubmed = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:pubmed_cli"
-pyiceberg_to_jsonschema = "cdm_data_loaders.converters.cli.pyiceberg_to_jsonschema:cli"
-pyiceberg_to_linkml = "cdm_data_loaders.converters.cli.pyiceberg_to_linkml:cli"
-uniprot = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniprot_cli"
-uniprot_cdm = "cdm_data_loaders.pipelines.uniprot_kb_cdm:cli"
-uniprot_idmapping = "cdm_data_loaders.pipelines.uniprot_idmapping:cli"
-uniref50 = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref50_cli"
-uniref50_cdm = "cdm_data_loaders.pipelines.uniref_cdm:uniref50_cdm_cli"
-uniref90 = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref90_cli"
-uniref90_cdm = "cdm_data_loaders.pipelines.uniref_cdm:uniref90_cdm_cli"
-uniref100 = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:uniref100_cli"
-uniref100_cdm = "cdm_data_loaders.pipelines.uniref_cdm:uniref100_cdm_cli"
+all_the_bacteria = "cdm_data_loaders.pipelines.all_the_bacteria.pipeline:cli"
+apply_polaris_schema_definitions = "cdm_data_loaders.cli.polaris_schema_definitions:cli"
+jsonlines_extract = "cdm_data_loaders.pipelines.jsonlines.extract:cli"
+jsonlines_jsonschema = "cdm_data_loaders.pipelines.jsonlines.jsonschema:cli"
+jsonlines_pydantic = "cdm_data_loaders.pipelines.jsonlines.pydantic:cli"
+ncbi_datasets = "cdm_data_loaders.pipelines.presets.ncbi_datasets:cli"
+ncbi_ftp_promote = "cdm_data_loaders.cli.ncbi_ftp_promote:cli"
+ncbi_ftp_sync = "cdm_data_loaders.cli.ncbi_ftp_sync:cli"
+pubmed = "cdm_data_loaders.pipelines.presets.pubmed:cli"
+pyiceberg_to_jsonschema = "cdm_data_loaders.cli.pyiceberg_to_jsonschema:cli"
+pyiceberg_to_linkml = "cdm_data_loaders.cli.pyiceberg_to_linkml:cli"
+uniprot = "cdm_data_loaders.pipelines.presets.uniprot_xml:uniprot_cli"
+uniprot_cdm = "cdm_data_loaders.pipelines.presets.uniprot_cdm:uniprot_cdm_cli"
+uniprot_idmapping = "cdm_data_loaders.pipelines.presets.uniprot_idmapping:cli"
+uniref50 = "cdm_data_loaders.pipelines.presets.uniprot_xml:uniref50_cli"
+uniref50_cdm = "cdm_data_loaders.pipelines.presets.uniprot_cdm:uniref50_cdm_cli"
+uniref90 = "cdm_data_loaders.pipelines.presets.uniprot_xml:uniref90_cli"
+uniref90_cdm = "cdm_data_loaders.pipelines.presets.uniprot_cdm:uniref90_cdm_cli"
+uniref100 = "cdm_data_loaders.pipelines.presets.uniprot_xml:uniref100_cli"
+uniref100_cdm = "cdm_data_loaders.pipelines.presets.uniprot_cdm:uniref100_cdm_cli"
 xmltodict = "cdm_data_loaders.pipelines.xmltodict.pipeline:cli"
 xmltopyarrow = "cdm_data_loaders.pipelines.xmltopyarrow.pipeline:cli"
-xsd_to_pyarrow = "cdm_data_loaders.converters.cli.xsd_to_pyarrow:cli"
+xsd_to_pyarrow = "cdm_data_loaders.cli.xsd_to_pyarrow:cli"
 xsv = "cdm_data_loaders.pipelines.xsv.pipeline:cli"
 
 [dependency-groups]
@@ -119,6 +120,7 @@ exclude = [
     "deps",
     "dist",
     "node_modules",
+    "not_for_github",
     "python-coverage",
     "venv",
 ]
@@ -208,7 +210,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "*.ipynb" = ["T201"] # ignore printing in notebooks
 "**/__init__.py" = ["D104"] # no docstrings for __init__ files
-"scripts/**/*.py" = ["T201"] # ignore printing in scripts
+"scripts/**/*.py" = ["INP001", "T201"] # ignore implicit namespace package and printing in scripts
 # D401: docstrings in imperative mode
 # S101: use of assert
 # T201: print statements
@@ -217,8 +219,9 @@ ignore = [
 # ARG002: unused mock args
 # PLR0913: too many arguments
 "tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913", "PLR0917"]
-# specs directory
-"specs/**/*.py" = ["INP001", "D101", "D102"]
+"tests/data/ncbi_datasets/openapi_pydantic.py" = ["D100", "D101"]
+# specs fixture directories (excluding specs/_loader package)
+"specs/{pipelines,schema_converters}/**/*.py" = ["INP001", "D101", "D102", "PYI061"]
 
 [tool.ruff.lint.mccabe]
 # Flag errors (`C901`) whenever the complexity level exceeds 15.

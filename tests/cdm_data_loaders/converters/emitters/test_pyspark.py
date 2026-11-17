@@ -29,19 +29,19 @@ from pyspark.sql.types import (
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
 from cdm_data_loaders.converters.core.ir import NodeHints, NodeType, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.metadata import (
-    REF_AND_IDENTITY_KEYWORDS,
-    STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS,
     ConversionContext,
     get_known_jsonschema_keywords,
     metadata_keys_for,
 )
-from cdm_data_loaders.converters.emitters.pyspark import (
-    PySparkEmitter,
-    PySparkEmitterError,
+from cdm_data_loaders.converters.emitters.pyspark import PySparkEmitter
+from cdm_data_loaders.converters.exceptions.emitters.pyspark import PySparkEmitterError
+from cdm_data_loaders.converters.sources.dlt import DltReader
+from cdm_data_loaders.converters.sources.iceberg import IcebergReader
+from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
+from cdm_data_loaders.validation.jsonschema.keywords import (
+    REF_AND_IDENTITY_KEYWORDS,
+    STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS,
 )
-from cdm_data_loaders.converters.readers.dlt import DltReader
-from cdm_data_loaders.converters.readers.iceberg import IcebergReader
-from cdm_data_loaders.converters.readers.json_schema import JsonSchemaReader
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 

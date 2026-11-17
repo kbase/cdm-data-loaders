@@ -1,0 +1,120 @@
+"""End-to-end tests for the UniProt CDM DLT pipeline.
+
+The fixture directory contains 15 entries across four chunk files; exact
+per-table counts below are derived from those fixtures.
+"""
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+from frozendict import frozendict
+
+from cdm_data_loaders.core.filesystem import build_per_file_filesystem_resource
+from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
+    PIPELINE_NAME,
+    UniProtSettings,
+)
+from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
+from tests.e2e.framework import PipelineTestRunner
+from tests.helpers.cli_assertions import make_cts_settings
+from tests.helpers.paths_and_constants import TEST_DATA_DIR
+from tests.helpers.table_readers import (
+    assert_destination_table_counts,
+    assert_duckdb_table_counts,
+    assert_pipeline_report_written,
+    assert_run_ok,
+    duckdb_pipeline,
+    fetch_all_duckdb,
+)
+
+UNIPROT_FIXTURE_DIR = TEST_DATA_DIR / "uniprot" / "uniprot_kb" / "chunk_4"
+UNIPROT_FIXTURE_FILES = ("chunk_00001.xml", "chunk_00002.xml", "chunk_00003.xml", "chunk_00004.xml")
+UNIPROT_ENTRY_COUNT = 15
+
+# Row counts loaded from the fixtures by a single pipeline run, per table.
+EXPECTED_ROW_COUNTS = frozendict(
+    {
+        "entity": UNIPROT_ENTRY_COUNT,
+        "identifier": 696,
+        "name": 62,
+        "protein": UNIPROT_ENTRY_COUNT,
+        "entity_x_publication": 21,
+    }
+)
+
+
+# Integration tests for the UniProt pipeline
+@pytest.fixture
+def duckdb_uniprot_settings(tmp_path: Path) -> UniProtSettings:
+    """Provide UniProtSettings pointing at the real UniProt XML fixtures."""
+    return make_cts_settings(
+        UniProtSettings,
+        tmp_path,
+        input_dir=UNIPROT_FIXTURE_DIR,
+        output_dir=tmp_path / "output_dir",
+        use_output_dir_for_pipeline_metadata=True,
+    )
+
+
+def _run_uniprot_duckdb_pipeline(settings: UniProtSettings, tmp_path: Path, name: str) -> tuple[Any, Any]:
+    """Run ``process_xml_file_to_pyarrow`` across the fixture files through a real DuckDB pipeline."""
+    pipeline = duckdb_pipeline(tmp_path, f"test_uniprot_pipeline_{name}", "test_uniprot")
+    resource = build_per_file_filesystem_resource(
+        settings,
+        process_xml_file_to_pyarrow,
+        name="xmltopyarrow_reader",
+        parallelized=False,
+    )
+    load_info = pipeline.run(resource)
+    return pipeline, load_info
+
+
+def test_integration_uniprot_pipeline_loads_into_duckdb(
+    duckdb_uniprot_settings: UniProtSettings,
+    tmp_path: Path,
+) -> None:
+    """Full integration test: parse the real fixture files into a DuckDB destination.
+
+    Confirms that the pipeline runs end-to-end without failed jobs and that the
+    expected CDM tables are populated with the exact expected row counts.
+    """
+    pipeline, load_info = _run_uniprot_duckdb_pipeline(duckdb_uniprot_settings, tmp_path, "loads")
+
+    assert_run_ok(load_info)
+    assert_duckdb_table_counts(pipeline, EXPECTED_ROW_COUNTS)
+
+
+def test_integration_uniprot_pipeline_entity_content(
+    duckdb_uniprot_settings: UniProtSettings,
+    tmp_path: Path,
+) -> None:
+    """Entity rows are uniprot proteins with expected data sources."""
+    pipeline, load_info = _run_uniprot_duckdb_pipeline(duckdb_uniprot_settings, tmp_path, "content")
+
+    assert_run_ok(load_info)
+
+    # every entity must have a "uniprot:"-prefixed entity_id and be a protein.
+    rows = fetch_all_duckdb(pipeline, "SELECT entity_id, entity_type FROM entity")
+    assert len(rows) == UNIPROT_ENTRY_COUNT
+    assert all(entity_id.startswith("uniprot:") for entity_id, _ in rows)
+    assert all(entity_type == "protein" for _, entity_type in rows)
+
+
+def test_integration_cli_uniprot_pipeline_output_validated(
+    duckdb_uniprot_settings: UniProtSettings,
+    pipeline_runner: PipelineTestRunner,
+) -> None:
+    """Exercise the UniProt pipeline end-to-end across core, cli, and docker execution modes."""
+    load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=duckdb_uniprot_settings))
+    assert load_info.pipeline.pipeline_name == PIPELINE_NAME
+    assert load_info.dataset_name == PIPELINE_NAME
+    assert_pipeline_report_written(
+        Path(duckdb_uniprot_settings.output_dir),
+        load_info,
+        metadata_moved=True,
+        ingested_files=set(UNIPROT_FIXTURE_FILES),
+    )
+
+    dataset_dir = Path(duckdb_uniprot_settings.output_dir) / load_info.dataset_name
+    assert_destination_table_counts(dataset_dir, EXPECTED_ROW_COUNTS)

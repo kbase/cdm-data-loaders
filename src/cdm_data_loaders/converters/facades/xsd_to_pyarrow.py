@@ -7,22 +7,26 @@ from typing import Any, Final
 import pyarrow as pa
 import xmlschema
 from frozendict import frozendict
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field
 from xmlschema.validators import XsdType
 
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
+from cdm_data_loaders.converters.emitters.pyarrow_codegen.renderer import (
+    render_python_schema_module,
+    write_python_schema_file,
+)
 from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     ERROR_BY_CODE,
     NonStructXmlTagError,
     XsdToPyArrowError,
 )
-from cdm_data_loaders.converters.readers.xsd import (
+from cdm_data_loaders.converters.sources.xsd import (
     XSD_SCALAR_SPEC,
     XsdReader,
-    _simple_type_to_ir_node,
+    simple_type_to_ir_node,
 )
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, StrictPositiveRecursionDepth
 
 DEFAULT_EMITTER: Final[PyArrowEmitter] = PyArrowEmitter(max_nesting=100)
 
@@ -42,7 +46,7 @@ def resolve_scalar_type(simple_type: XsdType) -> tuple[pa.DataType, str]:
     :return: Tuple of ``(pa.DataType, xsd_type_str)``.
     :rtype: tuple[pa.DataType, str]
     """
-    node = _simple_type_to_ir_node(simple_type, (), nullable=True)
+    node = simple_type_to_ir_node(simple_type, (), nullable=True)
     arrow_type = DEFAULT_EMITTER.emit_node(node)
     xsd_type_str = str(node.provenance.metadata.get("xsd_type", "xs:string")) if node.provenance else "xs:string"
     return arrow_type, xsd_type_str
@@ -149,7 +153,7 @@ class XsdToPyArrow(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     xml_tag: str | None = None
-    max_recursion_depth: PositiveInt = Field(default=DEFAULT_MAX_RECURSION_DEPTH)
+    max_recursion_depth: StrictPositiveRecursionDepth = Field(default=DEFAULT_MAX_RECURSION_DEPTH)
 
     def _read(self, schema: xmlschema.XMLSchema | str | Path, xml_tag: str | None = None) -> SchemaDocument:
         """Read an XSD schema element into a converter IR ``SchemaDocument``.
@@ -234,7 +238,11 @@ class XsdToPyArrow(BaseModel):
         :return: formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``
         :rtype: str
         """
-        return DEFAULT_EMITTER.emit_python(self._read(schema, xml_tag), docstring=docstring)
+        return render_python_schema_module(
+            DEFAULT_EMITTER,
+            self._read(schema, xml_tag),
+            docstring=docstring,
+        )
 
     def convert_to_python_file(
         self,
@@ -257,7 +265,12 @@ class XsdToPyArrow(BaseModel):
         :return: resolved output ``Path``
         :rtype: Path
         """
-        return DEFAULT_EMITTER.emit_python_file(self._read(schema, xml_tag), output, docstring=docstring)
+        return write_python_schema_file(
+            DEFAULT_EMITTER,
+            self._read(schema, xml_tag),
+            output,
+            docstring=docstring,
+        )
 
     def convert_level_to_python(
         self,
@@ -280,7 +293,11 @@ class XsdToPyArrow(BaseModel):
         :return: formatted Python source code defining ``*_STRUCT``, ``*_SCHEMA``, ``SCHEMA``, and ``SCHEMAS``
         :rtype: str
         """
-        return DEFAULT_EMITTER.emit_python(self._read_level(schema, level, root_tag=root_tag), docstring=docstring)
+        return render_python_schema_module(
+            DEFAULT_EMITTER,
+            self._read_level(schema, level, root_tag=root_tag),
+            docstring=docstring,
+        )
 
     def convert_level_to_python_file(
         self,
@@ -306,7 +323,8 @@ class XsdToPyArrow(BaseModel):
         :return: resolved output ``Path``
         :rtype: Path
         """
-        return DEFAULT_EMITTER.emit_python_file(
+        return write_python_schema_file(
+            DEFAULT_EMITTER,
             self._read_level(schema, level, root_tag=root_tag),
             output,
             docstring=docstring,

@@ -1,0 +1,187 @@
+"""Read dereferenced JSON Schema documents into the intermediate representation."""
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, cast
+
+from jsonschema.validators import validator_for
+
+from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
+from cdm_data_loaders.converters.core.guards import (
+    reject_unresolved_references,
+    require_schema_keyword,
+)
+from cdm_data_loaders.converters.core.inference import infer_implicit_type
+from cdm_data_loaders.converters.core.ir import Field, NodeType, Provenance, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.sources.json_schema.common import (
+    extract_constraints,
+    extract_extensions,
+)
+from cdm_data_loaders.validation.jsonschema.keywords import (
+    ANNOTATIONS,
+    JSONSCHEMA_PRIMITIVE_TYPES,
+    SCHEMA_KEYS,
+    SCHEMA_MAPS,
+)
+from cdm_data_loaders.validation.jsonschema.metaschema import ensure_custom_metaschema_registered
+
+
+@dataclass(frozen=True, slots=True)
+class JsonSchemaReader:
+    """Read validated object-compatible JSON Schema documents using an extension registry."""
+
+    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
+    error_type: type[ConversionError] = ConversionError
+    converter_name: str = "JsonSchemaReader"
+    dereference_function: str = "dereference_schema"
+
+    def read(self, source: Mapping[str, Any]) -> SchemaDocument:
+        """Read a dereferenced JSON Schema document into a ``SchemaDocument``.
+
+        :param source: Dereferenced JSON Schema mapping.
+        :type source: Mapping[str, Any]
+        :return: Parsed ``SchemaDocument``.
+        :rtype: SchemaDocument
+        :raises ConversionError: If the document is not an object-compatible JSON Schema with ``$schema``.
+        """
+        if not isinstance(source, Mapping):
+            msg = "A JSON Schema document must be an object"
+            raise self.error_type(msg)
+        schema = dict(source)
+        require_schema_keyword(schema, self.error_type, converter_name=self.converter_name)
+        ensure_custom_metaschema_registered(schema)
+        declaration = schema.get("type")
+        if (
+            declaration is not None
+            and declaration != "object"
+            and not (isinstance(declaration, list) and "object" in declaration)
+        ):
+            msg = "Root schema must be object-compatible"
+            raise self.error_type(msg)
+        node = self._node(schema, ())
+        return SchemaDocument(
+            root=node,
+            dialect=schema["$schema"],
+            identifier=schema.get("$id"),
+            annotations=node.annotations,
+            extensions=node.extensions,
+            provenance=Provenance("json-schema"),
+            jsonschema_validator_cls=validator_for(schema),
+        )
+
+    def read_node(self, source: object) -> TypedNode:
+        """Read a schema fragment without document-level dialect or root guards.
+
+        :param source: JSON Schema fragment mapping or boolean schema.
+        :type source: object
+        :return: Parsed ``TypedNode``.
+        :rtype: TypedNode
+        """
+        return self._node(source, ())
+
+    def _node(self, schema: object, path: tuple[str | int, ...]) -> TypedNode:
+        """Traverse schema-valued keywords while leaving literal data untouched.
+
+        :param schema: Schema node or boolean.
+        :type schema: object
+        :param path: JSON pointer path tuple.
+        :type path: tuple[str | int, ...]
+        :return: Lowered ``TypedNode``.
+        :rtype: TypedNode
+        """
+        provenance = Provenance("json-schema", path)
+        if isinstance(schema, bool):
+            return TypedNode(type="any" if schema else "never", nullable=schema, provenance=provenance)
+        if not isinstance(schema, Mapping):
+            msg = f"Expected a schema object or boolean at {path}"
+            raise self.error_type(msg)
+        reject_unresolved_references(
+            dict(schema),
+            self.error_type,
+            converter_name=self.converter_name,
+            dereference_function=self.dereference_function,
+        )
+        if "$dynamicRef" in schema or "$recursiveRef" in schema:
+            msg = f"Unresolved dynamic reference at {path}"
+            raise self.error_type(msg)
+        declaration = schema.get("type")
+        inferred = infer_implicit_type(dict(schema))
+        kind = declaration if isinstance(declaration, str) and declaration in JSONSCHEMA_PRIMITIVE_TYPES else "unknown"
+        nullable = None
+        if declaration is not None:
+            nullable = "null" in declaration if isinstance(declaration, list) else declaration == "null"
+        constraints = extract_constraints(schema)
+        dependencies = schema.get("dependencies", {})
+        literal_dependencies = {key: value for key, value in dependencies.items() if isinstance(value, list)}
+        if literal_dependencies:
+            constraints["dependencies"] = literal_dependencies
+        schema_maps = {
+            key: {name: self._node(child, (*path, key, name)) for name, child in schema[key].items()}
+            for key in SCHEMA_MAPS
+            if key in schema
+        }
+        if "dependencies" in schema:
+            schema_maps["dependencies"] = {
+                name: self._node(child, (*path, "dependencies", name))
+                for name, child in dependencies.items()
+                if not isinstance(child, list)
+            }
+        required = schema.get("required", [])
+        items = schema.get("items")
+        return TypedNode(
+            type=cast("NodeType", kind),
+            nullable=nullable,
+            declared_type=tuple(declaration) if isinstance(declaration, list) else declaration,
+            inferred_type=inferred,
+            properties=tuple(
+                Field(name, self._node(child, (*path, "properties", name)), required=name in required)
+                for name, child in schema.get("properties", {}).items()
+            ),
+            required_names=tuple(required) if "required" in schema else None,
+            items=(
+                tuple(self._node(child, (*path, "items", index)) for index, child in enumerate(items))
+                if isinstance(items, list)
+                else self._node(items, (*path, "items"))
+            )
+            if "items" in schema
+            else None,
+            prefix_items=self._branches(schema, "prefixItems", path),
+            pattern_properties={
+                name: self._node(child, (*path, "patternProperties", name))
+                for name, child in schema.get("patternProperties", {}).items()
+            },
+            additional_properties=self._node(schema["additionalProperties"], (*path, "additionalProperties"))
+            if "additionalProperties" in schema
+            else None,
+            any_of=self._branches(schema, "anyOf", path),
+            one_of=self._branches(schema, "oneOf", path),
+            schema_keywords={key: self._node(schema[key], (*path, key)) for key in SCHEMA_KEYS if key in schema},
+            schema_maps=schema_maps,
+            constraints=constraints,
+            annotations={key: value for key, value in schema.items() if key in ANNOTATIONS},
+            extensions=extract_extensions(schema, self.extension_registry),
+            provenance=provenance,
+            source_keywords=tuple(schema),
+        )
+
+    def _branches(
+        self,
+        schema: Mapping[str, Any],
+        keyword: str,
+        path: tuple[str | int, ...],
+    ) -> tuple[TypedNode, ...] | None:
+        """Retain branch order and distinguish an absent keyword from an empty list.
+
+        :param schema: Parent schema mapping.
+        :type schema: Mapping[str, Any]
+        :param keyword: Array-of-schemas keyword name.
+        :type keyword: str
+        :param path: Parent JSON pointer path tuple.
+        :type path: tuple[str | int, ...]
+        :return: Tuple of lowered branch ``TypedNode`` objects or ``None``.
+        :rtype: tuple[TypedNode, ...] | None
+        """
+        if keyword not in schema:
+            return None
+        return tuple(self._node(child, (*path, keyword, index)) for index, child in enumerate(schema[keyword]))

@@ -1,0 +1,80 @@
+"""Unit tests for ``cdm_data_loaders.utils.recursion``."""
+
+from typing import Final
+
+import pytest
+from pydantic import BaseModel, ValidationError
+
+from cdm_data_loaders.utils.recursion import (
+    DEFAULT_MAX_RECURSION_DEPTH,
+    StrictPositiveRecursionDepth,
+    validate_max_recursion_depth,
+    validate_positive_int_param,
+)
+
+CUSTOM_DEPTH: Final[int] = 3
+
+
+class _DepthModel(BaseModel):
+    depth: StrictPositiveRecursionDepth = DEFAULT_MAX_RECURSION_DEPTH
+
+
+@pytest.mark.parametrize(
+    ("value", "name"),
+    [
+        pytest.param(1, "max_recursion_depth", id="one-default-name"),
+        pytest.param(2, "max_recursion_depth", id="two-default-name"),
+        pytest.param(50, "max_ref_depth", id="fifty-custom-name"),
+    ],
+)
+def test_validate_positive_int_param_pass_valid_values(value: int, name: str) -> None:
+    """Return positive integers unchanged for both default and custom parameter names."""
+    assert validate_positive_int_param(value, name) == value
+
+
+@pytest.mark.parametrize("depth", [pytest.param(1, id="one"), pytest.param(4, id="four")])
+def test_validate_max_recursion_depth_pass_valid_depths(depth: int) -> None:
+    """Return positive integer recursion depths unchanged."""
+    assert validate_max_recursion_depth(depth) == depth
+
+
+@pytest.mark.parametrize(
+    ("bad_value", "name", "exc_cls", "match"),
+    [
+        pytest.param(0, "max_recursion_depth", ValueError, "max_recursion_depth must be >= 1", id="zero"),
+        pytest.param(-3, "max_ref_depth", ValueError, "max_ref_depth must be >= 1", id="negative"),
+        pytest.param(True, "max_recursion_depth", TypeError, "must be an integer >= 1", id="bool-true"),
+        pytest.param(False, "max_ref_depth", TypeError, "must be an integer >= 1", id="bool-false"),
+        pytest.param(1.5, "max_recursion_depth", TypeError, "must be an integer >= 1", id="float"),
+        pytest.param("2", "max_recursion_depth", TypeError, "must be an integer >= 1", id="string"),
+        pytest.param(None, "max_recursion_depth", TypeError, "must be an integer >= 1", id="none"),
+    ],
+)
+def test_validate_positive_int_param_fail_invalid_values(
+    bad_value: object,
+    name: str,
+    exc_cls: type[Exception],
+    match: str,
+) -> None:
+    """Reject booleans, non-integers, zero, and negative integers."""
+    with pytest.raises(exc_cls, match=match):
+        validate_positive_int_param(bad_value, name)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "bad_depth",
+    [
+        pytest.param(0, id="zero"),
+        pytest.param(-1, id="negative"),
+        pytest.param(True, id="bool-true"),
+        pytest.param(False, id="bool-false"),
+        pytest.param("2", id="numeric-string"),
+        pytest.param(2.0, id="float"),
+    ],
+)
+def test_strict_positive_recursion_depth_pydantic_field_rejects_invalid_inputs(bad_depth: object) -> None:
+    """Reject booleans, strings, floats, zero, and negative values in Pydantic models."""
+    assert _DepthModel().depth == DEFAULT_MAX_RECURSION_DEPTH
+    assert _DepthModel(depth=CUSTOM_DEPTH).depth == CUSTOM_DEPTH
+    with pytest.raises(ValidationError):
+        _DepthModel(depth=bad_depth)  # type: ignore[arg-type]

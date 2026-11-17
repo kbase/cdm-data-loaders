@@ -9,6 +9,14 @@ AUTHOR_STRUCT = pa.struct(
     ]
 )
 
+LEAD_AUTHOR_STRUCT = pa.struct(
+    [
+        pa.field("name", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+        pa.field("orcid", pa.string(), nullable=True, metadata={"jsonschema_type": "string"}),
+        pa.field("affiliation", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
+    ]
+)
+
 EXPECTED_SCHEMA = pa.schema(
     [
         pa.field("doc_id", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
@@ -20,7 +28,7 @@ EXPECTED_SCHEMA = pa.schema(
         ),
         pa.field(
             "lead_author",
-            AUTHOR_STRUCT,
+            LEAD_AUTHOR_STRUCT,
             nullable=False,
             metadata={"comment": "Primary corresponding author."},
         ),

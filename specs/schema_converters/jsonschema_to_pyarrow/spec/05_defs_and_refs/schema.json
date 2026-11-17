@@ -10,6 +10,8 @@
       "description": "ISO-8601 calendar date."
     },
     "Author": {
+      "$anchor": "author",
+      "$dynamicAnchor": "author_dyn",
       "type": "object",
       "description": "Author contact record.",
       "required": [
@@ -39,7 +41,15 @@
         },
         "lead_author": {
           "$ref": "#/$defs/Author",
-          "description": "Primary corresponding author."
+          "description": "Primary corresponding author.",
+          "required": [
+            "affiliation"
+          ],
+          "properties": {
+            "affiliation": {
+              "type": "string"
+            }
+          }
         },
         "reviewer": {
           "$ref": "#/$defs/Author"
@@ -54,4 +64,3 @@
     }
   }
 }
-

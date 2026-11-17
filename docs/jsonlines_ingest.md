@@ -1,12 +1,12 @@
 # JSONLines Ingestion Pipelines
 
-Three pipelines under [`src/cdm_data_loaders/pipelines/jsonlines`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines) (backed by [`src/cdm_data_loaders/readers/jsonlines.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/readers/jsonlines.py)) load JSONL files (`.jsonl` and gzip-compressed `.jsonl.gz`) through the shared CTS runner. They share file discovery, pre-processor and table transformation hooks, and error routing, and differ in how records are validated and buffered before loading:
+Three pipelines under [`src/cdm_data_loaders/pipelines/jsonlines`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines) (backed by [`src/cdm_data_loaders/readers/jsonl.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/readers/jsonl.py)) load JSONL files (`.jsonl` and gzip-compressed `.jsonl.gz`) through the shared CTS runner. They share file discovery, pre-processor and table transformation hooks, and error routing, and differ in how records are validated and buffered before loading:
 
 | Pipeline | CLI Entry Point | Validation | Default Output Format |
 | --- | --- | --- | --- |
-| [`extract_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pipeline.py) | [`jsonlines_extract`](cli_reference.md#jsonlines_extract) | None beyond valid JSON | `list[dict]` (`pyarrow.Table` if schema map set) |
-| [`extract_jsonschema_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_jsonschema_validate_pipeline.py) | [`jsonlines_jsonschema`](cli_reference.md#jsonlines_jsonschema), [`ncbi_datasets`](cli_reference.md#ncbi_datasets) | JSON Schema, per entity table | `pyarrow.Table` (`JSONSchemaToPyArrow`) |
-| [`extract_pydantic_validate_pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract_pydantic_validate_pipeline.py) | [`jsonlines_pydantic`](cli_reference.md#jsonlines_pydantic) | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`) |
+| [`extract.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/extract.py) | [`jsonlines_extract`](cli_reference.md#jsonlines_extract) | None beyond valid JSON | `list[dict]` (`pyarrow.Table` if schema map set) |
+| [`jsonschema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/jsonschema.py) | [`jsonlines_jsonschema`](cli_reference.md#jsonlines_jsonschema), [`ncbi_datasets`](cli_reference.md#ncbi_datasets) | JSON Schema, per entity table | `pyarrow.Table` (`JSONSchemaToPyArrow`) |
+| [`pydantic.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/pydantic.py) | [`jsonlines_pydantic`](cli_reference.md#jsonlines_pydantic) | Pydantic models, per entity table | `pyarrow.Table` (`PydanticToPyArrow`) |
 
 For behavioral specifications and fixture cases, see [JSONLines Extract](jsonlines_extract_specification.md), [JSONLines (JSON Schema)](jsonlines_jsonschema_specification.md), and [JSONLines (Pydantic)](jsonlines_pydantic_specification.md). For all CLI flags and `CDL_*` environment variables, see the [CLI Reference](cli_reference.md).
 
@@ -84,7 +84,7 @@ Before any files are read, `jsonlines_jsonschema`:
 During ingestion:
 
 - Validation uses each schema's declared draft with `jsonschema.FormatChecker()` enabled.
-- Valid records are coerced to the target `pyarrow.Schema` and buffered into `pyarrow.Table` pages via `DictBuffer` ([`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)). Nested objects and arrays are preserved as Arrow `struct` and `list` columns rather than flattened into child tables.
+- Valid records are coerced to the target `pyarrow.Schema` and buffered into `pyarrow.Table` pages via `DictBuffer` ([`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)). Nested objects and arrays are preserved as Arrow `struct` and `list` columns rather than flattened into child tables.
 
 ```sh
 DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
@@ -100,7 +100,7 @@ uv run jsonlines_jsonschema \
 
 #### NCBI Datasets Preset (`ncbi_datasets`)
 
-The [`ncbi_datasets`](cli_reference.md#ncbi_datasets) CLI entry point runs `jsonlines_jsonschema` with `dataset_name` locked to `"ncbi_datasets"` and precomputed JSON Schemas, PyArrow schemas, and record transforms from [`src/cdm_data_loaders/schemas/ncbi_datasets/ncbi_openapi.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/ncbi_datasets/ncbi_openapi.py):
+The [`ncbi_datasets`](cli_reference.md#ncbi_datasets) CLI entry point runs `jsonlines_jsonschema` with `dataset_name` locked to `"ncbi_datasets"` and precomputed JSON Schemas, PyArrow schemas, and record transforms from [`src/cdm_data_loaders/datasets/ncbi_datasets/hooks.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/ncbi_datasets/hooks.py):
 
 - `dataset_report`: validates `<input_dir>/dataset_report/` records against `datasetReport.schema.json` and loads them into `dataset_report`.
 - `annotation_report`: validates `<input_dir>/annotation_report/` records against `annotationReport.schema.json`, discards records without a non-empty top-level `reports` array via `filter_annotation_report`, and loads the remaining records into `annotation_report`.
@@ -145,7 +145,7 @@ Before any files are read, `jsonlines_pydantic`:
 During ingestion:
 
 - Each parsed JSON record is validated once with `model.model_validate(record)`, so Pydantic's type coercion and field defaults apply.
-- Validated models are coerced to the target `pyarrow.Schema` via `cdm_data_loaders.coercion.pydantic.coerce_record_for_pyarrow` (unwrapping `SecretStr` and `SecretBytes`, sorting `set` and `frozenset` values, quantizing `Decimal` fields, normalizing temporal values, and serializing overflowed recursion depths as JSON) and buffered into `pyarrow.Table` pages via `DictBuffer`. When a table transform is configured or `--loader-file-format jsonl` is selected, records are dumped via `model_dump(mode="python", by_alias=settings.by_alias)` before routing, and any `OUTPUT_SCHEMAS` destination tables are still coerced via `coerce_record_for_pyarrow`.
+- Validated models are coerced to the target `pyarrow.Schema` via `cdm_data_loaders.coercion.pydantic_to_arrow.coerce_pydantic_record_for_pyarrow` (unwrapping `SecretStr` and `SecretBytes`, sorting `set` and `frozenset` values, quantizing `Decimal` fields, normalizing temporal values, and serializing overflowed recursion depths as JSON) and buffered into `pyarrow.Table` pages via `DictBuffer`. When a table transform is configured or `--loader-file-format jsonl` is selected, records are dumped via `model_dump(mode="python", by_alias=settings.by_alias)` before routing, and any `OUTPUT_SCHEMAS` destination tables are coerced via `coerce_pydantic_record_for_pyarrow`.
 
 ```sh
 DESTINATION__LOCAL_FS__DESTINATION_TYPE=filesystem \
@@ -163,7 +163,7 @@ uv run jsonlines_pydantic \
 
 ## Handling of Rows That Fail JSON Parsing or Validation
 
-All JSONL pipelines route failed records to a single destination table named `_rejected` (`REJECTED_TABLE_NAME = "_rejected"` in [`src/cdm_data_loaders/utils/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/buffer.py)). If every record in a run is valid, `_rejected` is not created.
+All JSONL pipelines route failed records to a single destination table named `_rejected` (`REJECTED_TABLE_NAME = "_rejected"` in [`src/cdm_data_loaders/core/fields.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/fields.py), with schema `REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)). If every record in a run is valid, `_rejected` is not created.
 
 ### `_rejected` Table Schema
 

@@ -78,7 +78,7 @@ class IncompatibleBranchShapesError(JSONSchemaToPyArrowError):
 
 
 class UnsupportedRefError(JSONSchemaToPyArrowError):
-    """Every `$ref` must resolve to a local `#/$defs/...` definition; `$dynamicRef` and `$recursiveRef` are not supported."""
+    """Every `$ref` must resolve to an acyclic local `#/$defs/...` definition; direct alias cycles, `$dynamicRef`, and `$recursiveRef` are not supported."""
 
     code: ClassVar[str] = "E9"
     title: ClassVar[str] = "Unresolvable or unsupported reference"

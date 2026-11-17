@@ -10,8 +10,10 @@ from cdm_data_loaders.converters.core.guards import (
     require_object_root,
     require_schema_keyword,
 )
-from cdm_data_loaders.converters.facades.jsonschema_to_dlt import JSONSchemaToDlt, JSONSchemaToDltError
-from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import JSONSchemaToPySpark, JSONSchemaToPySparkError
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_dlt import JSONSchemaToDltError
+from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyspark import JSONSchemaToPySparkError
+from cdm_data_loaders.converters.facades.jsonschema_to_dlt import JSONSchemaToDlt
+from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import JSONSchemaToPySpark
 
 
 @pytest.mark.parametrize("error", [JSONSchemaToDltError, JSONSchemaToPySparkError], ids=["dlt", "pyspark"])
@@ -89,10 +91,10 @@ def test_reject_unresolved_references_fail_unresolved(
 
 
 @pytest.mark.parametrize(
-    ("converter", "error", "module"),
+    ("converter", "error"),
     [
-        (JSONSchemaToDlt(schema_name="test"), JSONSchemaToDltError, "jsonschema_to_dlt"),
-        (JSONSchemaToPySpark(), JSONSchemaToPySparkError, "jsonschema_to_pyspark"),
+        (JSONSchemaToDlt(schema_name="test"), JSONSchemaToDltError),
+        (JSONSchemaToPySpark(), JSONSchemaToPySparkError),
     ],
     ids=["dlt", "pyspark"],
 )
@@ -100,10 +102,11 @@ def test_reject_unresolved_references_fail_unresolved(
     "keyword", ["$schema", "$ref", "allOf"], ids=["missing-dialect", "unresolved-ref", "unmerged-all-of"]
 )
 def test_convert_fail_direction_specific_diagnostics(
-    converter: JSONSchemaToDlt | JSONSchemaToPySpark, error: type[ConversionError], module: str, keyword: str
+    converter: JSONSchemaToDlt | JSONSchemaToPySpark, error: type[ConversionError], keyword: str
 ) -> None:
     """Preserve converter names, dereferencing paths and complete guard messages."""
     name = type(converter).__name__
+    deref_fn = "cdm_data_loaders.validation.jsonschema.dereference.dereference_schema"
     schema: dict[str, Any] = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}
     if keyword == "$schema":
         del schema["$schema"]
@@ -116,13 +119,13 @@ def test_convert_fail_direction_specific_diagnostics(
         expected = (
             f"Encountered an unresolved $ref '#/$defs/value'. {name} requires a fully "
             "dereferenced schema -- this includes references to external JSON Schema documents. Use "
-            f"`{module}.dereferencing.dereference_schema()` to resolve all $refs before calling `convert()`."
+            f"`{deref_fn}()` to resolve all $refs before calling `convert()`."
         )
     else:
         schema["allOf"] = []
         expected = (
             f"Encountered an unmerged 'allOf'. {name} requires a fully dereferenced schema "
-            f"with 'allOf' already merged. Use `{module}.dereferencing.dereference_schema()` before calling `convert()`."
+            f"with 'allOf' already merged. Use `{deref_fn}()` before calling `convert()`."
         )
     with pytest.raises(error) as caught:
         converter.convert(schema)

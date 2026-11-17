@@ -10,15 +10,16 @@ import pyarrow as pa
 import pytest
 import yaml
 
-import cdm_data_loaders.pipelines.jsonlines.extract_pipeline as extract_pipeline_module
+import cdm_data_loaders.pipelines.jsonlines.extract as extract_pipeline_module
+from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.fields import LoaderFileFormatEnum
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
-from cdm_data_loaders.pipelines.jsonlines.extract_pipeline import cli, run_jsonlines_pipeline
+from cdm_data_loaders.pipelines.jsonlines.extract import cli, run_jsonlines_pipeline
+from cdm_data_loaders.pipelines.jsonlines.routing import route_jsonl_lines
 from cdm_data_loaders.pipelines.jsonlines.settings import EXTRACT_PIPELINE_NAME, JsonlExtractSettings
-from cdm_data_loaders.readers.jsonlines import route_jsonl_lines
-from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
-from tests.cdm_data_loaders.pipelines.conftest import DEFAULT_DLT_TABLES
-from tests.cdm_data_loaders.pipelines.helpers import (
+from tests.helpers.cli_assertions import register_temp_module, settings_to_argv
+from tests.helpers.paths_and_constants import DEFAULT_DLT_TABLES
+from tests.helpers.table_readers import (
     assert_binds_filesystem_reader,
     assert_core_run_pipeline_args,
     assert_pipeline_report_written,
@@ -26,7 +27,6 @@ from tests.cdm_data_loaders.pipelines.helpers import (
     make_file_item,
     run_with_duckdb_pipeline,
 )
-from tests.helpers import register_temp_module, settings_to_argv
 
 SIMPLE_JSONL = """{"widget_id": "a", "count": 1}
 {"widget_id": "b", "count": 2}

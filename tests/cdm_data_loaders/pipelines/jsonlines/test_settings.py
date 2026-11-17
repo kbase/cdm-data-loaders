@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.jsonlines.settings as jsonlines_settings_module
-from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
 )
@@ -19,7 +18,6 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
 )
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
 from cdm_data_loaders.core.fields import (
-    DEFAULT_JSONL_FILE_GLOB,
     FILE_GLOB,
     TABLE_NAME,
     LoaderFileFormatEnum,
@@ -31,48 +29,53 @@ from cdm_data_loaders.core.registry import (
     TransformRegistry,
 )
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
+from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
+    ANNOTATION_REPORT_TABLE,
+    DATASET_REPORT_TABLE,
+    filter_annotation_report,
+)
+from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
+    ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
+)
 from cdm_data_loaders.pipelines.jsonlines.exceptions import InvalidJsonlEntitySchemaError
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     BY_ALIAS,
+    DEFAULT_JSONL_FILE_GLOB,
     ENTITY_MODELS_MODULE,
     ENTITY_SCHEMAS_MODULE,
     EXTRACT_PIPELINE_NAME,
     JSONSCHEMA_PIPELINE_NAME,
     LOCAL_CLI_SHORTCUTS,
     MAX_RECURSION_DEPTH,
-    NCBI_DATASETS_PIPELINE_NAME,
-    NCBI_DATASETS_SCHEMA_MODULE,
     PYDANTIC_PIPELINE_NAME,
     JsonlExtractSettings,
     JsonlIngestSettings,
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
-    NcbiDatasetsSettings,
     build_output_schema_registry,
 )
-from cdm_data_loaders.schemas.jsonschema import (
-    CUSTOM_META_SCHEMA_URI,
-    DereferencingError,
-    ValidatedSchema,
-    get_xsv_meta_schema,
-)
-from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
-    ANNOTATION_REPORT_TABLE,
-    DATASET_REPORT_TABLE,
-    filter_annotation_report,
-)
-from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
-    ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
+from cdm_data_loaders.pipelines.presets.ncbi_datasets import (
+    NCBI_DATASETS_PIPELINE_NAME,
+    NCBI_DATASETS_SCHEMA_MODULE,
+    NcbiDatasetsSettings,
 )
 from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
-from tests.cdm_data_loaders.conftest import check_settings, cts_expected
-from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError
+from cdm_data_loaders.validation.jsonschema.metaschema import (
+    CUSTOM_META_SCHEMA_URI,
+    get_xsv_meta_schema,
+)
+from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
+from tests.data.ncbi_datasets.dataset_report_schemas import (
     ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,
 )
-from tests.helpers import (
+from tests.helpers.cli_assertions import (
     assert_cli_field_roundtrips,
     assert_no_cli_clashes,
     build_cli_arg_specs,
+    check_settings,
+    cts_expected,
     register_temp_module,
     settings_to_argv,
 )

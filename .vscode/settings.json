@@ -6,7 +6,7 @@
     "python.analysis.generateWithTypeAnnotation": true,
     "python.analysis.include": [
         "${workspaceFolder}",
-        "${workspaceFolder}/src"
+        "${workspaceFolder}/**"
     ],
     "python.analysis.inlayHints.callArgumentNames": "partial",
     "python.analysis.typeCheckingMode": "standard",
@@ -19,5 +19,6 @@
     "editor.formatOnSave": true,
     "chat.tools.terminal.autoApprove": {
         "/opt/homebrew/bin/uv": true
-    }
+    },
+    "python.analysis.inlayHints.functionReturnTypes": true
 }

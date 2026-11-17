@@ -102,7 +102,7 @@ Pipelines and schema converter CLIs can be run directly via `uv run <cli_command
 ### Container Entrypoint Modes (`scripts/entrypoint.sh`)
 
 - `pipeline <cli_command> [args...]`: copies `/input_dir/dlt_conf/{config.toml,secrets.toml,.pyiceberg.yaml}` (if present) into `$HOME/.dlt` and executes `uv run <cli_command> [args...]`.
-- `xml_split <n_elements> <tag> <file_1> [<file_2> ...]`: splits XML files into chunks of `<n_elements>` `<tag>` elements using `xml_split`.
+- `xml_split [args...]`: splits XML files into chunks via `xml_file_splitter`.
 - `bash`: launches an interactive shell inside the container.
 
 Container test runner modes (`test` and `ceph_integration_test`) are covered in the [Developer Guides](https://kbase.github.io/cdm-data-loaders/#developer-guides).
@@ -134,7 +134,7 @@ uv run xsd_to_pyarrow \
 
 ## Running bbmap stats and checkm2 on genome or contigset files
 
-[`scripts/run_tools.sh`](scripts/run_tools.sh) runs the stats script from [bbmap](https://sourceforge.net/projects/bbmap/) and [checkm2](https://github.com/chklovski/CheckM2) on genome FASTA (`fna`) files listed in a genome paths JSON file (parsed downstream by [`bbmap_stats.py`](src/cdm_data_loaders/parsers/bbmap_stats.py) and [`checkm2.py`](src/cdm_data_loaders/parsers/checkm2.py)):
+[`scripts/ops/run_tools.sh`](scripts/ops/run_tools.sh) runs the stats script from [bbmap](https://sourceforge.net/projects/bbmap/) and [checkm2](https://github.com/chklovski/CheckM2) on genome FASTA (`fna`) files listed in a genome paths JSON file (parsed downstream by [`bbmap_stats.py`](src/cdm_data_loaders/parsers/bbmap_stats.py) and [`checkm2.py`](src/cdm_data_loaders/parsers/checkm2.py)):
 
 ```json
 {
@@ -163,7 +163,7 @@ checkm2 database --download
 Run the stats and checkm2 tools with the following command:
 
 ```sh
-bash scripts/run_tools.sh path/to/genome_paths_file.json output_dir
+bash scripts/ops/run_tools.sh path/to/genome_paths_file.json output_dir
 ```
 
 where `path/to/genome_paths_file.json` specifies the path to the genome paths file (format specified above) and `output_dir` is the directory for the results.

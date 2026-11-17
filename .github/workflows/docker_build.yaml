@@ -79,7 +79,7 @@ jobs:
         id: run-tests-docker
         shell: bash
         continue-on-error: false
-        run: uv run pytest --run-docker -m "docker and not requires_spark and not requires_ceph" --durations=0 --durations-min=5 --cov --junitxml=junit.xml -o junit_family=legacy tests/cdm_data_loaders/pipelines/
+        run: uv run pytest --run-docker -m "docker and not requires_spark and not requires_ceph" --durations=0 --durations-min=5 --cov --junitxml=junit.xml -o junit_family=legacy tests/e2e/
 
       - name: Send test reports to Codecov
         id: upload_test_reports

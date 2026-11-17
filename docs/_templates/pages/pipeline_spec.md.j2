@@ -23,15 +23,15 @@
 
 ```bash
 # run all base and preset smoke tests for {{ spec.name }} across built-in environments
-uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py --smoke-pipeline {{ spec.name }}
+uv run pytest tests/e2e/test_pipeline_smoke_spec.py --smoke-pipeline {{ spec.name }}
 {% for preset in spec.presets %}
 
 # run only the {{ preset }} preset subclass smoke tests
-uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py --smoke-pipeline {{ preset }}
+uv run pytest tests/e2e/test_pipeline_smoke_spec.py --smoke-pipeline {{ preset }}
 {% endfor %}
 
 # run against a custom environment directory (config.toml, secrets.toml, settings.toml)
-uv run pytest tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py \
+uv run pytest tests/e2e/test_pipeline_smoke_spec.py \
     --smoke-pipeline {{ spec.name }} \
     --dlt-config-dir /path/to/env_dlt_config \
     --settings-file /path/to/env_dlt_config/settings.toml

@@ -6,22 +6,22 @@ See `.agents/skills/coding-style` and `.agents/skills/testing` for rules that ap
 
 Every code change that alters CLI flags, settings classes, public APIs, schemas, or converter behavior MUST update documentation in the same task before completion:
 
-1. **CLI & Settings Changes (`core/settings.py`, `core/fields.py`, `core/transforms.py`, `pipelines/**/settings.py`, `pyproject.toml`)**:
-   - `docs/cli_reference.md` and `docs/bundled_schemas.md` are `.gitignore`d macro stubs materialized by `uv run python -m docs_macros` and rendered dynamically at build/serve time via `docs_macros` (`docs/_templates/pages/cli_reference.md.j2` and `docs/_templates/pages/bundled_schemas.md.j2`).
+1. **CLI and Settings Changes (`core/settings.py`, `core/fields.py`, `core/transforms/`, `pipelines/**/settings.py`, `pyproject.toml`)**:
+   - `docs/cli_reference.md` and `docs/bundled_schemas.md` are `.gitignore`d macro stubs materialized by `uv run python -m docs_macros` and rendered at build/serve time via `docs_macros` (`docs/_templates/pages/cli_reference.md.j2` and `docs/_templates/pages/bundled_schemas.md.j2`).
    - Search `docs/` and `README.md` for any renamed/removed field names, CLI flags (`--*`), or env vars (`CDL_*`) and update all prose/examples.
-2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `readers/xsd.py`, `specs/schema_converters/*/rules.yaml`)**:
-   - Converter specification pages render dynamically at build/serve time via `docs_macros` (`docs/_templates/pages/converter_spec.md.j2` and `docs/_templates/tables/*.md.j2`).
-   - Converter suites under `specs/schema_converters/<xxx_to_yyy>/` are auto-discovered by `discover_converter_specs()` (`CONVERTER_SPECS` in `docs_macros/spec_context.py`), and `uv run python -m docs_macros` materializes their `.gitignore`d `docs/<xxx_to_yyy>_specification.md` stubs before `zensical build` / `zensical serve`. When adding or removing a converter specification, register/update it in `zensical.toml` (`nav`) and `docs/index.md`.
+2. **Converter Rules, Scalar Maps, or Error Classes (`converters/`, `validation/xsd/`, `specs/schema_converters/*/rules.yaml`)**:
+   - Converter specification pages render at build/serve time via `docs_macros` (`docs/_templates/pages/converter_spec.md.j2` and `docs/_templates/tables/*.md.j2`).
+   - Converter suites under `specs/schema_converters/<xxx_to_yyy>/` are auto-discovered by `discover_converter_specs()` in `docs_macros/specs/discovery.py`, and `uv run python -m docs_macros` materializes their `.gitignore`d `docs/<xxx_to_yyy>_specification.md` stubs before `zensical build` / `zensical serve`. When adding or removing a converter specification, register/update it in `zensical.toml` (`nav`) and `docs/index.md`.
    - See `docs/schema_converter_specs_guide.md` for creating or editing rules, error codes (`E1..En`), and fixture manifests.
-3. **Pipeline Specifications & Multi-Environment Smoke Tests (`specs/pipelines/`, `tests/pipeline_spec.py`, `tests/pipeline_env.py`, `tests/cdm_data_loaders/pipelines/test_pipeline_smoke_spec.py`)**:
-   - Pipeline specification pages render dynamically at build/serve time via `docs_macros` (`docs/_templates/pages/pipeline_spec.md.j2` and `docs/_templates/tables/*.md.j2`), with `.gitignore`d `docs/<name>_specification.md` stubs materialized by `uv run python -m docs_macros`.
-   - If adding a new pipeline specification, register it in `PIPELINE_SPECS` in `docs_macros/spec_context.py`, `zensical.toml` (`nav`), and `docs/index.md`.
+3. **Pipeline Specifications and Multi-Environment Smoke Tests (`specs/pipelines/`, `specs/_loader/pipeline_spec.py`, `tests/_support/pipeline_env.py`, `tests/e2e/test_pipeline_smoke_spec.py`)**:
+   - Pipeline specification pages render at build/serve time via `docs_macros` (`docs/_templates/pages/pipeline_spec.md.j2` and `docs/_templates/tables/*.md.j2`), with `.gitignore`d `docs/<name>_specification.md` stubs materialized by `uv run python -m docs_macros`.
+   - Pipeline suites under `specs/pipelines/<name>/` are auto-discovered by `discover_pipeline_specs()` in `docs_macros/specs/discovery.py` from `rules.yaml` front-matter (`pipeline`, `cli_command`, `settings_class`, `pipeline_runner`, `presets`, `use_converter_base_cases`). When adding or removing a pipeline specification, register/update it in `zensical.toml` (`nav`) and `docs/index.md`.
    - See `docs/pipeline_specs_guide.md` and `docs/pipeline_e2e_testing_guide.md` for creating or editing pipeline rules, error scenarios (`_rejected` and `expected_report`), and running smoke tests across environments (`--dlt-config-dir`, `--settings-file`, `--drop-existing-tables`, `--drop-tables-after`).
-4. **Public Symbol / Registry Refactors (`core/`, `pipelines/`, `readers/`, `converters/`, `parsers/`, `utils/`)**:
+4. **Public Symbol / Registry Refactors (`core/`, `pipelines/`, `readers/`, `converters/`, `coercion/`, `validation/`, `datasets/`, `io/`, `cli/`, `parsers/`, `utils/`)**:
    - Update module and class/function docstrings in the modified files.
    - Grep `docs/` and `README.md` for all references to modified or removed symbols and update code examples.
 5. **Pre-Completion Verification**:
-   - Always run `uv run pytest -m docs`, `uv run python -m docs_macros`, `uv run --group docs zensical build --clean --strict`, and `uv run python -m docs_macros --clean` before finishing any task that touches `src/`, `docs_macros/`, `scripts/`, `specs/`, `pyproject.toml`, or `docs/`.
+   - Run `uv run pytest -m docs`, `uv run python -m docs_macros`, `uv run --group docs zensical build --clean --strict`, and `uv run python -m docs_macros --clean` before finishing any task that touches `src/`, `docs_macros/`, `scripts/`, `specs/`, `pyproject.toml`, or `docs/`.
 
 ## Gotchas
 

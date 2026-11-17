@@ -3,7 +3,6 @@
 import copy
 import csv
 import logging
-import re
 import threading
 import time
 from pathlib import Path
@@ -16,131 +15,31 @@ from frozendict import frozendict
 from pydantic import ValidationError
 from requests.exceptions import HTTPError
 
+import cdm_data_loaders.datasets.all_the_bacteria.osf as atb_osf
+from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
-from cdm_data_loaders.pipelines import all_the_bacteria
-from cdm_data_loaders.pipelines.all_the_bacteria import (
+from cdm_data_loaders.datasets.all_the_bacteria.osf import (
     ALL_ATB_FILE_NAME,
     DATASET_NAME,
-    AtbSettings,
+)
+from cdm_data_loaders.io.core import NonRetryableDownloadError
+from cdm_data_loaders.pipelines.all_the_bacteria import pipeline as all_the_bacteria
+from cdm_data_loaders.pipelines.all_the_bacteria.pipeline import (
     cli,
     download_atb_index_tsv,
     get_file_download_links,
-    load_patterns,
     osf_file_downloader,
     run_atb_pipeline,
 )
-from cdm_data_loaders.pipelines.core import PipelineCli
-from cdm_data_loaders.utils.file_transfer.core import NonRetryableDownloadError
-from tests.cdm_data_loaders.pipelines.conftest import VALID_DESTINATIONS
-from tests.conftest import S3
-
-
-@pytest.fixture
-def pattern_file(tmp_path: Path) -> Path:
-    """Pattern file for testing load_patterns."""
-    p = tmp_path / "patterns.txt"
-    p.write_text(
-        "hello world\nfoo.bar\nstarts with*\n2+2=4\n",
-        encoding="utf-8",
-    )
-    return p
+from cdm_data_loaders.pipelines.all_the_bacteria.settings import AtbSettings
+from tests.helpers.paths_and_constants import S3, VALID_DESTINATIONS
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:
-    """Ensure that cli is a PipelineCli wired to AtbSettings and run_atb_pipeline."""
-    assert isinstance(cli, PipelineCli)
+    """Ensure that cli is a CliRunner wired to AtbSettings and run_atb_pipeline."""
+    assert isinstance(cli, CliRunner)
     assert cli.settings_cls is AtbSettings
     assert cli.pipeline_fn is run_atb_pipeline
-
-
-@pytest.mark.parametrize(
-    ("candidate", "expected_match"),
-    [
-        pytest.param("hello world", True, id="exact-hello"),
-        pytest.param("foo.bar", True, id="exact-dot"),
-        pytest.param("2+2=4", True, id="exact-plus"),
-        pytest.param("hello world!!!", False, id="trailing-chars"),
-        pytest.param("well, hello world", False, id="leading-chars"),
-        pytest.param("fooXbar", False, id="dot-is-literal"),
-        pytest.param("22=4", False, id="plus-is-literal"),
-        pytest.param("starts with", True, id="wildcard-empty-suffix"),
-        pytest.param("starts with anything", True, id="wildcard-alpha-suffix"),
-        pytest.param("starts with 123!@#", True, id="wildcard-symbol-suffix"),
-        pytest.param("ends with", False, id="wildcard-wrong-prefix"),
-    ],
-)
-def test_load_patterns_exact_match(pattern_file: Path, candidate: str, expected_match: bool) -> None:
-    """Plain text lines should match against their literal content or trailing wildcard."""
-    pattern = load_patterns(pattern_file)
-    assert isinstance(pattern, re.Pattern)
-    assert bool(pattern.match(candidate)) is expected_match
-
-
-@pytest.mark.parametrize(
-    ("candidate", "expected_match"),
-    [
-        pytest.param("hello", True, id="hello"),
-        pytest.param("world", True, id="world"),
-        pytest.param("", False, id="empty-string"),
-    ],
-)
-def test_load_patterns_blank_lines_are_ignored(tmp_path: Path, candidate: str, expected_match: bool) -> None:
-    """Blank lines in the file should be skipped."""
-    p = tmp_path / "patterns.txt"
-    p.write_text("\nhello\n\nworld\n", encoding="utf-8")
-    pattern = load_patterns(p)
-    assert isinstance(pattern, re.Pattern)
-    assert bool(pattern.match(candidate)) is expected_match
-
-
-@pytest.mark.parametrize("candidate", ["", "anything at all"], ids=["empty", "non-empty"])
-def test_load_patterns_only_wildcard_matches_anything(tmp_path: Path, candidate: str) -> None:
-    """A file containing only '*' should produce a pattern that matches any string."""
-    p = tmp_path / "patterns.txt"
-    p.write_text("*\n", encoding="utf-8")
-    pattern = load_patterns(p)
-    assert isinstance(pattern, re.Pattern)
-    assert pattern.match(candidate)
-
-
-@pytest.mark.parametrize(
-    ("candidate", "expected_match"),
-    [
-        pytest.param("cat", True, id="cat"),
-        pytest.param("dog", True, id="dog"),
-        pytest.param("bird", True, id="bird"),
-        pytest.param("fish", False, id="fish"),
-    ],
-)
-def test_load_patterns_alternation(tmp_path: Path, candidate: str, expected_match: bool) -> None:
-    """Each line in the file should become an alternative in the combined pattern."""
-    p = tmp_path / "patterns.txt"
-    p.write_text("cat\ndog\nbird\n", encoding="utf-8")
-    pattern = load_patterns(p)
-    assert isinstance(pattern, re.Pattern)
-    assert bool(pattern.match(candidate)) is expected_match
-
-
-def test_load_patterns_no_file_returns_none(tmp_path: Path) -> None:
-    """Ensure that loading a non-existent file returns None."""
-    pattern = load_patterns(tmp_path / "some" / "path")
-    assert pattern is None
-
-
-def test_load_patterns_touched_file_returns_none(tmp_path: Path) -> None:
-    """Ensure that loading a zero-byte (touched) file returns None."""
-    p = tmp_path / "patterns.txt"
-    p.touch()
-    pattern = load_patterns(p)
-    assert pattern is None
-
-
-def test_load_patterns_empty_file_returns_none(tmp_path: Path) -> None:
-    """Ensure that loading an empty file returns None."""
-    p = tmp_path / "patterns.txt"
-    p.write_text("\n\n   \t\n  \n   \n\t\t\n", encoding="utf-8")
-    pattern = load_patterns(p)
-    assert pattern is None
 
 
 @pytest.mark.vcr
@@ -178,7 +77,7 @@ def test_download_atb_index_s3_error_boom(test_s3_settings: AtbSettings) -> None
     mock_download_client = MagicMock()
     mock_download_client.download.side_effect = ValueError("ZOMG!")
     with (
-        patch("cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader", return_value=mock_download_client),
+        patch("cdm_data_loaders.datasets.all_the_bacteria.osf.FileDownloader", return_value=mock_download_client),
         pytest.raises(ValueError, match="ZOMG!"),
     ):
         download_atb_index_tsv(test_s3_settings)
@@ -362,7 +261,7 @@ def test_osf_file_downloader_success(
 
     mock_download_client = MagicMock()
     with patch(
-        "cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader",
+        "cdm_data_loaders.datasets.all_the_bacteria.osf.FileDownloader",
         return_value=mock_download_client,
     ):
         # get the output from the generator
@@ -467,7 +366,7 @@ def test_osf_file_downloader_error_handling(
     mock_download_client.download.side_effect = file_downloader_boom
 
     with patch(
-        "cdm_data_loaders.pipelines.all_the_bacteria.FileDownloader",
+        "cdm_data_loaders.datasets.all_the_bacteria.osf.FileDownloader",
         return_value=mock_download_client,
     ):
         list(osf_file_downloader(settings, atb_file_list))
@@ -652,7 +551,7 @@ def test_get_file_download_links_pass_concurrent_downloads_across_worker_threads
             in_flight -= 1
 
     mock_download_client.download.side_effect = record_concurrent_download
-    monkeypatch.setattr(all_the_bacteria, "FileDownloader", lambda: mock_download_client)
+    monkeypatch.setattr(atb_osf, "FileDownloader", lambda: mock_download_client)
 
     atb_file_list_copy.bind(test_settings)
     file_downloader_copy.bind(test_settings)
@@ -713,7 +612,7 @@ def test_file_downloader_pass_parallelized_transformer_runs_on_worker_threads(
         time.sleep(0.05)
 
     mock_download_client.download.side_effect = record_download_thread
-    monkeypatch.setattr(all_the_bacteria, "FileDownloader", lambda: mock_download_client)
+    monkeypatch.setattr(atb_osf, "FileDownloader", lambda: mock_download_client)
 
     atb_file_list_copy.bind(test_settings)
     file_downloader_copy.bind(test_settings)

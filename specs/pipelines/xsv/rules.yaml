@@ -1,17 +1,21 @@
 # Rule catalogue for the XSV (CSV/TSV) converter and ingestion pipeline
-# (cdm_data_loaders.pipelines.xsv & cdm_data_loaders.readers.jsonschema_xsv).
+# (cdm_data_loaders.pipelines.xsv and cdm_data_loaders.readers.xsv).
 #
 # This file and the per-case `case.yaml` manifests are the single source of truth for
 # docs/xsv_specification.md, rendered via docs_macros and docs/_templates/pages/pipeline_spec.md.j2.
 # Every rule must be exercised by at least one case (enforced by test_xsv_spec.py).
-title: XSV (CSV/TSV) Schema & Pipeline Specification
+title: XSV (CSV/TSV) Schema and Pipeline Specification
 pipeline: xsv
 cli_command: xsv
 settings_class: cdm_data_loaders.pipelines.xsv.settings.XsvIngestSettings
 pipeline_runner: cdm_data_loaders.pipelines.xsv.pipeline.run_xsv_pipeline
+schema_lang: json
+data_lang: text
+exceptions_module: cdm_data_loaders.pipelines.xsv.exceptions
+errors_attr: XSV_SCHEMA_ERRORS
 intro: |
   This document specifies how an **XSV JSON Schema** (Draft 2020-12 or the KBase Draft 2020-12 XSV metaschema)
-  and the **XSV ingestion pipeline** (`cdm_data_loaders.pipelines.xsv` and `cdm_data_loaders.readers.jsonschema_xsv`)
+  and the **XSV ingestion pipeline** (`cdm_data_loaders.pipelines.xsv` and `cdm_data_loaders.readers.xsv`)
   determine:
 
   1. **Schema validation and `x-xsv-config` parser configuration** (`validate_jsonschema`, `resolve_xsv_parsing_config`).
@@ -57,10 +61,10 @@ sections:
     rules:
       - id: R-XSV-DEREF
         statement: |
-          `convert_xsv_schema_to_pyarrow` resolves all local `$ref` pointers and merges `allOf` subschemas via
-          `dereference_schema` before inspecting properties. An unresolvable `$ref` raises **E4**
-          (`UnresolvableXsvRefError`), and a non-struct root or unsupported column construct raises **E5**
-          (`UnsupportedXsvArrowConstructError`).
+          `convert_xsv_schema_to_pyarrow` resolves all local `$ref` pointers, strips `$ref` target identity keywords
+          (`$id`, `$anchor`), and deep-merges `allOf` subschemas and `$ref` sibling keywords via `dereference_schema`
+          before inspecting properties. An unresolvable or circular `$ref` raises **E4** (`UnresolvableXsvRefError`),
+          and a non-struct root or unsupported column construct raises **E5** (`UnsupportedXsvArrowConstructError`).
       - id: R-XSV-COL-ORDER
         statement: |
           Top-level `pa.Schema` fields are emitted in the exact order of top-level `required`, followed by any
@@ -108,11 +112,12 @@ sections:
           `x-null-cols` is specified.
       - id: R-XSV-SECOND-PASS
         statement: |
-          Second-pass validation (`run_qsv_validate(..., first_pass=False)`) validates normalized rows against
-          the full schema (rewriting the KBase XSV metaschema URI to standard Draft 2020-12 for the `qsv`
-          binary). If all rows are valid, `--valid-output` is used directly; if some rows fail (`returncode != 0`)
-          but `.valid` retains at least one data row, the surviving rows are promoted and an `ErrorRecord` is
-          appended; if no data rows survive, `clean_validate_file` returns `None` and records an `ErrorRecord`.
+          Second-pass validation (`run_qsv_validate(..., first_pass=False)`) dereferences `$ref` and `allOf`
+          definitions via `dereference_schema` and rewrites the KBase XSV metaschema URI to standard Draft 2020-12
+          so the `qsv` binary sees direct column `type` declarations when parsing CSV text cells. If all rows are
+          valid, `--valid-output` is used directly; if some rows fail (`returncode != 0`) but `.valid` retains at
+          least one data row, the surviving rows are promoted and an `ErrorRecord` is appended; if no data rows
+          survive, `clean_validate_file` returns `None` and records an `ErrorRecord`.
 
   - id: reading_and_coercion
     title: DuckDB Reading and PyArrow Coercion
@@ -172,7 +177,7 @@ sections:
         statement: |
           `UniProtIdMappingSettings` binds `(emit_raw_table, transform_uniprot_id_mapping)` in `TABLE_TRANSFORMS`
           for `id_mapping`: the generic `emit_raw_table` transform emits `raw_id_mapping` (`RAW_ID_MAPPING_SCHEMA`
-          generated from `idmapping.schema.json` via `JSONSchemaToPyArrow` / `convert_xsv_schema_to_pyarrow`, table
+          in `schemas/uniprot/idmapping/schema.py` matching `idmapping.schema.json`, table
           description `"raw ID mapping data from UniProt"`), and `transform_uniprot_id_mapping` (`ID_MAPPING_SCHEMA`,
           table description `"Standardised mapping data from UniProt"`) emits `id_mapping` with
           `uniprot_id=f"uniprot:{uniprot_id}"`, `db_reference=f"{db_reference_type}:{db_reference_id}"`, and

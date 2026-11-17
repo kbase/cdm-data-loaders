@@ -1,6 +1,6 @@
 # NCBI FTP Pipeline — Local End-to-End Walkthrough
 
-Step-by-step instructions for running a full production transfer in the Lakehouse, or running a small (up to 10 assembly) local end-to-end sync of NCBI RefSeq records against a local CEPH container. The walkthrough uses a Jupyter notebook ([`notebooks/ncbi_ftp_manifest.ipynb`](https://github.com/kbase/cdm-data-loaders/blob/develop/notebooks/ncbi_ftp_manifest.ipynb)) for manifest generation, the [`ncbi_ftp_sync`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/ncbi_ftp_download.py) CLI for parallel FTP downloads, and the [`ncbi_ftp_promote`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/ncbi_ftp_promote.py) CLI for promoting staged records to an S3 store.
+Step-by-step instructions for running a full production transfer in the Lakehouse, or running a small (up to 10 assembly) local end-to-end sync of NCBI RefSeq records against a local CEPH container. The walkthrough uses a Jupyter notebook ([`notebooks/ncbi_ftp_manifest.ipynb`](https://github.com/kbase/cdm-data-loaders/blob/develop/notebooks/ncbi_ftp_manifest.ipynb)) for manifest generation, the [`ncbi_ftp_sync`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/ncbi_ftp_sync.py) CLI for parallel FTP downloads, and the [`ncbi_ftp_promote`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/ncbi_ftp_promote.py) CLI for promoting staged records to an S3 store.
 
 > [!NOTE]
 > Prerequisites: Docker or Podman, [uv](https://docs.astral.sh/uv/) (for running notebooks and CLIs locally), and network access to `ftp.ncbi.nlm.nih.gov`.
@@ -80,21 +80,22 @@ docker run -d \
   ghcr.io/kbasetest/ceph-rgw-test-image:0.1.5
 ```
 
-Set CEPH credentials as environment variables:
+Set CEPH credentials and region as environment variables:
 
 ```sh
 export AWS_ENDPOINT_URL=http://localhost:9000
 export AWS_ACCESS_KEY_ID=test_access_key
 export AWS_SECRET_ACCESS_KEY=test_access_secret
+export AWS_DEFAULT_REGION=us-east-1
 ```
 
 (A matching service is configured in [`docker-compose.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.yml) for CI integration workflows.)
 
-Create test buckets from the command line using [`scripts/s3_local.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/s3_local.py):
+Create test buckets from the command line using the AWS CLI:
 
 ```sh
-uv run python scripts/s3_local.py mb s3://cdm-lake
-uv run python scripts/s3_local.py mb s3://cts
+aws s3 mb s3://cdm-lake
+aws s3 mb s3://cts
 ```
 
 ### Lakehouse: Build `cdm-data-loaders`
@@ -137,7 +138,7 @@ Open [`notebooks/ncbi_ftp_manifest.ipynb`](https://github.com/kbase/cdm-data-loa
 If `PREVIOUS_SUMMARY_URI`, `SNAPSHOT_UPLOAD_URI`, `LAKEHOUSE_BUCKET`, or `STAGING_URI` points at local CEPH, initialize the S3 client before running the cells that access S3. Insert a cell after Cell 1 (Imports):
 
 ```python
-from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client, reset_s3_client
+from cdm_data_loaders.io.s3.client import get_s3_client, reset_s3_client
 
 reset_s3_client()
 get_s3_client(
@@ -203,7 +204,7 @@ STAGING_URI = "s3://cts/staging/run1/"
 
 ## 3. Phase 2 — Download Assemblies (`ncbi_ftp_sync`)
 
-Phase 2 uses the [`ncbi_ftp_sync`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/ncbi_ftp_download.py) CLI ([CLI options](cli_reference.md#ncbi_ftp_sync)) to download assemblies in parallel from NCBI FTP and verify MD5 checksums.
+Phase 2 uses the [`ncbi_ftp_sync`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/ncbi_ftp_sync.py) CLI ([CLI options](cli_reference.md#ncbi_ftp_sync)) to download assemblies in parallel from NCBI FTP and verify MD5 checksums.
 
 > [!NOTE]
 > In production, Phase 2 runs as a CTS job: CTS stages input files from S3 into `/input_dir` and uploads `/output_dir` back to S3 without exposing S3 credentials inside the container.
@@ -268,23 +269,23 @@ staging/
 Upload the staged files into CEPH under a staging prefix to feed Step 4:
 
 ```sh
-uv run python scripts/s3_local.py cp notebooks/staging/raw_data/ s3://cts/staging/run1/raw_data/
-uv run python scripts/s3_local.py ls s3://cts/staging/run1/
+aws s3 cp --recursive notebooks/staging/raw_data/ s3://cts/staging/run1/raw_data/
+aws s3 ls --recursive s3://cts/staging/run1/
 ```
 
 ---
 
 ## 4. Phase 3 — Promote and Archive (`ncbi_ftp_promote`)
 
-Phase 3 uses [`ncbi_ftp_promote`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/ncbi_ftp_promote.py) ([CLI options](cli_reference.md#ncbi_ftp_promote)) to promote staged assemblies from the S3 staging prefix to their final Lakehouse paths, archive replaced or suppressed assemblies, and trim the transfer manifest for resumability.
+Phase 3 uses [`ncbi_ftp_promote`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/cli/ncbi_ftp_promote.py) ([CLI options](cli_reference.md#ncbi_ftp_promote)) to promote staged assemblies from the S3 staging prefix to their final Lakehouse paths, archive replaced or suppressed assemblies, and trim the transfer manifest for resumability.
 
 Run a dry run first to verify planned operations:
 
 ```sh
 uv run ncbi_ftp_promote \
   --staging-path staging/run1 \
-  --removed-manifest notebooks/output/removed_manifest.txt \
-  --updated-manifest notebooks/output/updated_manifest.txt \
+  --removed-manifest-path notebooks/output/removed_manifest.txt \
+  --updated-manifest-path notebooks/output/updated_manifest.txt \
   --dry-run
 ```
 
@@ -293,11 +294,11 @@ Then execute the promotion:
 ```sh
 uv run ncbi_ftp_promote \
   --staging-path staging/run1 \
-  --removed-manifest notebooks/output/removed_manifest.txt \
-  --updated-manifest notebooks/output/updated_manifest.txt
+  --removed-manifest-path notebooks/output/removed_manifest.txt \
+  --updated-manifest-path notebooks/output/updated_manifest.txt
 ```
 
-If `--removed-manifest` and `--updated-manifest` are omitted, only staged records are promoted and no archiving occurs. On completion, the CLI prints:
+If `--removed-manifest-path` and `--updated-manifest-path` are omitted, staged records are promoted without archiving. On completion, the CLI prints:
 
 ```
 PROMOTE SUMMARY: 10 promoted, 0 archived, 0 failed
@@ -307,16 +308,18 @@ PROMOTE SUMMARY: 10 promoted, 0 archived, 0 failed
 
 ## 5. Inspect Results in CEPH
 
-Use [`scripts/s3_local.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/s3_local.py) to inspect promoted objects and their user metadata:
+Use the AWS CLI to inspect promoted objects and their user metadata:
 
 ```sh
 # list final Lakehouse objects
-uv run python scripts/s3_local.py ls \
+aws s3 ls --recursive \
   s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/
 
 # inspect user metadata (md5) on a specific object
-uv run python scripts/s3_local.py head \
-  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/615/GCF_900000615.1_PRJEB7657_assembly/GCF_900000615.1_PRJEB7657_assembly_genomic.fna.gz
+aws s3api head-object \
+  --bucket cdm-lake \
+  --key tenant-general-warehouse/kbase/datasets/ncbi/raw_data/GCF/900/000/615/GCF_900000615.1_PRJEB7657_assembly/GCF_900000615.1_PRJEB7657_assembly_genomic.fna.gz \
+  --query Metadata
 ```
 
 ### Frictionless Metadata Descriptors
@@ -333,14 +336,15 @@ When an assembly is archived (updated or removed), its live descriptor is copied
 s3://{LAKEHOUSE_BUCKET}/{LAKEHOUSE_KEY_PREFIX}archive/{release_tag}/metadata/{assembly_dir}_datapackage.json
 ```
 
-List and inspect descriptors with `scripts/s3_local.py`:
+List and inspect descriptors with the AWS CLI:
 
 ```sh
-uv run python scripts/s3_local.py ls \
+aws s3 ls \
   s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/metadata/
 
-uv run python scripts/s3_local.py cat \
-  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/metadata/GCF_900000615.1_PRJEB7657_assembly_datapackage.json
+aws s3 cp \
+  s3://cdm-lake/tenant-general-warehouse/kbase/datasets/ncbi/metadata/GCF_900000615.1_PRJEB7657_assembly_datapackage.json \
+  -
 ```
 
 ---
@@ -351,7 +355,7 @@ To exercise incremental diff, update, and archive behavior against a prior snaps
 
 - **Phase 1 (Step 2)**: Set `PREVIOUS_SUMMARY_URI` to the S3 URI of the raw summary from the first run (or pass a local snapshot path to `parse_assembly_summary(Path("prev.txt"))`). The diff reports `updated`, `replaced`, and `suppressed` entries that changed since the baseline.
 - **Phase 2 (Step 3)**: Download the updated `transfer_manifest.txt` via `ncbi_ftp_sync`.
-- **Phase 3 (Step 4)**: Pass `--removed-manifest` and `--updated-manifest` from Phase 1 to `ncbi_ftp_promote`. Updated assemblies are archived before overwrite, and removed assemblies are archived and deleted from live `raw_data/`.
+- **Phase 3 (Step 4)**: Pass `--removed-manifest-path` and `--updated-manifest-path` from Phase 1 to `ncbi_ftp_promote`. Updated assemblies are archived before overwrite, and removed assemblies are archived and deleted from live `raw_data/`.
 
 ---
 
@@ -380,7 +384,7 @@ rm -rf staging/ output/
 
 ## Reference: Downloaded File Suffixes
 
-Phase 2 downloads files matching `FILE_FILTERS` in [`src/cdm_data_loaders/ncbi_ftp/assembly.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/ncbi_ftp/assembly.py) (plus `md5checksums.txt` for integrity verification):
+Phase 2 downloads files matching `FILE_FILTERS` in [`src/cdm_data_loaders/datasets/ncbi_ftp/assembly.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/ncbi_ftp/assembly.py) (plus `md5checksums.txt` for integrity verification):
 
 | Suffix | Content |
 | --- | --- |
