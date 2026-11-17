@@ -6,10 +6,11 @@ from unittest.mock import MagicMock
 
 import pyarrow as pa
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 import cdm_data_loaders.pipelines.jsonlines.settings as jsonlines_settings_module
+from cdm_data_loaders.converters.core.guards import DEFAULT_MAX_RECURSION_DEPTH
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrowError,
 )
@@ -32,11 +33,13 @@ from cdm_data_loaders.core.registry import (
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
 from cdm_data_loaders.pipelines.jsonlines.exceptions import InvalidJsonlEntitySchemaError
 from cdm_data_loaders.pipelines.jsonlines.settings import (
+    BY_ALIAS,
     ENTITY_MODELS_MODULE,
     ENTITY_SCHEMAS_MODULE,
     EXTRACT_PIPELINE_NAME,
     JSONSCHEMA_PIPELINE_NAME,
     LOCAL_CLI_SHORTCUTS,
+    MAX_RECURSION_DEPTH,
     NCBI_DATASETS_PIPELINE_NAME,
     NCBI_DATASETS_SCHEMA_MODULE,
     PYDANTIC_PIPELINE_NAME,
@@ -474,7 +477,11 @@ def test_validated_jsonl_settings_pass_defaults_and_registries(
             entity_models=mod_name,
         )
         expected_prog = PYDANTIC_PIPELINE_NAME
-        expected_field = {ENTITY_MODELS_MODULE: mod_name}
+        expected_field: dict[str, Any] = {
+            ENTITY_MODELS_MODULE: mod_name,
+            MAX_RECURSION_DEPTH: DEFAULT_MAX_RECURSION_DEPTH,
+            BY_ALIAS: False,
+        }
         expected_pa_schema = PydanticToPyArrow().convert(widget_model)
         assert settings.model_registry == ModelRegistry(registry={"widget": widget_model})
     else:
@@ -914,3 +921,71 @@ def test_jsonl_jsonschema_settings_pass_lazy_loads_and_validates_custom_metasche
             dataset_name="test_ds",
             entity_schemas=invalid_custom_mod,
         )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "raw_value", "expected_value"),
+    [
+        pytest.param(MAX_RECURSION_DEPTH, "1", 1, id="max-recursion-depth"),
+        pytest.param(BY_ALIAS, "true", True, id="by-alias"),
+    ],
+)
+def test_jsonl_pydantic_settings_pass_cli_converter_options_roundtrip(
+    monkeypatch: pytest.MonkeyPatch,
+    test_defaults: dict[str, Any],
+    widget_model: type[BaseModel],
+    field_name: str,
+    raw_value: str,
+    expected_value: int | bool,
+) -> None:
+    """JsonlPydanticIngestSettings roundtrips --max-recursion-depth and --by-alias from the CLI."""
+    mod_name = register_temp_module(
+        monkeypatch,
+        f"_test_pyd_cli_opt_{field_name}",
+        ENTITY_MODELS={"widget": widget_model},
+    )
+    assert_cli_field_roundtrips(
+        JsonlPydanticIngestSettings,
+        field_name,
+        raw_value,
+        expected_value,
+        required={**test_defaults, "dataset_name": "test_ds", ENTITY_MODELS_MODULE: mod_name},
+    )
+
+
+@pytest.mark.parametrize("depth", [0, -1], ids=["zero", "negative"])
+def test_jsonl_pydantic_settings_fail_invalid_max_recursion_depth(
+    monkeypatch: pytest.MonkeyPatch,
+    test_defaults: dict[str, Any],
+    widget_model: type[BaseModel],
+    depth: int,
+) -> None:
+    """JsonlPydanticIngestSettings rejects nonpositive max_recursion_depth values."""
+    mod_name = register_temp_module(
+        monkeypatch,
+        f"_test_pyd_bad_depth_{depth}",
+        ENTITY_MODELS={"widget": widget_model},
+    )
+    with pytest.raises(ValidationError, match="max_recursion_depth"):
+        JsonlPydanticIngestSettings(
+            **test_defaults,
+            dataset_name="test_ds",
+            entity_models=mod_name,
+            max_recursion_depth=depth,
+        )
+
+
+def test_build_output_schema_registry_pass_forwards_max_recursion_depth_and_by_alias() -> None:
+    """build_output_schema_registry forwards max_recursion_depth and by_alias to PydanticToPyArrow."""
+
+    class RecursiveNode(BaseModel):
+        node_id: str = Field(serialization_alias="nodeId")
+        child: "RecursiveNode | None" = None
+
+    RecursiveNode.model_rebuild()
+    registry = ModelRegistry(registry={"node": RecursiveNode})
+
+    schema_map = build_output_schema_registry(registry, max_recursion_depth=1, by_alias=True)
+    assert schema_map is not None
+    expected = PydanticToPyArrow(max_recursion_depth=1, by_alias=True).convert(RecursiveNode)
+    assert schema_map.registry["node"].equals(expected, check_metadata=True)

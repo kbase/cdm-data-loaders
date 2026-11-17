@@ -31,6 +31,7 @@ raw text, and error detail.
 Write disposition is `append` or `replace` only. No merge is performed.
 """
 
+import functools
 import json
 import threading
 from collections.abc import Callable
@@ -40,6 +41,9 @@ from dlt.common.pipeline import LoadInfo
 from dlt.extract import DltResource
 from pydantic import BaseModel, ValidationError
 
+from cdm_data_loaders.coercion.pydantic import (
+    coerce_record_for_pyarrow as coerce_pydantic_record_for_pyarrow,
+)
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.jsonlines.base import (
     build_entity_resource as build_shared_entity_resource,
@@ -54,26 +58,44 @@ from cdm_data_loaders.readers.jsonlines import ParseErrorResolver
 
 def _make_validator_callbacks(
     model: type[BaseModel],
-) -> tuple[ParseErrorResolver, Callable[[dict[str, Any]], dict[str, Any]]]:
-    """Build paired validation and dump callbacks that validate each record at most once."""
+    *,
+    dump_to_dict: bool = False,
+    by_alias: bool = False,
+) -> tuple[ParseErrorResolver, Callable[[dict[str, Any]], BaseModel | dict[str, Any]]]:
+    """Build paired validation and coercion-input callbacks that validate each record at most once.
+
+    :param model: Pydantic ``BaseModel`` subclass used to validate incoming JSONL records
+    :type model: type[BaseModel]
+    :param dump_to_dict: when ``True``, return ``model_dump(mode="python", by_alias=by_alias)`` instead of the ``BaseModel`` instance
+    :type dump_to_dict: bool
+    :param by_alias: when ``True`` and ``dump_to_dict`` is ``True``, serialize dumped dictionary keys using field aliases
+    :type by_alias: bool
+    :return: tuple ``(resolve_error, extract_validated)``
+    :rtype: tuple[ParseErrorResolver, Callable[[dict[str, Any]], BaseModel | dict[str, Any]]]
+    """
     state = threading.local()
+
+    def _convert_instance(instance: BaseModel) -> BaseModel | dict[str, Any]:
+        if dump_to_dict:
+            return instance.model_dump(mode="python", by_alias=by_alias)
+        return instance
 
     def _validate(record: dict[str, Any]) -> str | None:
         try:
-            state.validated = (record, model.model_validate(record).model_dump(mode="python"))
+            state.validated = (record, _convert_instance(model.model_validate(record)))
         except ValidationError as e:
             state.validated = None
             return json.dumps(e.errors(), default=str)
         return None
 
-    def _dump_validated(record: dict[str, Any]) -> dict[str, Any]:
+    def _extract_validated(record: dict[str, Any]) -> BaseModel | dict[str, Any]:
         cached = getattr(state, "validated", None)
         state.validated = None
         if cached is not None and cached[0] is record:
             return cached[1]
-        return model.model_validate(record).model_dump(mode="python")
+        return _convert_instance(model.model_validate(record))
 
-    return _validate, _dump_validated
+    return _validate, _extract_validated
 
 
 def build_entity_resource(
@@ -95,13 +117,29 @@ def build_entity_resource(
     :return: resource yielding validated and rejected records for this entity
     :rtype: DltResource
     """
-    resolve_error, dump_validated = _make_validator_callbacks(model)
+    has_pyarrow_schema = (
+        settings.use_pyarrow
+        and settings.get_table_transform(table_name) is None
+        and settings.schema_map is not None
+        and table_name in settings.schema_map.registry
+    )
+    resolve_error, extract_validated = _make_validator_callbacks(
+        model,
+        dump_to_dict=not has_pyarrow_schema,
+        by_alias=settings.by_alias,
+    )
+    record_coercer = (
+        functools.partial(coerce_pydantic_record_for_pyarrow, by_alias=settings.by_alias)
+        if settings.by_alias
+        else coerce_pydantic_record_for_pyarrow
+    )
 
     return build_shared_entity_resource(
         table_name,
         settings,
         resolve_error=resolve_error,
-        transform_valid=dump_validated,
+        transform_valid=extract_validated,
+        record_coercer=record_coercer,
     )
 
 

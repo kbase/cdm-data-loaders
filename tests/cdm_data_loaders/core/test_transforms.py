@@ -15,8 +15,11 @@ from dlt.destinations.impl.filesystem.iceberg_adapter import (
     iceberg_partition,
 )
 from frozendict import frozendict
-from pydantic import ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError
 
+from cdm_data_loaders.coercion.pydantic import (
+    coerce_record_for_pyarrow as coerce_pydantic_record_for_pyarrow,
+)
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     RecordTransformFn,
@@ -32,6 +35,7 @@ from cdm_data_loaders.core.transforms import (
     compose_transforms,
     emit_raw_table,
     extract_schema_descriptions,
+    make_record_router,
     resolve_schema_map,
     route_and_coerce_record,
     route_and_coerce_table,
@@ -1185,3 +1189,40 @@ def test_source_file_propagated_to_table_transforms_in_xml_readers(
         page.meta.table_name: page.data for page in process_xml_file_to_dict(as_file_item(xml_file), xml_settings)
     }
     assert xml_pages == {"items": [{"id": "x1", "source": "records.xml"}]}
+
+
+def test_make_record_router_pass_coerces_pydantic_base_model_and_custom_coercer() -> None:
+    """make_record_router coerces BaseModel instances when transform is None and coerces transformed dicts via record_coercer."""
+
+    class SecretItem(BaseModel):
+        id: SecretStr
+
+    target_schema = pa.schema([pa.field("id", pa.string(), nullable=False)])
+    schema_map = ArrowSchemaRegistry(registry={"items": target_schema})
+    router = make_record_router(
+        "items",
+        schema_map=schema_map,
+        record_coercer=coerce_pydantic_record_for_pyarrow,
+    )
+    assert router(SecretItem(id=SecretStr("s-1")), "batch.jsonl") == {"items": [{"id": "s-1"}]}
+
+    transformed_router = make_record_router(
+        "items",
+        transform=_dict_with_optional_ctx_param,
+        schema_map=ArrowSchemaRegistry(registry={"items": SOURCED_ITEMS_SCHEMA}),
+        record_coercer=coerce_pydantic_record_for_pyarrow,
+    )
+    assert transformed_router({"id": SecretStr("s-2")}, "sub/batch.jsonl") == {
+        "items": [{"id": "s-2", "source": "batch.jsonl"}]
+    }
+
+
+def test_make_record_router_fail_rejects_base_model_when_transform_configured() -> None:
+    """make_record_router raises TypeError if a BaseModel instance is passed when a TableTransformFn is configured."""
+
+    class SimpleItem(BaseModel):
+        id: str
+
+    router = make_record_router("items", transform=_identity_items_transform)
+    with pytest.raises(TypeError, match="TableTransformFn requires a dict"):
+        router(SimpleItem(id="a"), None)

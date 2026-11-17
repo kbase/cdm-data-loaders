@@ -2,16 +2,19 @@
 
 import json
 from collections.abc import Callable, Generator, Iterable, Iterator
+from dataclasses import dataclass
 from typing import Any, Final
 
 import dlt
 import pyarrow as pa
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
+from pydantic import BaseModel
 
+from cdm_data_loaders.coercion.pyarrow import coerce_record_for_pyarrow
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TableTransformFn
-from cdm_data_loaders.core.transforms import route_and_coerce_record
+from cdm_data_loaders.core.transforms import RecordCoercerFn, make_record_router
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.utils.buffer import DictBuffer, make_rejected_row
 
@@ -74,40 +77,40 @@ def stream_jsonl_lines(items: Iterator[FileItemDict], buffer_size: int) -> Gener
         yield page
 
 
-def _route_line_record(  # noqa: PLR0913
-    item: dict[str, Any],
-    table_name: str,
-    buffer: DictBuffer,
-    *,
-    resolve_error: ParseErrorResolver | None = None,
-    transform_valid: Callable[[Any], Any] | None = None,
-    table_transform: TableTransformFn | None = None,
-    schema_map: ArrowSchemaRegistry | None = None,
-) -> Generator[Any, Any, Any]:
-    """Validate and route a single parsed line record into ``buffer``."""
-    error_detail = item["parse_error"]
-    if error_detail is None and resolve_error is not None:
-        error_detail = resolve_error(item["record"])
-    if error_detail is not None:
-        rejected = make_rejected_row(
-            table_name,
-            error_detail,
-            **{column: item[column] for column in REJECTED_COLUMNS},
-        )
-        yield from buffer.add_item(REJECTED_TABLE_NAME, rejected)
-    else:
-        record = item["record"]
-        if transform_valid is not None:
-            record = transform_valid(record)
-        yield from buffer.add_items(
-            route_and_coerce_record(
-                record,
-                table_name,
-                transform=table_transform,
-                schema_map=schema_map,
-                source_file=item.get("source_file"),
+@dataclass(frozen=True, slots=True)
+class _LineRouter:
+    """Per-table JSONL line validator and record router."""
+
+    table_name: str
+    route_record: Callable[[BaseModel | dict[str, Any], str | None], dict[str, list[dict[str, Any]]]]
+    resolve_error: ParseErrorResolver | None = None
+    transform_valid: Callable[[Any], Any] | None = None
+
+    def route_into(self, item: dict[str, Any], buffer: DictBuffer) -> Generator[Any, Any, Any]:
+        """Validate and route a single parsed line record into ``buffer``.
+
+        :param item: parsed line record dictionary from :func:`iter_file_jsonl_records`
+        :type item: dict[str, Any]
+        :param buffer: target page buffer accumulating valid and rejected rows
+        :type buffer: DictBuffer
+        :yield: flushed pages from ``buffer`` when ``buffer.max_items`` is reached
+        :rtype: Generator[Any, Any, Any]
+        """
+        error_detail = item["parse_error"]
+        if error_detail is None and self.resolve_error is not None:
+            error_detail = self.resolve_error(item["record"])
+        if error_detail is not None:
+            rejected = make_rejected_row(
+                self.table_name,
+                error_detail,
+                **{column: item[column] for column in REJECTED_COLUMNS},
             )
-        )
+            yield from buffer.add_item(REJECTED_TABLE_NAME, rejected)
+        else:
+            record = item["record"]
+            if self.transform_valid is not None:
+                record = self.transform_valid(record)
+            yield from buffer.add_items(self.route_record(record, item.get("source_file")))
 
 
 def make_page_router(  # noqa: PLR0913
@@ -119,6 +122,7 @@ def make_page_router(  # noqa: PLR0913
     table_transform: TableTransformFn | None = None,
     schema_map: ArrowSchemaRegistry | None = None,
     use_pyarrow: bool = True,
+    record_coercer: RecordCoercerFn = coerce_record_for_pyarrow,
 ) -> Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]:
     """Build a function that routes pages of line records to valid and rejected tables.
 
@@ -147,9 +151,22 @@ def make_page_router(  # noqa: PLR0913
     :type  schema_map: ArrowSchemaRegistry | None
     :param use_pyarrow: whether buffered pages are emitted as ``pyarrow.Table`` instances
     :type  use_pyarrow: bool
+    :param record_coercer: callable coercing a record or model against a target ``pa.Schema``
+    :type  record_coercer: RecordCoercerFn
     :return: function taking one page (or iterable) of line records and yielding routed pages
     :rtype : Callable[[Iterable[dict[str, Any]]], Generator[Any, Any, Any]]
     """
+    line_router = _LineRouter(
+        table_name=table_name,
+        route_record=make_record_router(
+            table_name,
+            transform=table_transform,
+            schema_map=schema_map,
+            record_coercer=record_coercer,
+        ),
+        resolve_error=resolve_error,
+        transform_valid=transform_valid,
+    )
 
     def _route(page: Iterable[dict[str, Any]] | dict[str, Any] | pa.Table) -> Generator[Any, Any, Any]:
         if isinstance(page, pa.Table):
@@ -162,15 +179,7 @@ def make_page_router(  # noqa: PLR0913
             if "parse_error" not in item and "error_detail" in item:
                 yield from buffer.add_item(REJECTED_TABLE_NAME, item)
                 continue
-            yield from _route_line_record(
-                item,
-                table_name,
-                buffer,
-                resolve_error=resolve_error,
-                transform_valid=transform_valid,
-                table_transform=table_transform,
-                schema_map=schema_map,
-            )
+            yield from line_router.route_into(item, buffer)
         yield from buffer.flush()
 
     return _route
@@ -194,14 +203,16 @@ def route_jsonl_lines(
     :yield: table-tagged rows
     :rtype: Generator[TDataItems, Any, Any]
     """
+    line_router = _LineRouter(
+        table_name=settings.table_name,
+        route_record=make_record_router(
+            settings.table_name,
+            transform=settings.get_table_transform(settings.table_name),
+            schema_map=settings.schema_map,
+        ),
+    )
     buffer = DictBuffer.from_settings(settings)
     for file_item in items:
         for item in iter_file_jsonl_records(file_item):
-            yield from _route_line_record(
-                item,
-                settings.table_name,
-                buffer,
-                table_transform=settings.get_table_transform(settings.table_name),
-                schema_map=settings.schema_map,
-            )
+            yield from line_router.route_into(item, buffer)
     yield from buffer.flush()
