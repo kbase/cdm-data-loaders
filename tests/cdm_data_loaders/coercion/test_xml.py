@@ -9,7 +9,7 @@ from lxml.etree import fromstring
 from cdm_data_loaders.coercion.xml import make_xml_level_converters
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMAS as UNIPROT_SCHEMAS
 from cdm_data_loaders.validation.xsd.traversal import load_schema
-from tests._support.paths_and_constants import BASE_DIR
+from tests.helpers.paths_and_constants import BASE_DIR
 
 XSD_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "xsd_to_pyarrow").resolve()
 

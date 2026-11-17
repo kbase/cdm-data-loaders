@@ -39,7 +39,7 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
     _converter_name: ClassVar[str] = "JSONSchemaToPyArrow"
     _root_target_label: ClassVar[str] = "a struct schema"
 
-    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
+    max_recursion_depth: PositiveInt = DEFAULT_MAX_RECURSION_DEPTH
     format_map: frozendict[str, pa.DataType] = Field(default_factory=lambda: DEFAULT_FORMAT_MAP)
     treat_unknown_as_string: bool = True
     emit_unions_as_json: bool = False

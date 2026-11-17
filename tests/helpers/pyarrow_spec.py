@@ -1,17 +1,17 @@
 """Shared PyArrow schema, table, and JSON fixture helpers for converter and pipeline spec tests."""
 
-import datetime as dt
 import importlib.util
 import io
 import json
 import sys
-from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+from cdm_data_loaders.utils.json_utils import json_default_scalar
 
 
 def list_field(
@@ -187,14 +187,7 @@ def json_default(obj: object) -> str:
     :rtype: str
     :raises TypeError: If ``obj`` is not a supported scalar value.
     """
-    if isinstance(obj, dt.date | dt.time):
-        return obj.isoformat()
-    if isinstance(obj, Decimal):
-        return str(obj)
-    if isinstance(obj, bytes):
-        return obj.decode("utf-8")
-    msg = f"Object of type {type(obj)} is not JSON serializable"
-    raise TypeError(msg)
+    return json_default_scalar(obj, bytes_encoding="utf-8")
 
 
 def assert_expected_table_valid(

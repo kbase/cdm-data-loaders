@@ -12,9 +12,9 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
 )
-from tests._support.cli_assertions import make_cts_settings
-from tests._support.fixtures_jsonlines import make_scenario_input_dir
-from tests._support.fixtures_jsonschema import make_schema_settings_factory
+from tests.helpers.cli_assertions import make_cts_settings
+from tests.helpers.fixtures_jsonlines import make_scenario_input_dir
+from tests.helpers.fixtures_jsonschema import make_schema_settings_factory
 
 
 @pytest.fixture

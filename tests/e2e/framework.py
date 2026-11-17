@@ -28,9 +28,9 @@ from cdm_data_loaders.core.pipeline_catalog import (
 )
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
-from tests._support.cli_assertions import settings_to_argv
-from tests._support.paths_and_constants import BASE_DIR, CONFIG_BUCKET, LOCAL_FS, preserve_logging_state
-from tests._support.table_readers import read_jsonl_file
+from tests.helpers.cli_assertions import settings_to_argv
+from tests.helpers.paths_and_constants import BASE_DIR, CONFIG_BUCKET, LOCAL_FS, preserve_logging_state
+from tests.helpers.table_readers import read_jsonl_file
 
 DEFAULT_DOCKER_IMAGE_TAG: Final[str] = "ghcr.io/kbase/cdm-data-loaders:test_container"
 CONTAINER_INPUT_DIR: Final[str] = "/input_dir"

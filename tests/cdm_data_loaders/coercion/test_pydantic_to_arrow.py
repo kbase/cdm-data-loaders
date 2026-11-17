@@ -1,12 +1,19 @@
 """Unit tests for Pydantic-to-PyArrow record coercion."""
 
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Annotated
+from enum import Enum
+from ipaddress import IPv4Address
+from pathlib import PurePosixPath
+from typing import Annotated, Any
+from uuid import UUID
 
 import pyarrow as pa
-from pydantic import BaseModel, Field, SecretBytes, SecretStr
+import pytest
+from pydantic import AnyUrl, BaseModel, Field, RootModel, SecretBytes, SecretStr, computed_field
 
+from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
 from cdm_data_loaders.coercion.pydantic_to_arrow import (
     coerce_pydantic_record_for_pyarrow,
     to_jsonable_recursive,
@@ -68,4 +75,165 @@ def test_to_jsonable_recursive_pass_unwraps_secrets_and_sorts_sets() -> None:
         "blob": "abc",
         "tags": ["a", "z"],
         "wait": "PT1H5M",
+    }
+
+
+@pytest.mark.parametrize(
+    ("raw_record", "schema"),
+    [
+        pytest.param(
+            {
+                "ts_utc": "2024-02-29T14:30:00+02:00",
+                "ts_naive": "2024-02-29T14:30:00+02:00",
+                "tod": "08:15:30+02:00",
+                "day": "2024-02-29",
+                "dec128": "19.956",
+                "dec256": "1234567890123456789012345678901234567890.12346",
+                "num_int": "42",
+                "num_float": "3.25",
+                "hex_bin": "deadbeef",
+                "b64_bin": "YWJj",
+                "view_text": {"k": [1, True]},
+                "fixed_dates": ["2024-01-01", "2024-01-02"],
+                "nested": {"code": 7},
+                "lookup": {"d": "2024-03-01"},
+            },
+            pa.schema(
+                [
+                    pa.field("ts_utc", pa.timestamp("us", tz="UTC")),
+                    pa.field("ts_naive", pa.timestamp("us")),
+                    pa.field("tod", pa.time64("us")),
+                    pa.field("day", pa.date32()),
+                    pa.field("dec128", pa.decimal128(10, 2)),
+                    pa.field("dec256", pa.decimal256(76, 4)),
+                    pa.field("num_int", pa.int64()),
+                    pa.field("num_float", pa.float64()),
+                    pa.field(
+                        "hex_bin",
+                        pa.large_binary(),
+                        metadata={"jsonschema_type": "string (contentEncoding: base16)"},
+                    ),
+                    pa.field("b64_bin", pa.binary(3), metadata={"pydantic_type": "binary (base64)"}),
+                    pa.field("view_text", pa.string_view()),
+                    pa.field("fixed_dates", pa.list_(pa.date32(), 2)),
+                    pa.field("nested", pa.struct([pa.field("code", pa.float64())])),
+                    pa.field("lookup", pa.map_(pa.string(), pa.date32())),
+                ]
+            ),
+            id="temporal-decimal-binary-and-containers",
+        ),
+        pytest.param(
+            {"empty_struct": {}, "empty_list": [], "empty_map": {}, "null_col": None},
+            pa.schema(
+                [
+                    pa.field("empty_struct", pa.struct([pa.field("a", pa.int64())])),
+                    pa.field("empty_list", pa.large_list(pa.string())),
+                    pa.field("empty_map", pa.map_(pa.string(), pa.int64())),
+                    pa.field("null_col", pa.decimal128(10, 2)),
+                ]
+            ),
+            id="nulls-and-empty-containers",
+        ),
+    ],
+)
+def test_coerce_json_and_pydantic_parity_on_plain_mapping(
+    raw_record: dict[str, Any],
+    schema: pa.Schema,
+) -> None:
+    """Plain JSON-compatible mappings coerce to identical Arrow-valid rows across both coercers."""
+    from_json = coerce_json_record_for_pyarrow(raw_record, schema)
+    from_pydantic = coerce_pydantic_record_for_pyarrow(raw_record, schema)
+    assert from_json == from_pydantic
+    table = pa.Table.from_pylist([from_json], schema=schema)
+    assert table.num_rows == 1
+    assert table.schema.equals(schema, check_metadata=True)
+
+
+class _Color(Enum):
+    RED = "red"
+
+
+@dataclass
+class _Coord:
+    x: int
+    y: int | None = None
+
+
+class _ModelWithExcludedAndComputed(BaseModel):
+    visible: int
+    hidden: str = Field(default="skip", exclude=True)
+    coord: _Coord
+
+    @computed_field
+    @property
+    def doubled(self) -> int:
+        """Return twice the visible field value.
+
+        :return: Doubled integer value.
+        :rtype: int
+        """
+        return self.visible * 2
+
+
+class _NestedRootModel(RootModel[_ModelWithExcludedAndComputed]):
+    pass
+
+
+class _MappingRootModel(RootModel[dict[str, int]]):
+    pass
+
+
+class _ScalarRootModel(RootModel[int]):
+    pass
+
+
+def test_coerce_pydantic_record_for_pyarrow_pass_root_models_excluded_fields_and_dataclass() -> None:
+    """RootModel variants, excluded fields, computed fields, and dataclass structs coerce as expected."""
+    nested_schema = pa.schema(
+        [
+            pa.field("visible", pa.int64()),
+            pa.field("hidden", pa.string()),
+            pa.field("doubled", pa.int64()),
+            pa.field("coord", pa.struct([pa.field("x", pa.int64()), pa.field("y", pa.int64())])),
+        ]
+    )
+    nested_instance = _NestedRootModel(_ModelWithExcludedAndComputed(visible=5, coord=_Coord(x=3)))
+    assert coerce_pydantic_record_for_pyarrow(nested_instance, nested_schema) == {
+        "visible": 5,
+        "doubled": 10,
+        "coord": {"x": 3},
+    }
+
+    map_schema = pa.schema([pa.field("k", pa.int64())])
+    assert coerce_pydantic_record_for_pyarrow(_MappingRootModel({"k": 9}), map_schema) == {"k": 9}
+
+    scalar_schema = pa.schema([pa.field("_value", pa.int64())])
+    assert coerce_pydantic_record_for_pyarrow(_ScalarRootModel(42), scalar_schema) == {"_value": 42}
+
+
+def test_to_jsonable_recursive_pass_root_model_enum_network_and_scalars() -> None:
+    """to_jsonable_recursive converts nested RootModel, Enum, dataclass, network, and stdlib scalars."""
+    payload = {
+        "root_num": _ScalarRootModel(7),
+        "color": _Color.RED,
+        "addr": IPv4Address("192.0.2.1"),
+        "site": AnyUrl("https://example.org/data"),
+        "uid": UUID("12345678-1234-5678-1234-567812345678"),
+        "path": PurePosixPath("/data/in.json"),
+        "day": date(2024, 6, 1),
+        "price": Decimal("3.50"),
+        "coord": _Coord(x=1),
+        "model": _ModelWithExcludedAndComputed(visible=4, coord=_Coord(x=2)),
+    }
+    assert to_jsonable_recursive(payload) == {
+        "root_num": 7,
+        "color": "red",
+        "addr": "192.0.2.1",
+        "site": "https://example.org/data",
+        "uid": "12345678-1234-5678-1234-567812345678",
+        "path": "/data/in.json",
+        "day": "2024-06-01",
+        "price": "3.50",
+        "coord": {"x": 1},
+        "model": {"visible": 4, "doubled": 8, "coord": {"x": 2}},
     }

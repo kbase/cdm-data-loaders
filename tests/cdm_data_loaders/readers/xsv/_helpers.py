@@ -14,14 +14,14 @@ from cdm_data_loaders.validation.jsonschema.models import (
     ValidatedXsvSchema,
     generate_header,
 )
-from tests._support.fixtures_xsv import (
+from tests.helpers.fixtures_xsv import (
     COLUMNS,
     VALID_ROWS,
     Row,
     WriteFile,
     build_xsv_content,
 )
-from tests._support.paths_and_constants import TEST_DATA_DIR
+from tests.helpers.paths_and_constants import TEST_DATA_DIR
 
 FAKE_QSV_CMD: Final[str] = "mock-qsv"
 SCHEMAS_DIR: Final[Path] = TEST_DATA_DIR / "qsv" / "schemas"

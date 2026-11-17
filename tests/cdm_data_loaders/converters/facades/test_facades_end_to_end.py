@@ -48,7 +48,7 @@ from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import (
 from cdm_data_loaders.converters.sources.dlt import DltReader
 from cdm_data_loaders.converters.sources.iceberg import IcebergReader
 from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
-from tests._support.iceberg_catalog import make_iceberg_table as make_table
+from tests.helpers.iceberg_catalog import make_iceberg_table as make_table
 from tests.cdm_data_loaders.converters._helpers import base_object_schema
 
 GOLDEN_PATH: Final = Path(__file__).parents[3] / "data/converters/ir/legacy_outputs.json"

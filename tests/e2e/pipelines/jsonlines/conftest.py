@@ -24,13 +24,13 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
 )
-from tests._support.cli_assertions import make_cts_settings
-from tests._support.fixtures_jsonlines import (
+from tests.helpers.cli_assertions import make_cts_settings
+from tests.helpers.fixtures_jsonlines import (
     Widget,
     make_entity_models_factory,
     make_scenario_input_dir,
 )
-from tests._support.fixtures_jsonschema import (
+from tests.helpers.fixtures_jsonschema import (
     build_widget_schema,
     make_entity_schemas_factory,
     make_schema_settings_factory,

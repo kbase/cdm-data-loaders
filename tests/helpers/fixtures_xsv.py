@@ -11,7 +11,7 @@ from typing import Any, Final
 import pytest
 
 from cdm_data_loaders.pipelines.xsv.settings import XsvIngestSettings
-from tests._support.cli_assertions import make_cts_settings
+from tests.helpers.cli_assertions import make_cts_settings
 
 type Row = Sequence[str]
 type WriteFile = Callable[[str | bytes, str], Path]

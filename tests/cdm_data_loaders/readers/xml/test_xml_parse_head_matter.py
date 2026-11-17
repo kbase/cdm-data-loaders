@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from cdm_data_loaders.readers.xml import parse_head_matter, stream_xml_file
-from tests._support.fs_backends import FsBackend
-from tests._support.xml_samples import XML_OPEN_ERROR_CASES, prepare_xml_error_path
+from tests.helpers.fs_backends import FsBackend
+from tests.helpers.xml_samples import XML_OPEN_ERROR_CASES, prepare_xml_error_path
 
 # XML with no namespace declarations at all.
 NO_NAMESPACE_XML = """<?xml version="1.0"?>

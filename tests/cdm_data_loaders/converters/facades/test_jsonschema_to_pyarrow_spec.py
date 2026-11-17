@@ -5,7 +5,9 @@ Cases, rules and error fixtures are declared in manifests under ``specs/schema_c
 ``docs/jsonschema_to_pyarrow_specification.md`` via ``docs_macros`` Jinja2 templates.
 """
 
+import datetime as dt
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,7 @@ from _pytest.mark.structures import ParameterSet
 from jsonschema import Draft202012Validator
 
 from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
+from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.emitters.pyarrow_codegen.renderer import render_python_schema_module
 from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import (
@@ -28,8 +31,8 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
 )
 from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI
 from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
-from tests._support.paths_and_constants import BASE_DIR
-from tests._support.pyarrow_spec import (
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_spec import (
     assert_expected_table_valid,
     assert_rows_and_table_match_expected,
     assert_schema_matches_expected,
@@ -162,6 +165,64 @@ def test_coerce_json_record_for_pyarrow_pass_cases(case: Case, run: Run) -> None
     assert_rows_and_table_match_expected(
         rows, pa_schema, run.expected_json, run.expected_table, table_attr=run.table_attr
     )
+
+
+def test_coerce_json_record_for_pyarrow_pass_custom_output_schema_and_pydantic_parity() -> None:
+    """Custom OUTPUT_SCHEMAS types coerce with identical row output across JSON and Pydantic coercers."""
+    custom_schema = pa.schema(
+        [
+            pa.field("ts_utc", pa.timestamp("us", tz="UTC")),
+            pa.field("ts_naive", pa.timestamp("us")),
+            pa.field("tod", pa.time64("us")),
+            pa.field("dec128", pa.decimal128(10, 2)),
+            pa.field("dec256", pa.decimal256(76, 4)),
+            pa.field("num_int", pa.int64()),
+            pa.field("num_float", pa.float64()),
+            pa.field("xsd_hex", pa.large_binary(), metadata={"xsd_type": "xs:hexBinary"}),
+            pa.field("pyd_utf8", pa.binary_view(), metadata={"pydantic_type": "binary"}),
+            pa.field("pyd_b64", pa.binary(3), metadata={"pydantic_type": "binary (base64)"}),
+            pa.field("view_str", pa.string_view()),
+            pa.field("fixed_dates", pa.list_(pa.date32(), 2)),
+            pa.field("view_list", pa.list_view(pa.int64())),
+        ]
+    )
+    raw_record: dict[str, Any] = {
+        "ts_utc": "2025-06-15T14:30:00+02:00",
+        "ts_naive": "2025-06-15T14:30:00+02:00",
+        "tod": "14:30:00+02:00",
+        "dec128": 6.456,
+        "dec256": "1234567890123456789012345678901234567890.12346",
+        "num_int": "42",
+        "num_float": "3.25",
+        "xsd_hex": "48656c6c6f",
+        "pyd_utf8": "hello",
+        "pyd_b64": "YWJj",
+        "view_str": {"ok": True},
+        "fixed_dates": ["2025-06-15", "2025-06-16"],
+        "view_list": ["10", 20.0],
+        "extra_ignored": "drop",
+    }
+    coerced_json = coerce_json_record_for_pyarrow(raw_record, custom_schema)
+    coerced_pydantic = coerce_pydantic_record_for_pyarrow(raw_record, custom_schema)
+    assert coerced_json == coerced_pydantic
+    assert coerced_json == {
+        "ts_utc": dt.datetime(2025, 6, 15, 12, 30, tzinfo=dt.UTC),
+        "ts_naive": dt.datetime(2025, 6, 15, 12, 30, tzinfo=dt.UTC).replace(tzinfo=None),
+        "tod": dt.time(14, 30),
+        "dec128": Decimal("6.46"),
+        "dec256": Decimal("1234567890123456789012345678901234567890.1235"),
+        "num_int": 42,
+        "num_float": 3.25,
+        "xsd_hex": b"Hello",
+        "pyd_utf8": b"hello",
+        "pyd_b64": b"abc",
+        "view_str": '{"ok": true}',
+        "fixed_dates": [dt.date(2025, 6, 15), dt.date(2025, 6, 16)],
+        "view_list": [10, 20],
+    }
+    table = pa.Table.from_pylist([coerced_json], schema=custom_schema)
+    table.validate(full=True)
+    assert table.schema.equals(custom_schema, check_metadata=True)
 
 
 def test_generate_pyarrow_schema_pass_kbase_xsv_metaschema_dialect() -> None:

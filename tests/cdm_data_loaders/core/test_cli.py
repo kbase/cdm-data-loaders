@@ -20,8 +20,8 @@ from cdm_data_loaders.core.settings import (
     InputLocalOutputSettings,
     LoggerSettings,
 )
-from tests._support.cli_assertions import make_cts_settings, settings_to_argv
-from tests._support.dlt_isolation import dlt_config_unset
+from tests.helpers.cli_assertions import make_cts_settings, settings_to_argv
+from tests.helpers.dlt_isolation import dlt_config_unset
 
 LOCAL_FS_DEST: Final[str] = "local_fs"
 RUN_RESULT: Final[LoadInfo] = cast("LoadInfo", object())

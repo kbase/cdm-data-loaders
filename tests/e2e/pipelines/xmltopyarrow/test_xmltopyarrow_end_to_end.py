@@ -19,15 +19,15 @@ from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     PIPELINE_NAME,
     XmlToPyArrowSettings,
 )
-from tests._support.cli_assertions import settings_to_argv
-from tests._support.paths_and_constants import DEFAULT_DLT_TABLES, XSD_SPEC_DIR, copy_test_files
-from tests._support.table_readers import (
+from tests.helpers.cli_assertions import settings_to_argv
+from tests.helpers.paths_and_constants import DEFAULT_DLT_TABLES, XSD_SPEC_DIR, copy_test_files
+from tests.helpers.table_readers import (
     LOADER_FILE_FORMATS,
     assert_pipeline_report_written,
     assert_run_ok,
     check_book_list_results,
 )
-from tests._support.xml_samples import SIMPLE_LIBRARY_XML
+from tests.helpers.xml_samples import SIMPLE_LIBRARY_XML
 from tests.e2e.framework import PipelineTestRunner
 
 

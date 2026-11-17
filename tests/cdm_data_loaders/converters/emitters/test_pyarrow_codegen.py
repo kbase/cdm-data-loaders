@@ -70,8 +70,8 @@ from cdm_data_loaders.schemas.uniref.schema import (
 )
 from cdm_data_loaders.utils.arrow_schema import assemble_pyarrow_schema
 from cdm_data_loaders.validation.xsd.traversal import load_schema
-from tests._support.paths_and_constants import BASE_DIR
-from tests._support.pyarrow_spec import load_module
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_spec import load_module
 
 XSD_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "xsd_to_pyarrow").resolve()
 

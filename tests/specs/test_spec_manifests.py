@@ -28,8 +28,8 @@ from cdm_data_loaders.pipelines.xsv.exceptions import XSV_SCHEMA_ERRORS
 from specs._loader.converter_spec import load_cases, load_error_cases, load_rules
 from specs._loader.pipeline_spec import PipelineCase, PipelineRun, load_pipeline_cases
 from specs._loader.yaml_io import load_yaml_dict
-from tests._support.paths_and_constants import PIPELINE_SPECS_DIR, SCHEMA_CONVERTER_SPECS_DIR
-from tests._support.table_readers import (
+from tests.helpers.paths_and_constants import PIPELINE_SPECS_DIR, SCHEMA_CONVERTER_SPECS_DIR
+from tests.helpers.table_readers import (
     canonicalize_table_rows,
     load_expected_json_tables,
     load_expected_tables,

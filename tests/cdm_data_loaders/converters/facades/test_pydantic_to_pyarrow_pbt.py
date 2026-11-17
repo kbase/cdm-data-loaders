@@ -53,8 +53,8 @@ from cdm_data_loaders.converters.sources.pydantic.annotations import (
 )
 from cdm_data_loaders.converters.sources.pydantic.model_synthesis import ensure_model_complete
 from specs._loader.converter_spec import Case, Run, load_cases
-from tests._support.paths_and_constants import BASE_DIR
-from tests._support.pyarrow_pbt import (
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_pbt import (
     INT64_MAX,
     INT64_MIN,
     MAX_SAFE_DATE,
@@ -66,7 +66,7 @@ from tests._support.pyarrow_pbt import (
     safe_text_strategy,
     stripped_text_strategy,
 )
-from tests._support.pyarrow_spec import load_fixture_attr
+from tests.helpers.pyarrow_spec import load_fixture_attr
 
 PYDANTIC_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "pydantic_to_pyarrow").resolve()
 CASES: Final[tuple[Case, ...]] = tuple(

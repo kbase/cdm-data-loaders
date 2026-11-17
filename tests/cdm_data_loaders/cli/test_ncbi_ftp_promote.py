@@ -17,7 +17,7 @@ from cdm_data_loaders.datasets.ncbi_ftp.constants import (
     DEFAULT_STAGING_BUCKET,
     DEFAULT_TRANSFER_MANIFEST_FILE,
 )
-from tests._support.paths_and_constants import generate_dlt_config
+from tests.helpers.paths_and_constants import generate_dlt_config
 
 DEFAULT_STAGING_PATH: Final[PurePosixPath] = PurePosixPath("staging") / "run1"
 

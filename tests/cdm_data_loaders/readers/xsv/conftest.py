@@ -13,7 +13,7 @@ import pytest
 from cdm_data_loaders.readers.xsv import qsv
 from cdm_data_loaders.readers.xsv.models import CleanerValidatorArgs
 from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
-from tests._support.fixtures_xsv import WriteFile, make_xsv_writer, resolve_qsv_cmd
+from tests.helpers.fixtures_xsv import WriteFile, make_xsv_writer, resolve_qsv_cmd
 from tests.cdm_data_loaders.readers.xsv._helpers import (
     FAKE_QSV_CMD,
     SCHEMAS_DIR,

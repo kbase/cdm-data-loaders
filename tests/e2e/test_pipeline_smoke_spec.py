@@ -24,15 +24,15 @@ from specs._loader.pipeline_spec import (
     load_pipeline_cases,
     load_settings_file,
 )
-from tests._support.cli_assertions import make_cts_settings
-from tests._support.dlt_isolation import isolated_dlt_config, load_dlt_toml_files
-from tests._support.fs_backends import MOTO_AWS_CREDENTIALS
-from tests._support.paths_and_constants import (
+from tests.helpers.cli_assertions import make_cts_settings
+from tests.helpers.dlt_isolation import isolated_dlt_config, load_dlt_toml_files
+from tests.helpers.fs_backends import MOTO_AWS_CREDENTIALS
+from tests.helpers.paths_and_constants import (
     LOCAL_FS,
     PIPELINE_SPECS_DIR,
     S3,
 )
-from tests._support.pipeline_env import (
+from tests.helpers.pipeline_env import (
     PipelineEnvSpec,
     discover_env_settings_file,
     drop_iceberg_tables_for_dataset,
@@ -42,7 +42,7 @@ from tests._support.pipeline_env import (
     resolve_destination_bucket_url,
     stage_input_directory,
 )
-from tests._support.table_readers import assert_smoke_run_output
+from tests.helpers.table_readers import assert_smoke_run_output
 from tests.e2e import framework
 from tests.e2e.framework import (
     ExecutionMode,

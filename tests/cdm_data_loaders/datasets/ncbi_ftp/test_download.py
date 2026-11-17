@@ -14,7 +14,7 @@ from cdm_data_loaders.datasets.ncbi_ftp.download import (
     download_and_stage,
     download_batch,
 )
-from tests._support.paths_and_constants import TEST_BUCKET
+from tests.helpers.paths_and_constants import TEST_BUCKET
 
 MOCK_STATS = {
     "accession": "GCF_000001215.4",

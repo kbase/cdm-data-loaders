@@ -10,12 +10,12 @@ from typing import Any
 
 import pytest
 
-from tests._support.paths_and_constants import (
+from tests.helpers.paths_and_constants import (
     REPO_ROOT,
     is_marker_explicitly_selected,
     preserve_logging_state,
 )
-from tests._support.state_audit import (
+from tests.helpers.state_audit import (
     SPECS_DIR,
     SYSTEM_TEMP_ROOT,
     StateSnapshot,

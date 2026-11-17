@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field, NonNegativeInt
 from cdm_data_loaders.core.fields import NonEmptyStr
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 from specs._loader.converter_spec import Case, Run
-from tests._support.cli_assertions import make_cts_settings, register_temp_module
-from tests._support.pyarrow_spec import load_fixture_attr, load_json_records
+from tests.helpers.cli_assertions import make_cts_settings, register_temp_module
+from tests.helpers.pyarrow_spec import load_fixture_attr, load_json_records
 
 PYDANTIC_SPEC_ENTITY_TABLE_NAME: Final[str] = "items"
 

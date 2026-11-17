@@ -15,8 +15,8 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JsonlJsonschemaIngestSettings,
     JsonlPydanticIngestSettings,
 )
-from tests._support.cli_assertions import make_cts_settings, settings_to_argv
-from tests._support.table_readers import (
+from tests.helpers.cli_assertions import make_cts_settings, settings_to_argv
+from tests.helpers.table_readers import (
     LOADER_FILE_FORMATS,
     assert_run_ok,
     read_pipeline_tables,

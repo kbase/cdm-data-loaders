@@ -22,7 +22,7 @@ from cdm_data_loaders.pipelines.jsonlines.base import (
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 from cdm_data_loaders.pipelines.runner import DEFAULT_SCHEMA_CONTRACT
-from tests._support.cli_assertions import register_temp_module
+from tests.helpers.cli_assertions import register_temp_module
 
 
 def _resolve_negative_count_error(record: dict[str, Any]) -> str | None:

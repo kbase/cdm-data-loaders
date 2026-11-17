@@ -1,6 +1,5 @@
 """End-to-end specification tests: XSD + XML -> process_xml_file_to_pyarrow -> PyArrow Table batches."""
 
-import datetime as dt
 import json
 from collections.abc import Callable
 from pathlib import Path
@@ -12,18 +11,9 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import generate_pyarrow_
 from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.validation.xsd.traversal import load_schema
-from tests._support.cli_assertions import strip_none_values
-from tests._support.paths_and_constants import XSD_SPEC_DIR
-
-
-def _json_default(obj: object) -> str:
-    """Serialize Python date and bytes values from Arrow tables for comparison with expected JSON."""
-    if isinstance(obj, dt.date):
-        return obj.isoformat()
-    if isinstance(obj, bytes):
-        return obj.decode("utf-8")
-    msg = f"Object of type {type(obj)} is not JSON serializable"
-    raise TypeError(msg)
+from tests.helpers.cli_assertions import strip_none_values
+from tests.helpers.paths_and_constants import XSD_SPEC_DIR
+from tests.helpers.pyarrow_spec import json_default
 
 
 @pytest.mark.parametrize(
@@ -186,7 +176,7 @@ def test_process_xml_file_to_pyarrow_pass_yields_arrow_tables_for_spec_and_examp
     assert table.schema.equals(expected_pa_schema, check_metadata=True)
     assert table.num_rows == len(expected)
 
-    actual_rows = json.loads(json.dumps(strip_none_values(table.to_pylist()), default=_json_default))
+    actual_rows = json.loads(json.dumps(strip_none_values(table.to_pylist()), default=json_default))
     assert actual_rows == expected
 
 

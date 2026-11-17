@@ -7,6 +7,7 @@ from typing import Any, NoReturn
 
 from frozendict import frozendict
 from jsonschema.validators import validator_for
+from pydantic import PositiveInt
 
 from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
@@ -52,7 +53,7 @@ class StrictJsonSchemaReader:
     extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
     error_type: type[ConversionError] = ConversionError
     converter_name: str = "StrictJsonSchemaReader"
-    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
+    max_recursion_depth: PositiveInt = DEFAULT_MAX_RECURSION_DEPTH
     error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
 
     def _raise_err(self, code: str, msg: str) -> NoReturn:

@@ -14,8 +14,8 @@ from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import table_to
 from cdm_data_loaders.converters.facades.pyiceberg_to_linkml import table_to_linkml
 from cdm_data_loaders.core.fields import ICEBERG, PARQUET
 from cdm_data_loaders.pipelines.jsonlines.settings import JSONSCHEMA_PIPELINE_NAME, JsonlJsonschemaIngestSettings
-from tests._support.cli_assertions import settings_to_argv
-from tests._support.table_readers import (
+from tests.helpers.cli_assertions import settings_to_argv
+from tests.helpers.table_readers import (
     LOADER_FILE_FORMATS,
     assert_iceberg_table_metadata,
     assert_pipeline_report_written,

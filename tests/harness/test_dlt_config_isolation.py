@@ -1,4 +1,4 @@
-"""Regression tests for the dlt config isolation helpers in ``tests._support.dlt_isolation``."""
+"""Regression tests for the dlt config isolation helpers in ``tests.helpers.dlt_isolation``."""
 
 from pathlib import Path
 
@@ -6,8 +6,8 @@ import dlt
 from dlt.common.configuration.container import Container
 from dlt.common.pipeline import PipelineContext
 
-from tests._support.dlt_isolation import deactivated_pipeline, dlt_config_unset, isolated_dlt_config
-from tests._support.paths_and_constants import LOCAL_FS, S3, generate_dlt_config
+from tests.helpers.dlt_isolation import deactivated_pipeline, dlt_config_unset, isolated_dlt_config
+from tests.helpers.paths_and_constants import LOCAL_FS, S3, generate_dlt_config
 
 SEED_CONFIG_KEY: str = "destination.local_fs.bucket_url"
 

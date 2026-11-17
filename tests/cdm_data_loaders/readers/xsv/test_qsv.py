@@ -32,7 +32,7 @@ from cdm_data_loaders.readers.xsv.qsv import (
     run_qsv_validate,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
-from tests._support.fixtures_xsv import (
+from tests.helpers.fixtures_xsv import (
     ALL_RAGGED_ROWS,
     COLUMNS,
     PARTIAL_RAGGED_ROWS,

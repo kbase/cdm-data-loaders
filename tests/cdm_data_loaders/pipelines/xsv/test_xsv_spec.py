@@ -29,14 +29,14 @@ from cdm_data_loaders.pipelines.xsv.settings import (
 )
 from cdm_data_loaders.validation.jsonschema.models import validate_xsv_jsonschema
 from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
-from tests._support.cli_assertions import make_cts_settings
-from tests._support.paths_and_constants import PIPELINE_SPECS_DIR
-from tests._support.pyarrow_spec import (
+from tests.helpers.cli_assertions import make_cts_settings
+from tests.helpers.paths_and_constants import PIPELINE_SPECS_DIR
+from tests.helpers.pyarrow_spec import (
     assert_schema_matches_expected,
     load_expected_table,
     load_json_records,
 )
-from tests._support.table_readers import (
+from tests.helpers.table_readers import (
     assert_duckdb_table_counts,
     fetch_all_duckdb,
     run_with_duckdb_pipeline,

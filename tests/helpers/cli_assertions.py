@@ -27,7 +27,7 @@ from cdm_data_loaders.core.fields import (
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
 )
 from cdm_data_loaders.core.settings import CdmDataLoadersBase, CtsSettings
-from tests._support.paths_and_constants import LOCAL_FS
+from tests.helpers.paths_and_constants import LOCAL_FS
 
 HOOK_ENV_VAR: Final[str] = "RUNTIME__SLACK_INCOMING_HOOK"
 HOOK_PART_ENV_VARS: Final[tuple[str, ...]] = ("VARIABLE_B", "VARIABLE_T", "CHAR_STR")

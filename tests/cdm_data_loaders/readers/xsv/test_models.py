@@ -22,7 +22,7 @@ from cdm_data_loaders.readers.xsv.models import (
     non_header_lines_present,
     prepend_header,
 )
-from tests._support.fixtures_xsv import (
+from tests.helpers.fixtures_xsv import (
     COLUMNS,
     VALID_ROWS,
     WriteFile,

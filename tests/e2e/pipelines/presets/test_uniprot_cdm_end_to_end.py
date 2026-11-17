@@ -16,9 +16,9 @@ from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
     UniProtSettings,
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
-from tests._support.cli_assertions import make_cts_settings
-from tests._support.paths_and_constants import TEST_DATA_DIR
-from tests._support.table_readers import (
+from tests.helpers.cli_assertions import make_cts_settings
+from tests.helpers.paths_and_constants import TEST_DATA_DIR
+from tests.helpers.table_readers import (
     assert_destination_table_counts,
     assert_duckdb_table_counts,
     assert_pipeline_report_written,

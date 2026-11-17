@@ -3,7 +3,13 @@
 import pyarrow as pa
 import pytest
 
-from cdm_data_loaders.utils.arrow_schema import assemble_pyarrow_schema, decode_field_metadata
+from cdm_data_loaders.utils.arrow_schema import (
+    assemble_pyarrow_schema,
+    decode_field_metadata,
+    is_any_binary_type,
+    is_any_list_type,
+    is_any_string_type,
+)
 
 
 def test_assemble_pyarrow_schema_from_struct_and_sequence() -> None:
@@ -40,3 +46,34 @@ def test_assemble_pyarrow_schema_rejects_empty_component() -> None:
 def test_decode_field_metadata(raw: dict[bytes, bytes] | None, expected: dict[str, str]) -> None:
     """Decode UTF-8 byte metadata dictionaries or return an empty dict for missing metadata."""
     assert decode_field_metadata(raw) == expected
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_binary", "expected_string", "expected_list"),
+    [
+        pytest.param(pa.binary(), True, False, False, id="binary"),
+        pytest.param(pa.large_binary(), True, False, False, id="large-binary"),
+        pytest.param(pa.binary_view(), True, False, False, id="binary-view"),
+        pytest.param(pa.binary(4), True, False, False, id="fixed-size-binary"),
+        pytest.param(pa.string(), False, True, False, id="string"),
+        pytest.param(pa.large_string(), False, True, False, id="large-string"),
+        pytest.param(pa.string_view(), False, True, False, id="string-view"),
+        pytest.param(pa.list_(pa.int64()), False, False, True, id="list"),
+        pytest.param(pa.large_list(pa.int64()), False, False, True, id="large-list"),
+        pytest.param(pa.list_(pa.int64(), 2), False, False, True, id="fixed-size-list"),
+        pytest.param(pa.list_view(pa.int64()), False, False, True, id="list-view"),
+        pytest.param(pa.large_list_view(pa.int64()), False, False, True, id="large-list-view"),
+        pytest.param(pa.int64(), False, False, False, id="int64"),
+        pytest.param(pa.map_(pa.string(), pa.int64()), False, False, False, id="map"),
+    ],
+)
+def test_arrow_type_predicates_classify_binary_string_and_list_variants(
+    dtype: pa.DataType,
+    expected_binary: bool,
+    expected_string: bool,
+    expected_list: bool,
+) -> None:
+    """Classify all PyArrow binary, string, and list type variants without false positives."""
+    assert is_any_binary_type(dtype) is expected_binary
+    assert is_any_string_type(dtype) is expected_string
+    assert is_any_list_type(dtype) is expected_list

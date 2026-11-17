@@ -36,8 +36,8 @@ from cdm_data_loaders.core.file_items import as_file_item, open_binary
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.core.settings import CtsSettings, FileFormatIngestSettings
 from specs._loader.pipeline_spec import PipelineRun, load_expected_json_tables, load_expected_tables
-from tests._support.cli_assertions import set_nested, strip_none_values
-from tests._support.pyarrow_spec import json_default
+from tests.helpers.cli_assertions import set_nested, strip_none_values
+from tests.helpers.pyarrow_spec import json_default
 
 LOGGER: Final[Logger] = getLogger(__name__)
 

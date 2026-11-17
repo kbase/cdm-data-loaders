@@ -6,7 +6,7 @@ import pytest
 from types_boto3_s3.client import S3Client
 
 from cdm_data_loaders.io.s3.client import reset_s3_client
-from tests._support.paths_and_constants import ALT_BUCKET, TEST_BUCKET
+from tests.helpers.paths_and_constants import ALT_BUCKET, TEST_BUCKET
 
 HTTP_200: Final[int] = 200
 HTTP_204: Final[int] = 204

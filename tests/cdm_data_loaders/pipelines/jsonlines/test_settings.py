@@ -67,7 +67,7 @@ from cdm_data_loaders.validation.jsonschema.metaschema import (
     get_xsv_meta_schema,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
-from tests._support.cli_assertions import (
+from tests.helpers.cli_assertions import (
     assert_cli_field_roundtrips,
     assert_no_cli_clashes,
     build_cli_arg_specs,

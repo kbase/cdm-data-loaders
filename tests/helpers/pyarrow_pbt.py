@@ -2,15 +2,17 @@
 
 import base64
 import datetime as dt
+import functools
 import io
 import json
-from decimal import Decimal
 from typing import Any, Final
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 from hypothesis import strategies as st
 from hypothesis.strategies import SearchStrategy
+
+from cdm_data_loaders.utils.json_utils import json_default_scalar
 
 INT8_MIN: Final[int] = -128
 INT8_MAX: Final[int] = 127
@@ -129,25 +131,6 @@ def hex_str_strategy(max_size: int = 32) -> SearchStrategy[str]:
     return st.binary(max_size=max_size).map(bytes.hex)
 
 
-def _pbt_json_default(obj: object) -> str:
-    """Serialize Python date, time, Decimal, and arbitrary bytes values for JSON round-trip checks.
-
-    :param obj: Non-JSON-native Python object.
-    :type obj: object
-    :return: String representation suitable for ``json.dumps``.
-    :rtype: str
-    :raises TypeError: If ``obj`` is not a supported Arrow scalar Python object.
-    """
-    if isinstance(obj, dt.date | dt.time):
-        return obj.isoformat()
-    if isinstance(obj, Decimal):
-        return str(obj)
-    if isinstance(obj, bytes):
-        return encode_base64_ascii(obj)
-    msg = f"Object of type {type(obj)} is not JSON serializable"
-    raise TypeError(msg)
-
-
 def assert_coerced_rows_roundtrip(rows: list[dict[str, Any]], pa_schema: pa.Schema) -> pa.Table:
     """Verify coerced rows conform to ``pa_schema``, build a valid Arrow Table, and round-trip via Parquet.
 
@@ -162,7 +145,7 @@ def assert_coerced_rows_roundtrip(rows: list[dict[str, Any]], pa_schema: pa.Sche
     for row in rows:
         assert set(row.keys()) <= schema_names
 
-    serialized = json.loads(json.dumps(rows, default=_pbt_json_default))
+    serialized = json.loads(json.dumps(rows, default=functools.partial(json_default_scalar, bytes_encoding="base64")))
     assert len(serialized) == len(rows)
 
     table = pa.Table.from_pylist(rows, schema=pa_schema)

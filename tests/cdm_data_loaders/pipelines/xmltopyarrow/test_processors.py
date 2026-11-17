@@ -30,8 +30,8 @@ from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULTS, LOG_INTERVAL
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from tests._support.fs_backends import FsBackend
-from tests._support.xml_samples import (
+from tests.helpers.fs_backends import FsBackend
+from tests.helpers.xml_samples import (
     PEOPLE_XML_2,
     PEOPLE_XML_5,
     PEOPLE_XML_EMPTY,

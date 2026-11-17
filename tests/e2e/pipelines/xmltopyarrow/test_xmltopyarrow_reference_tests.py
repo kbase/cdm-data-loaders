@@ -6,7 +6,7 @@ from typing import Any
 import duckdb
 
 from cdm_data_loaders.core.fields import PARQUET
-from tests._support.table_readers import (
+from tests.helpers.table_readers import (
     read_pipeline_tables,
     reference_entries_from_duckdb,
     run_and_read,

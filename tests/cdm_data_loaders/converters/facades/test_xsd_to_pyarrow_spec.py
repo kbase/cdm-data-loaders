@@ -29,8 +29,8 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import generate_pyarrow_
 from cdm_data_loaders.utils.xml_utils import local_name
 from cdm_data_loaders.validation.xsd.traversal import load_schema
 from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
-from tests._support.paths_and_constants import BASE_DIR
-from tests._support.pyarrow_spec import (
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_spec import (
     assert_expected_table_valid,
     assert_rows_and_table_match_expected,
     assert_schema_matches_expected,

@@ -10,7 +10,7 @@ import dlt
 import duckdb
 import pytest
 
-from tests._support.table_readers import (
+from tests.helpers.table_readers import (
     BUFFER_SIZES,
     LOADER_FILE_FORMATS,
     WORKER_CONFIGS,

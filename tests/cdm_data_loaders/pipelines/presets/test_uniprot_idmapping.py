@@ -32,13 +32,13 @@ from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     RAW_ID_MAPPING_SCHEMA,
     RAW_ID_MAPPING_TABLE_NAME,
 )
-from tests._support.cli_assertions import (
+from tests.helpers.cli_assertions import (
     assert_cli_field_roundtrips,
     check_settings,
     make_cts_settings,
     settings_to_argv,
 )
-from tests._support.paths_and_constants import LOCAL_FS
+from tests.helpers.paths_and_constants import LOCAL_FS
 
 
 def test_cli_wires_settings_and_runner() -> None:

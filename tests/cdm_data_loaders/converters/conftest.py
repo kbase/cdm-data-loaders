@@ -7,7 +7,7 @@ from cdm_data_loaders.converters.facades.dlt_to_jsonschema import DltToJSONSchem
 from cdm_data_loaders.converters.facades.jsonschema_to_dlt import JSONSchemaToDlt
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchemaToPyArrow
 from cdm_data_loaders.converters.facades.jsonschema_to_pyspark import JSONSchemaToPySpark
-from tests._support.iceberg_catalog import SIMPLE_ICEBERG_SCHEMA, WIDE_ICEBERG_SCHEMA
+from tests.helpers.iceberg_catalog import SIMPLE_ICEBERG_SCHEMA, WIDE_ICEBERG_SCHEMA
 
 
 @pytest.fixture

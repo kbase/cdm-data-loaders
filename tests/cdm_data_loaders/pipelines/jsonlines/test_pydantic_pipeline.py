@@ -17,9 +17,9 @@ from cdm_data_loaders.pipelines.jsonlines.pydantic import (
     run_jsonlines_with_validation_pipeline,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
-from tests._support.cli_assertions import register_temp_module
-from tests._support.paths_and_constants import LOCAL_FS
-from tests._support.table_readers import assert_run_ok
+from tests.helpers.cli_assertions import register_temp_module
+from tests.helpers.paths_and_constants import LOCAL_FS
+from tests.helpers.table_readers import assert_run_ok
 
 
 def run_pipeline(table_name: str, model: type[BaseModel], settings: JsonlPydanticIngestSettings) -> dlt.Dataset:

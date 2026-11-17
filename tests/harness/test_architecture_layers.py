@@ -7,7 +7,7 @@ from typing import Final
 
 import pytest
 
-from tests._support.paths_and_constants import REPO_ROOT
+from tests.helpers.paths_and_constants import REPO_ROOT
 
 SRC_PACKAGE_DIR: Final[Path] = REPO_ROOT / "src" / "cdm_data_loaders"
 SPECS_LOADER_DIR: Final[Path] = REPO_ROOT / "specs" / "_loader"

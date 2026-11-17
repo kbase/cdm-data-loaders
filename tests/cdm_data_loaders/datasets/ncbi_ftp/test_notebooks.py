@@ -14,7 +14,7 @@ from cdm_data_loaders.datasets.ncbi_ftp.summary import (
     compute_diff,
     download_assembly_summary,
 )
-from tests._support.paths_and_constants import BASE_DIR
+from tests.helpers.paths_and_constants import BASE_DIR
 
 NOTEBOOKS_DIR = BASE_DIR / "notebooks"
 

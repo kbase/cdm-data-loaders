@@ -17,8 +17,8 @@ from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULTS, LOG_INTERVAL
 from cdm_data_loaders.pipelines.xmltodict.processors import process_xml_file_to_dict
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
-from tests._support.fs_backends import FsBackend
-from tests._support.xml_samples import (
+from tests.helpers.fs_backends import FsBackend
+from tests.helpers.xml_samples import (
     PEOPLE_XML_2,
     PEOPLE_XML_5,
     PEOPLE_XML_EMPTY,

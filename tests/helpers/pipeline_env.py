@@ -17,8 +17,8 @@ from types_boto3_s3.client import S3Client
 
 from cdm_data_loaders.utils.iceberg.cleanup import install_iceberg_catalog_cleanup
 from specs._loader.pipeline_spec import load_settings_file
-from tests._support.dlt_isolation import load_dlt_toml_files
-from tests._support.paths_and_constants import LOCAL_FS
+from tests.helpers.dlt_isolation import load_dlt_toml_files
+from tests.helpers.paths_and_constants import LOCAL_FS
 
 SETTINGS_FILENAMES: Final[tuple[str, ...]] = (
     "settings.toml",

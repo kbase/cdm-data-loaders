@@ -1,4 +1,4 @@
-"""Tests for generic dictionary path assignment in ``tests._support.cli_assertions``."""
+"""Tests for generic dictionary path assignment in ``tests.helpers.cli_assertions``."""
 
 from collections.abc import Sequence
 from copy import deepcopy
@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from tests._support.cli_assertions import NestedPathError, set_nested
+from tests.helpers.cli_assertions import NestedPathError, set_nested
 
 
 @pytest.mark.parametrize(

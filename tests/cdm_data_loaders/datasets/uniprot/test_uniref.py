@@ -22,7 +22,7 @@ from cdm_data_loaders.datasets.uniprot.uniref import (
 from cdm_data_loaders.pipelines.presets.uniprot_xml import UNIREF_XSD_FILE
 from cdm_data_loaders.readers.xml import stream_xml_file
 from cdm_data_loaders.validation.xsd.traversal import load_schema
-from tests._support.paths_and_constants import TEST_DATA_DIR
+from tests.helpers.paths_and_constants import TEST_DATA_DIR
 from tests.cdm_data_loaders.datasets.uniprot._helpers import wrap_entry_xml
 
 NOW = dt.datetime.now(tz=dt.UTC)

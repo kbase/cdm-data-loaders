@@ -12,13 +12,13 @@ from types_boto3_s3.client import S3Client
 
 from cdm_data_loaders.io.s3 import client as s3_client_mod
 from cdm_data_loaders.io.s3.client import get_s3_client, reset_s3_client
-from tests._support.fixtures_xsv import resolve_qsv_cmd
-from tests._support.paths_and_constants import (
+from tests.helpers.fixtures_xsv import resolve_qsv_cmd
+from tests.helpers.paths_and_constants import (
     N_REFERENCE_XML_ENTRIES,
     REFERENCE_XML_FIXTURE_DIR,
     TEST_DATA_DIR,
 )
-from tests._support.table_readers import duckdb_reference_from_jsonl, read_jsonl_file
+from tests.helpers.table_readers import duckdb_reference_from_jsonl, read_jsonl_file
 from tests.e2e._helpers import (
     bucket_name_from_node,
     ceph_reachable,

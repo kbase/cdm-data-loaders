@@ -9,15 +9,15 @@ from _pytest.mark.structures import ParameterSet
 
 from cdm_data_loaders.pipelines.jsonlines.settings import PYDANTIC_PIPELINE_NAME, JsonlPydanticIngestSettings
 from specs._loader.converter_spec import Case, Run, load_cases
-from tests._support.cli_assertions import settings_to_argv
-from tests._support.fixtures_jsonlines import (
+from tests.helpers.cli_assertions import settings_to_argv
+from tests.helpers.fixtures_jsonlines import (
     PYDANTIC_SPEC_ENTITY_TABLE_NAME as ENTITY_TABLE_NAME,
 )
-from tests._support.fixtures_jsonlines import (
+from tests.helpers.fixtures_jsonlines import (
     stage_pydantic_jsonl_run as stage_jsonl_run,
 )
-from tests._support.paths_and_constants import SCHEMA_CONVERTER_SPECS_DIR
-from tests._support.table_readers import (
+from tests.helpers.paths_and_constants import SCHEMA_CONVERTER_SPECS_DIR
+from tests.helpers.table_readers import (
     assert_pipeline_report_written,
     assert_run_ok,
 )

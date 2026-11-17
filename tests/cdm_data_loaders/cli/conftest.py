@@ -7,7 +7,7 @@ import pytest
 from pyiceberg.catalog import Catalog
 from pyiceberg.schema import Schema
 
-from tests._support.iceberg_catalog import (
+from tests.helpers.iceberg_catalog import (
     CATALOG_NAME,
     SIMPLE_ICEBERG_SCHEMA,
     WIDE_ICEBERG_SCHEMA,

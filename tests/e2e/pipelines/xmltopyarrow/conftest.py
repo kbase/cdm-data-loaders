@@ -11,8 +11,8 @@ from frozendict import frozendict
 from cdm_data_loaders.core.settings import CtsSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
-from tests._support.cli_assertions import make_cts_settings
-from tests._support.paths_and_constants import REFERENCE_XML_TAG
+from tests.helpers.cli_assertions import make_cts_settings
+from tests.helpers.paths_and_constants import REFERENCE_XML_TAG
 
 DEFAULT_XMLTOPYARROW_SETTINGS: frozendict[str, Any] = frozendict(
     {

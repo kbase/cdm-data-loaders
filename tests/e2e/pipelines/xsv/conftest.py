@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from cdm_data_loaders.pipelines.xsv.settings import XsvIngestSettings
-from tests._support.fixtures_xsv import (
+from tests.helpers.fixtures_xsv import (
     make_xsv_settings_factory,
     write_xsv_input_file,
 )

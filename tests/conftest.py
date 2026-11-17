@@ -30,9 +30,9 @@ from types_boto3_s3.client import S3Client
 
 import cdm_data_loaders.io.s3.client as s3_client
 from cdm_data_loaders.io.s3.client import get_s3_client, reset_s3_client
-from tests._support.cli_assertions import HOOK_ENV_VAR, HOOK_PART_ENV_VARS
-from tests._support.dlt_isolation import isolated_dlt_config
-from tests._support.paths_and_constants import (
+from tests.helpers.cli_assertions import HOOK_ENV_VAR, HOOK_PART_ENV_VARS
+from tests.helpers.dlt_isolation import isolated_dlt_config
+from tests.helpers.paths_and_constants import (
     BUCKETS,
     CASSETTES_DIR,
     LOCAL_FS,
@@ -46,8 +46,8 @@ from tests._support.paths_and_constants import (
     preserve_logging_state,
     preserve_xsv_metaschema_state,
 )
-from tests._support.state_audit import StateAuditPlugin
-from tests._support.xml_samples import LIBRARY_XSD
+from tests.helpers.state_audit import StateAuditPlugin
+from tests.helpers.xml_samples import LIBRARY_XSD
 
 settings.register_profile(
     "default",
@@ -63,7 +63,7 @@ settings.register_profile(
 )
 settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
-pytest_plugins = ["tests._support.fs_backends"]
+pytest_plugins = ["tests.helpers.fs_backends"]
 
 SAVE_DIR: Final[str] = "spark.sql.warehouse.dir"
 

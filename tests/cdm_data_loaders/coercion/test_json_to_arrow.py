@@ -166,3 +166,54 @@ def test_coerce_json_record_for_pyarrow_pass_preserves_boolean_and_non_integral_
     assert isinstance(coerced["flt"], bool)
     assert isinstance(coerced["integer_from_bool"], bool)
     assert coerced["integer_from_frac"] == fractional_value
+
+
+def test_coerce_json_record_for_pyarrow_pass_aware_temporal_quantized_decimal_and_extended_arrow_types() -> None:
+    """Aware ISO timestamps/times on naive columns, high-scale decimals, numeric strings, and view/fixed types coerce."""
+    pa_schema = pa.schema(
+        [
+            pa.field("ts_naive_from_z", pa.timestamp("us")),
+            pa.field("ts_naive_from_offset", pa.timestamp("us")),
+            pa.field("ts_utc_from_offset", pa.timestamp("us", tz="UTC")),
+            pa.field("tod_from_offset", pa.time64("us")),
+            pa.field("quantized_dec", pa.decimal128(10, 2)),
+            pa.field("int_from_str", pa.int64()),
+            pa.field("float_from_str", pa.float64()),
+            pa.field("hex_xsd", pa.large_binary(), metadata={"xsd_type": "xs:hexBinary"}),
+            pa.field("b64_pyd", pa.binary(3), metadata={"pydantic_type": "binary (base64)"}),
+            pa.field("view_str", pa.string_view()),
+            pa.field("fixed_pair", pa.list_(pa.date32(), 2)),
+        ]
+    )
+    raw: dict[str, Any] = {
+        "ts_naive_from_z": "2024-02-29T12:30:00Z",
+        "ts_naive_from_offset": "2024-02-29T14:30:00+02:00",
+        "ts_utc_from_offset": "2024-02-29T14:30:00+02:00",
+        "tod_from_offset": "08:15:30+02:00",
+        "quantized_dec": "19.956",
+        "int_from_str": "42",
+        "float_from_str": "3.25",
+        "hex_xsd": "deadbeef",
+        "b64_pyd": "YWJj",
+        "view_str": {"nested": True},
+        "fixed_pair": ["2024-01-01", "2024-01-02"],
+    }
+
+    coerced = coerce_json_record_for_pyarrow(raw, pa_schema)
+
+    assert coerced == {
+        "ts_naive_from_z": NAIVE_LEAP_DATETIME,
+        "ts_naive_from_offset": NAIVE_LEAP_DATETIME,
+        "ts_utc_from_offset": datetime(2024, 2, 29, 12, 30, tzinfo=UTC),
+        "tod_from_offset": time(8, 15, 30),
+        "quantized_dec": Decimal("19.96"),
+        "int_from_str": 42,
+        "float_from_str": 3.25,
+        "hex_xsd": b"\xde\xad\xbe\xef",
+        "b64_pyd": b"abc",
+        "view_str": json.dumps({"nested": True}),
+        "fixed_pair": [date(2024, 1, 1), date(2024, 1, 2)],
+    }
+    table = pa.Table.from_pylist([coerced], schema=pa_schema)
+    assert table.num_rows == 1
+    assert table.schema.equals(pa_schema, check_metadata=True)

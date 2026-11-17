@@ -9,7 +9,7 @@ import dlt
 import pytest
 
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
-from tests._support.cli_assertions import make_cts_settings, register_temp_module
+from tests.helpers.cli_assertions import make_cts_settings, register_temp_module
 
 
 def build_widget_schema() -> dict[str, Any]:

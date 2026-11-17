@@ -1,8 +1,19 @@
 """Pure PyArrow schema assembly and byte-metadata decoding helpers."""
 
 from collections.abc import Mapping, Sequence
+from typing import Final
 
 import pyarrow as pa
+
+ARROW_LIST_TYPES: Final[tuple[type[pa.DataType], ...]] = (
+    pa.ListType,
+    pa.LargeListType,
+    pa.FixedSizeListType,
+    pa.ListViewType,
+    pa.LargeListViewType,
+)
+
+type ArrowListType = pa.ListType | pa.LargeListType | pa.FixedSizeListType | pa.ListViewType | pa.LargeListViewType
 
 
 def assemble_pyarrow_schema(
@@ -65,3 +76,14 @@ def is_any_string_type(dtype: pa.DataType) -> bool:
     :rtype: bool
     """
     return pa.types.is_string(dtype) or pa.types.is_large_string(dtype) or pa.types.is_string_view(dtype)
+
+
+def is_any_list_type(dtype: pa.DataType) -> bool:
+    """Return ``True`` when ``dtype`` is any variable-size, fixed-size, or view PyArrow list type.
+
+    :param dtype: PyArrow data type to inspect.
+    :type dtype: pa.DataType
+    :return: ``True`` for list, large_list, fixed_size_list, list_view, or large_list_view.
+    :rtype: bool
+    """
+    return isinstance(dtype, ARROW_LIST_TYPES)

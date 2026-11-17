@@ -42,7 +42,7 @@ from cdm_data_loaders.core.transforms.hints import (
 from cdm_data_loaders.pipelines import runner as core
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.pipelines.runner import run_pipeline
-from tests._support.cli_assertions import (
+from tests.helpers.cli_assertions import (
     HOOK_ENV_VAR,
     LOAD_INFO_SAVE_FAILED,
     LOAD_INFO_SAVE_FAILED_JOBS,
@@ -50,9 +50,9 @@ from tests._support.cli_assertions import (
     make_cts_settings,
     register_temp_module,
 )
-from tests._support.dlt_isolation import isolated_dlt_config
-from tests._support.paths_and_constants import LOCAL_FS, S3
-from tests._support.table_readers import (
+from tests.helpers.dlt_isolation import isolated_dlt_config
+from tests.helpers.paths_and_constants import LOCAL_FS, S3
+from tests.helpers.table_readers import (
     check_pipeline_report,
     read_destination_rows,
 )

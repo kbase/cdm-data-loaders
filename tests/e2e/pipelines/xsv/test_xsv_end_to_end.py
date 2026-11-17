@@ -9,8 +9,8 @@ import pytest
 
 from cdm_data_loaders.core.fields import ICEBERG, PARQUET
 from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSettings
-from tests._support.cli_assertions import settings_to_argv
-from tests._support.fixtures_xsv import (
+from tests.helpers.cli_assertions import settings_to_argv
+from tests.helpers.fixtures_xsv import (
     ALL_RAGGED_ROWS,
     COLUMNS,
     DEFAULT_XSV_SCHEMA,
@@ -18,8 +18,8 @@ from tests._support.fixtures_xsv import (
     VALID_ROWS,
     rows_to_csv,
 )
-from tests._support.paths_and_constants import DEFAULT_DLT_TABLES
-from tests._support.table_readers import (
+from tests.helpers.paths_and_constants import DEFAULT_DLT_TABLES
+from tests.helpers.table_readers import (
     assert_iceberg_table_metadata,
     assert_pipeline_report_written,
     assert_run_ok,

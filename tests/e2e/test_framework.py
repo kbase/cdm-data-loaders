@@ -24,9 +24,9 @@ from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings, 
 from cdm_data_loaders.pipelines.presets import uniprot_cdm
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
-from tests._support.cli_assertions import make_cts_settings, register_temp_module, settings_to_argv
-from tests._support.paths_and_constants import DEFAULT_DLT_TABLES
-from tests._support.table_readers import (
+from tests.helpers.cli_assertions import make_cts_settings, register_temp_module, settings_to_argv
+from tests.helpers.paths_and_constants import DEFAULT_DLT_TABLES
+from tests.helpers.table_readers import (
     assert_pipeline_report_written,
     assert_run_ok,
     read_data_rows,

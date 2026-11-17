@@ -15,7 +15,7 @@ from cdm_data_loaders.datasets.ncbi_ftp.summary import (
     filter_by_prefix_range,
     parse_assembly_summary,
 )
-from tests._support.paths_and_constants import TEST_BUCKET as TEST_BUCKET_STR
+from tests.helpers.paths_and_constants import TEST_BUCKET as TEST_BUCKET_STR
 
 TEST_BUCKET: Final[PurePosixPath] = PurePosixPath(TEST_BUCKET_STR)
 STABLE_PREFIX: Final[str] = "900"

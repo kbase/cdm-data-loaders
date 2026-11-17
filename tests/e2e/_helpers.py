@@ -19,7 +19,7 @@ from dlt.common.pipeline import LoadInfo
 from types_boto3_s3.client import S3Client
 
 from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
-from tests._support.cli_assertions import make_cts_settings
+from tests.helpers.cli_assertions import make_cts_settings
 from tests.e2e.framework import PipelineTestRunner
 
 MAX_BUCKET_LEN: Final[int] = 63

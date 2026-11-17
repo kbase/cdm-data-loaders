@@ -3,7 +3,7 @@
 import pytest
 
 from cdm_data_loaders.core.pipeline_catalog import load_project_scripts, resolve_pipeline
-from tests._support.cli_assertions import assert_no_cli_clashes
+from tests.helpers.cli_assertions import assert_no_cli_clashes
 
 SCRIPT_NAMES = tuple(load_project_scripts())
 

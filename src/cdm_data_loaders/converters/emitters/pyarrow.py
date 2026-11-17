@@ -1,8 +1,8 @@
 """Emit PyArrow schema objects from immutable typed schema nodes."""
 
+import functools
 import json
 from collections.abc import Mapping
-from decimal import Decimal
 from typing import ClassVar, Final
 
 import pyarrow as pa
@@ -32,6 +32,7 @@ from cdm_data_loaders.converters.emitters._tabular_base import (
     resolve_logical_decimal,
 )
 from cdm_data_loaders.converters.exceptions.emitters.pyarrow import PyArrowEmitterError
+from cdm_data_loaders.utils.json_utils import json_default_scalar
 
 DEFAULT_FORMAT_MAP: Final[frozendict[str, pa.DataType]] = frozendict(
     {
@@ -316,14 +317,6 @@ def _integer_type(bit_width: int) -> pa.DataType:
     return pa.int32() if bit_width <= INT32_WIDTH else pa.int64()
 
 
-def _json_default(value: object) -> str:
-    """Encode exact decimals as strings; reject all other unsupported objects."""
-    if isinstance(value, Decimal):
-        return str(value)
-    msg = f"Object of type {type(value).__name__} is not JSON serializable"
-    raise TypeError(msg)
-
-
 def _dump_json(value: object) -> str:
     """Serialize metadata without converting decimals to binary floats."""
-    return json.dumps(value, default=_json_default)
+    return json.dumps(value, default=functools.partial(json_default_scalar, bytes_encoding="disallow"))

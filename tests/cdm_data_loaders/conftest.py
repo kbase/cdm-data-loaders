@@ -25,7 +25,7 @@ from cdm_data_loaders.core.fields import (
     USE_OUTPUT_DIR_FOR_PIPELINE_METADATA,
 )
 from cdm_data_loaders.core.settings import CtsSettings
-from tests._support.cli_assertions import (
+from tests.helpers.cli_assertions import (
     CLI,
     ENV,
     INIT,
@@ -33,9 +33,9 @@ from tests._support.cli_assertions import (
     make_cli_arg,
     make_cts_settings,
 )
-from tests._support.fixtures_jsonlines import Widget, make_entity_models_factory
-from tests._support.fixtures_jsonschema import build_widget_schema, make_entity_schemas_factory
-from tests._support.paths_and_constants import LOCAL_FS
+from tests.helpers.fixtures_jsonlines import Widget, make_entity_models_factory
+from tests.helpers.fixtures_jsonschema import build_widget_schema, make_entity_schemas_factory
+from tests.helpers.paths_and_constants import LOCAL_FS
 
 
 @pytest.fixture

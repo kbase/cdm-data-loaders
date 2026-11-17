@@ -32,15 +32,15 @@ from cdm_data_loaders.pipelines.jsonlines.pydantic import (
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlPydanticIngestSettings
 from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
-from tests._support.cli_assertions import make_cts_settings, register_temp_module
-from tests._support.fixtures_jsonlines import (
+from tests.helpers.cli_assertions import make_cts_settings, register_temp_module
+from tests.helpers.fixtures_jsonlines import (
     PYDANTIC_SPEC_ENTITY_TABLE_NAME as ENTITY_TABLE_NAME,
     pydantic_run_settings_overrides,
     stage_pydantic_jsonl_run as stage_jsonl_run,
 )
-from tests._support.paths_and_constants import LOCAL_FS, SCHEMA_CONVERTER_SPECS_DIR
-from tests._support.pyarrow_pbt import assert_coerced_rows_roundtrip
-from tests._support.pyarrow_spec import (
+from tests.helpers.paths_and_constants import LOCAL_FS, SCHEMA_CONVERTER_SPECS_DIR
+from tests.helpers.pyarrow_pbt import assert_coerced_rows_roundtrip
+from tests.helpers.pyarrow_spec import (
     assert_schema_matches_expected,
     load_expected_table,
     load_fixture_attr,

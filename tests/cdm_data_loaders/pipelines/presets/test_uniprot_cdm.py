@@ -25,7 +25,7 @@ from cdm_data_loaders.pipelines.presets.uniprot_xml import UNIPROT_XSD_FILE, UNI
 from cdm_data_loaders.pipelines.xmltopyarrow import pipeline as xmltopyarrow_pipeline_module
 from cdm_data_loaders.pipelines.xmltopyarrow.pipeline import run_xmltopyarrow_pipeline
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import ENTRY_TABLE_NAME, ENTRY_XML_TAG
-from tests._support.cli_assertions import assert_cli_field_roundtrips, check_settings, settings_to_argv
+from tests.helpers.cli_assertions import assert_cli_field_roundtrips, check_settings, settings_to_argv
 from tests.cdm_data_loaders.pipelines.presets._helpers import (
     UNIREF_CDM_SETTINGS_CLASSES,
     UNIREF_CDM_VARIANTS,

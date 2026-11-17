@@ -12,7 +12,7 @@ from cdm_data_loaders.readers.jsonl import (
     iter_file_jsonl_records,
     stream_jsonl_lines,
 )
-from tests._support.fs_backends import FsBackend
+from tests.helpers.fs_backends import FsBackend
 
 BACKEND_FILES: Final[dict[str, bytes]] = {
     "a.jsonl": b'{"widget_id": "caf\xc3\xa9"}\r\n\r\n{broken\n',

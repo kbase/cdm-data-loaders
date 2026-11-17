@@ -31,7 +31,7 @@ from cdm_data_loaders.utils.iceberg.schema_sync import (
     extract_metadata_definition,
     plan_schema_definitions,
 )
-from tests._support.dlt_isolation import isolated_dlt_config
+from tests.helpers.dlt_isolation import isolated_dlt_config
 
 CATALOG_NAME: Final[str] = "polaristest"
 NAMESPACE: Final[str] = "bio_ns"

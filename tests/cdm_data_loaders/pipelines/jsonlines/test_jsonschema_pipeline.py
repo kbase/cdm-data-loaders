@@ -22,9 +22,9 @@ from cdm_data_loaders.pipelines.jsonlines.jsonschema import (
 from cdm_data_loaders.pipelines.jsonlines.routing import make_page_router
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlJsonschemaIngestSettings
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
-from tests._support.cli_assertions import register_temp_module
-from tests._support.fixtures_jsonlines import make_item
-from tests._support.table_readers import assert_run_ok
+from tests.helpers.cli_assertions import register_temp_module
+from tests.helpers.fixtures_jsonlines import make_item
+from tests.helpers.table_readers import assert_run_ok
 
 
 def make_router(

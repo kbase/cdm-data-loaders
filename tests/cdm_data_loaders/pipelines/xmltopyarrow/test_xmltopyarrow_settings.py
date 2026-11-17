@@ -53,7 +53,7 @@ from cdm_data_loaders.schemas.uniprot.schema import SCHEMAS as UNIPROT_SCHEMAS
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMAS as UNIREF_SCHEMAS
 from cdm_data_loaders.validation.xsd.traversal import load_schema
-from tests._support.cli_assertions import register_temp_module, settings_to_argv
+from tests.helpers.cli_assertions import register_temp_module, settings_to_argv
 
 UNIREF_LIKE_XSD: Final[str] = "uniref_like.xsd"
 

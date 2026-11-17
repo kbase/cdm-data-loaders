@@ -4,7 +4,7 @@ from typing import Final
 
 import pytest
 
-from tests._support.state_audit import run_pytest_subprocess
+from tests.helpers.state_audit import run_pytest_subprocess
 
 pytestmark = pytest.mark.state_audit
 

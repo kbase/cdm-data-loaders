@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from tests._support.cli_assertions import strip_none_values
-from tests._support.table_readers import denormalize_identifier, strip_metadata_columns
+from tests.helpers.cli_assertions import strip_none_values
+from tests.helpers.table_readers import denormalize_identifier, strip_metadata_columns
 
 
 def strip_xsd_arrow_row(row: dict[str, Any]) -> dict[str, Any]:

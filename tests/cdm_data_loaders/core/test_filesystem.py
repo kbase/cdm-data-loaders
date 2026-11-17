@@ -39,9 +39,9 @@ from cdm_data_loaders.core.transforms.hints import OutputTableHints
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.pipelines.runner import DEFAULT_SCHEMA_CONTRACT
 from cdm_data_loaders.pipelines.xml_common import XmlIngestSettings
-from tests._support.cli_assertions import make_cts_settings, register_temp_module
-from tests._support.dlt_isolation import isolated_dlt_config
-from tests._support.fs_backends import MOTO_AWS_CREDENTIALS, S3_MOTO, FsBackend
+from tests.helpers.cli_assertions import make_cts_settings, register_temp_module
+from tests.helpers.dlt_isolation import isolated_dlt_config
+from tests.helpers.fs_backends import MOTO_AWS_CREDENTIALS, S3_MOTO, FsBackend
 
 TINY_PIPELINE_NAME: Final[str] = "test_fs_tiny_pipeline"
 

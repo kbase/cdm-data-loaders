@@ -22,7 +22,7 @@ from cdm_data_loaders.validation.jsonschema.metaschema import (
     register_xsv_validator,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
-from tests._support.paths_and_constants import preserve_xsv_metaschema_state
+from tests.helpers.paths_and_constants import preserve_xsv_metaschema_state
 
 SCHEMAS_PACKAGE_DIR: Final[Path] = Path(str(importlib.resources.files("cdm_data_loaders.schemas")))
 BUNDLED_JSON_SCHEMA_PATHS: Final[tuple[Path, ...]] = tuple(sorted(SCHEMAS_PACKAGE_DIR.rglob("*.json")))

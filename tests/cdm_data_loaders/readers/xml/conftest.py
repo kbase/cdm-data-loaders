@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests._support.xml_samples import write_xml_file
+from tests.helpers.xml_samples import write_xml_file
 
 
 @pytest.fixture

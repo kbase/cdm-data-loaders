@@ -15,7 +15,7 @@ from typing import Any, Final, cast
 import duckdb
 
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from tests._support.table_readers import reconstruct_entries
+from tests.helpers.table_readers import reconstruct_entries
 
 type CanonicalValue = dict[str, Any] | list[Any] | str | int | float | bool | date | datetime | None
 

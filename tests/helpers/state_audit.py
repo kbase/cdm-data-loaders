@@ -23,7 +23,7 @@ from dlt.common.pipeline import PipelineContext
 
 import cdm_data_loaders.io.s3.client as s3_client
 import cdm_data_loaders.utils.logging as cdm_logging
-from tests._support.paths_and_constants import (
+from tests.helpers.paths_and_constants import (
     NATIVE_SPECLESS_MODULES,
     NATIVE_SPECLESS_PREFIXES,
     REPO_ROOT,

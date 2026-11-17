@@ -14,7 +14,7 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     JSONSCHEMA_PIPELINE_NAME,
     PYDANTIC_PIPELINE_NAME,
 )
-from tests._support.table_readers import (
+from tests.helpers.table_readers import (
     LOADER_FILE_FORMATS,
     read_pipeline_tables,
     run_and_read,

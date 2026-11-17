@@ -20,7 +20,7 @@ from cdm_data_loaders.cli.pyiceberg_to_linkml import (
     IcebergToLinkMLSettings,
     dump_catalog_schemas,
 )
-from tests._support.iceberg_catalog import CATALOG_NAME
+from tests.helpers.iceberg_catalog import CATALOG_NAME
 
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])

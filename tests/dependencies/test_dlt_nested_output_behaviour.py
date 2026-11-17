@@ -43,7 +43,7 @@ from specs._loader.dlt_contracts import (
     UNNESTED_PLACEMENTS,
     NestingPlacement,
 )
-from tests._support.table_readers import (
+from tests.helpers.table_readers import (
     is_metadata_table,
     read_iceberg_dataset,
     read_jsonl_dataset,

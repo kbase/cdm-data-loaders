@@ -18,9 +18,9 @@ from cdm_data_loaders.pipelines.jsonlines.routing import (
     route_jsonl_lines,
 )
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
-from tests._support.cli_assertions import make_cts_settings, register_temp_module
-from tests._support.fixtures_jsonlines import make_item
-from tests._support.fs_backends import FsBackend
+from tests.helpers.cli_assertions import make_cts_settings, register_temp_module
+from tests.helpers.fixtures_jsonlines import make_item
+from tests.helpers.fs_backends import FsBackend
 
 BACKEND_FILES: Final[dict[str, bytes]] = {
     "a.jsonl": b'{"widget_id": "caf\xc3\xa9"}\r\n\r\n{broken\n',

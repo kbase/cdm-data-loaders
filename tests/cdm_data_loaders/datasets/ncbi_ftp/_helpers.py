@@ -6,7 +6,7 @@ from typing import Final
 
 import botocore.client
 
-from tests._support.paths_and_constants import TEST_BUCKET as TEST_BUCKET_STR
+from tests.helpers.paths_and_constants import TEST_BUCKET as TEST_BUCKET_STR
 
 TEST_BUCKET: Final[PurePosixPath] = PurePosixPath(TEST_BUCKET_STR)
 

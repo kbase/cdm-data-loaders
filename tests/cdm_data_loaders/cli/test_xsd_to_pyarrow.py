@@ -18,7 +18,7 @@ from cdm_data_loaders.cli.xsd_to_pyarrow import (
 from cdm_data_loaders.cli.xsd_to_pyarrow import (
     cli as xsd_to_pyarrow_cli,
 )
-from tests._support.paths_and_constants import BASE_DIR
+from tests.helpers.paths_and_constants import BASE_DIR
 
 XSD_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "xsd_to_pyarrow").resolve()
 

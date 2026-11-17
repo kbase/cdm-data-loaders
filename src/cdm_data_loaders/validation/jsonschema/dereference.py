@@ -144,8 +144,8 @@ def _resolve_ref_and_all_of(schema: dict[str, Any], ctx: DereferenceContext) -> 
 
         if ref in ctx.active_refs:
             err_msg = (
-                f"Circular $ref detected at {ref!r}. PySpark schemas must be finite; JSON Schemas with "
-                "self-referential structures (e.g. recursive tree/linked-list) cannot be dereferenced."
+                f"Circular $ref detected at {ref!r}. JSON Schemas with self-referential "
+                "structures (e.g. recursive tree/linked-list) cannot be dereferenced."
             )
             raise DereferencingError(err_msg)
 

@@ -56,7 +56,7 @@ from specs._loader.dlt_contracts import (
     extract_arrow_field_metadata,
     with_parquet_compliant_list_elements,
 )
-from tests._support.table_readers import is_metadata_table
+from tests.helpers.table_readers import is_metadata_table
 
 
 class InputMode(StrEnum):

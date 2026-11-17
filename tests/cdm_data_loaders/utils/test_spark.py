@@ -23,7 +23,7 @@ from cdm_data_loaders.utils.spark import (
     preview_or_skip,
     write_table,
 )
-from tests._support.cli_assertions import assert_spark_rows_equal
+from tests.helpers.cli_assertions import assert_spark_rows_equal
 
 original_set_up_ws_fn = spark_utils.set_up_workspace
 

@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from cdm_data_loaders.cli.gz import GzSettings, main
-from tests._support.cli_assertions import assert_cli_field_roundtrips, assert_no_cli_clashes
+from tests.helpers.cli_assertions import assert_cli_field_roundtrips, assert_no_cli_clashes
 
 
 def test_gz_settings_pass_no_cli_clashes() -> None:

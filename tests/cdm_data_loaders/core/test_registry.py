@@ -23,7 +23,7 @@ from cdm_data_loaders.core.registry import (
     split_module_attr_spec,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
-from tests._support.cli_assertions import register_temp_module
+from tests.helpers.cli_assertions import register_temp_module
 
 WIDGET_PA_SCHEMA = pa.schema([pa.field("id", pa.string())])
 

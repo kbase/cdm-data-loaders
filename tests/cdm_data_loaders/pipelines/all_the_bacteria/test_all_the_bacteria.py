@@ -32,7 +32,7 @@ from cdm_data_loaders.pipelines.all_the_bacteria.pipeline import (
     run_atb_pipeline,
 )
 from cdm_data_loaders.pipelines.all_the_bacteria.settings import AtbSettings
-from tests._support.paths_and_constants import S3, VALID_DESTINATIONS
+from tests.helpers.paths_and_constants import S3, VALID_DESTINATIONS
 
 
 def test_cli_passes_settings_class_to_run_cli() -> None:

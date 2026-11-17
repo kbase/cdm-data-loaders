@@ -30,8 +30,8 @@ from cdm_data_loaders.validation.jsonschema.metaschema import (
     get_xsv_meta_schema,
 )
 from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
-from tests._support.cli_assertions import register_temp_module
-from tests._support.fixtures_xsv import COLUMNS, DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
+from tests.helpers.cli_assertions import register_temp_module
+from tests.helpers.fixtures_xsv import COLUMNS, DEFAULT_XSV_SCHEMA, VALID_SCHEMA_URI
 
 """defaults and basic construction"""
 

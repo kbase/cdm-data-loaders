@@ -50,7 +50,7 @@ from cdm_data_loaders.pipelines.jsonlines.routing import route_jsonl_lines
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.pipelines.xmltodict.processors import process_xml_file_to_dict
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
-from tests._support.cli_assertions import make_cts_settings, register_temp_module
+from tests.helpers.cli_assertions import make_cts_settings, register_temp_module
 
 
 def _identity_items_transform(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:

@@ -41,8 +41,8 @@ from cdm_data_loaders.converters.facades.pyarrow_to_linkml import (
     resolve_scalar_type,
 )
 from specs._loader.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases
-from tests._support.paths_and_constants import BASE_DIR
-from tests._support.pyarrow_spec import (
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_spec import (
     load_fixture_attr,
     load_input_schema,
     load_input_table,

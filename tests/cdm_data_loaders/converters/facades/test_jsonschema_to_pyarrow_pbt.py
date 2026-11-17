@@ -23,8 +23,8 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     generate_pyarrow_schema,
 )
 from specs._loader.converter_spec import Case, Run, load_cases
-from tests._support.paths_and_constants import BASE_DIR
-from tests._support.pyarrow_pbt import (
+from tests.helpers.paths_and_constants import BASE_DIR
+from tests.helpers.pyarrow_pbt import (
     INT32_MAX,
     INT32_MIN,
     INT64_MAX,
@@ -37,7 +37,7 @@ from tests._support.pyarrow_pbt import (
     iso_time_str_strategy,
     safe_text_strategy,
 )
-from tests._support.pyarrow_spec import load_json_object
+from tests.helpers.pyarrow_spec import load_json_object
 
 JSONSCHEMA_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "jsonschema_to_pyarrow").resolve()
 CASES: Final[tuple[Case, ...]] = tuple(
