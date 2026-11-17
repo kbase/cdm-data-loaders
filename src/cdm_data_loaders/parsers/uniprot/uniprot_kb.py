@@ -13,7 +13,6 @@ import pyarrow as pa
 
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, RecordTransformFn
 from cdm_data_loaders.utils.buffer import make_rejected_table_result
-from cdm_data_loaders.utils.helpers import _ensembl_type
 
 DB: Final[str] = "db"
 DESCRIPTION: Final[str] = "description"

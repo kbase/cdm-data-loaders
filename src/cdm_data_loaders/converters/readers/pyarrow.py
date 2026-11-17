@@ -34,7 +34,7 @@ from cdm_data_loaders.converters.core.ir import (
     Field as SchemaField,
 )
 from cdm_data_loaders.converters.core.ir_values import Value, mutable_value
-from cdm_data_loaders.converters.core.metadata import decode_field_metadata
+from cdm_data_loaders.utils.arrow_schema import decode_field_metadata
 
 SPEC_FLOAT16: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="float16", bit_width=16))
 SPEC_FLOAT32: Final[tuple[NodeType, NodeHints]] = ("number", NodeHints(logical_type="float", bit_width=32))

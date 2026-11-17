@@ -17,11 +17,11 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
 )
-from cdm_data_loaders.converters.readers.xsd import load_schema
 from cdm_data_loaders.core.fields import DEFAULTS, XML_GZ_FILE_GLOB
 from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry
 from cdm_data_loaders.core.settings import CtsSettings
+from cdm_data_loaders.validation.xsd.traversal import load_schema
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import (
     ENTRY_TABLE_NAME,
     ENTRY_XML_TAG,
@@ -48,6 +48,7 @@ from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMAS as UNIPROT_SCHEMAS
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMAS as UNIREF_SCHEMAS
+from cdm_data_loaders.validation.xsd.traversal import load_schema
 from tests.helpers import register_temp_module, settings_to_argv
 
 UNIREF_LIKE_XSD: Final[str] = "uniref_like.xsd"

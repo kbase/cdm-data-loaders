@@ -100,7 +100,7 @@ uv run jsonlines_jsonschema \
 
 #### NCBI Datasets Preset (`ncbi_datasets`)
 
-The [`ncbi_datasets`](cli_reference.md#ncbi_datasets) CLI entry point runs `jsonlines_jsonschema` with `dataset_name` locked to `"ncbi_datasets"` and precomputed JSON Schemas, PyArrow schemas, and record transforms from [`src/cdm_data_loaders/schemas/ncbi_datasets/ncbi_openapi.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/ncbi_datasets/ncbi_openapi.py):
+The [`ncbi_datasets`](cli_reference.md#ncbi_datasets) CLI entry point runs `jsonlines_jsonschema` with `dataset_name` locked to `"ncbi_datasets"` and precomputed JSON Schemas, PyArrow schemas, and record transforms from [`src/cdm_data_loaders/datasets/ncbi_datasets/hooks.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/ncbi_datasets/hooks.py):
 
 - `dataset_report`: validates `<input_dir>/dataset_report/` records against `datasetReport.schema.json` and loads them into `dataset_report`.
 - `annotation_report`: validates `<input_dir>/annotation_report/` records against `annotationReport.schema.json`, discards records without a non-empty top-level `reports` array via `filter_annotation_report`, and loads the remaining records into `annotation_report`.

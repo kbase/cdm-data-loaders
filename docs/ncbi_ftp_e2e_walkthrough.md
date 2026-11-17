@@ -138,7 +138,7 @@ Open [`notebooks/ncbi_ftp_manifest.ipynb`](https://github.com/kbase/cdm-data-loa
 If `PREVIOUS_SUMMARY_URI`, `SNAPSHOT_UPLOAD_URI`, `LAKEHOUSE_BUCKET`, or `STAGING_URI` points at local CEPH, initialize the S3 client before running the cells that access S3. Insert a cell after Cell 1 (Imports):
 
 ```python
-from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client, reset_s3_client
+from cdm_data_loaders.io.s3.client import get_s3_client, reset_s3_client
 
 reset_s3_client()
 get_s3_client(

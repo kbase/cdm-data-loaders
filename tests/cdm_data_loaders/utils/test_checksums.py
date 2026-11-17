@@ -6,7 +6,7 @@ import dataclasses
 import hashlib
 from collections.abc import Callable, Generator
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 import pytest
@@ -22,6 +22,8 @@ from cdm_data_loaders.utils.checksums import (
     HashingReader,
     compute_file_checksum,
     new_hasher,
+    parse_md5_checksums_file,
+    parse_md5_sidecar,
     validate_checksum_fn,
 )
 
@@ -530,3 +532,56 @@ def test_hashing_reader_handles_real_gzip_response(requests_session: requests.Se
     body = hasher.read(-1)
 
     assert b'"gzipped": true' in body
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        pytest.param(
+            "MD5(sample.xml.gz)= D41D8CD98F00B204E9800998ECF8427E\n",
+            "d41d8cd98f00b204e9800998ecf8427e",
+            id="bsd-format",
+        ),
+        pytest.param(
+            "d41d8cd98f00b204e9800998ecf8427e  sample.xml.gz\n", "d41d8cd98f00b204e9800998ecf8427e", id="gnu-two-space"
+        ),
+        pytest.param(
+            "d41d8cd98f00b204e9800998ecf8427e *sample.xml.gz\n",
+            "d41d8cd98f00b204e9800998ecf8427e",
+            id="gnu-binary-star",
+        ),
+        pytest.param(
+            "\n  D41D8CD98F00B204E9800998ECF8427E  \n",
+            "d41d8cd98f00b204e9800998ecf8427e",
+            id="bare-digest-with-blank-line",
+        ),
+    ],
+)
+def test_parse_md5_sidecar_valid(content: str, expected: str) -> None:
+    """Extract lowercase 32-character hex digests from BSD, GNU, and bare sidecars."""
+    assert parse_md5_sidecar(content, "sample.xml.gz") == expected
+
+
+def test_parse_md5_sidecar_invalid_uses_error_cls() -> None:
+    """Raise the caller-supplied exception class for empty or malformed MD5 sidecar text."""
+
+    class CustomSidecarError(RuntimeError):
+        pass
+
+    with pytest.raises(CustomSidecarError, match="Empty MD5 sidecar file"):
+        parse_md5_sidecar("   \n\n", "sample.xml.gz", error_cls=CustomSidecarError)
+    with pytest.raises(CustomSidecarError, match="Invalid MD5 sidecar content"):
+        parse_md5_sidecar("not-a-digest\n", "sample.xml.gz", error_cls=CustomSidecarError)
+
+
+def test_parse_md5_checksums_file_parses_gnu_manifest() -> None:
+    """Parse ``md5checksums.txt`` lines and strip leading ``./`` prefixes."""
+    text = (
+        "d41d8cd98f00b204e9800998ecf8427e  ./GCF_000001405_genomic.fna.gz\n"
+        "098f6bcd4621d373cade4e832627b4f6  annotation_hashes.txt\n"
+        "ignored malformed line\n"
+    )
+    assert parse_md5_checksums_file(text) == {
+        PurePosixPath("GCF_000001405_genomic.fna.gz"): "d41d8cd98f00b204e9800998ecf8427e",
+        PurePosixPath("annotation_hashes.txt"): "098f6bcd4621d373cade4e832627b4f6",
+    }

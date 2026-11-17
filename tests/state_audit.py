@@ -21,8 +21,8 @@ import pytest
 from dlt.common.configuration.container import Container
 from dlt.common.pipeline import PipelineContext
 
-import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
-from cdm_data_loaders.utils import cdm_logger
+import cdm_data_loaders.io.s3.client as s3_client
+import cdm_data_loaders.utils.logging as cdm_logging
 
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 SPECS_DIR: Final[Path] = (REPO_ROOT / "specs").resolve()
@@ -48,8 +48,8 @@ PURE_MEMO_CACHE_SUFFIXES: Final[tuple[str, ...]] = (
 )
 DEDICATED_GLOBAL_VARS: Final[frozenset[str]] = frozenset(
     {
-        "cdm_data_loaders.utils.cdm_logger.applied_key",
-        "cdm_data_loaders.utils.file_transfer.s3.client._s3_client",
+        "cdm_data_loaders.utils.logging.applied_key",
+        "cdm_data_loaders.io.s3.client._s3_client",
     }
 )
 SYSTEM_TEMP_ROOT: Final[Path] = Path(tempfile.gettempdir()).resolve()
@@ -245,7 +245,7 @@ def take_state_snapshot(item: pytest.Item | None = None) -> StateSnapshot:
         boto3_default_session_set=boto3.DEFAULT_SESSION is not None,
         s3_client_cached=vars(s3_client).get("_s3_client") is not None,
         dlt_pipeline_active=Container()[PipelineContext].is_active(),
-        cdm_logger_applied_key=cdm_logger.applied_key,
+        cdm_logger_applied_key=cdm_logging.applied_key,
         logging_disable_level=logging.Logger.manager.disable,
         loggers=snapshot_loggers(),
         jsonschema_validators=frozenset(validators_map.keys()),

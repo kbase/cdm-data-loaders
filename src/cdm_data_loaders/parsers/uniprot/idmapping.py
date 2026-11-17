@@ -6,18 +6,26 @@ from typing import Final
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from cdm_data_loaders.core.registry import TableTransformFn, TransformContext
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TableTransformFn, TransformContext
 from cdm_data_loaders.core.transforms import emit_raw_table
 from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     DB_REFERENCE_ID_COL,
     DB_REFERENCE_TYPE_COL,
     ID_MAPPING_SCHEMA,
     ID_MAPPING_TABLE_NAME,
+    RAW_ID_MAPPING_SCHEMA,
+    RAW_ID_MAPPING_TABLE_NAME,
     UNIPROT_ID_COL,
-    UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
 )
 
 UNIPROT_CURIE_PREFIX: Final[str] = "uniprot:"
+
+UNIPROT_IDMAPPING_OUTPUT_SCHEMAS: Final[ArrowSchemaRegistry] = ArrowSchemaRegistry(
+    registry={
+        RAW_ID_MAPPING_TABLE_NAME: RAW_ID_MAPPING_SCHEMA,
+        ID_MAPPING_TABLE_NAME: ID_MAPPING_SCHEMA,
+    }
+)
 
 
 def transform_uniprot_id_mapping(

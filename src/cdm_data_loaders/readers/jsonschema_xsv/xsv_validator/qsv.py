@@ -20,7 +20,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     non_header_lines_present,
     prepend_header,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
+from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
 
 
 def qsv_check() -> str:

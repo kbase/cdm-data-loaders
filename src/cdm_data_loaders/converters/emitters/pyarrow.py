@@ -1,7 +1,7 @@
 """Emit PyArrow schema objects from immutable typed schema nodes."""
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
 from typing import ClassVar, Final
@@ -91,28 +91,6 @@ def merge_format_map(value: object) -> object:
 
 class PyArrowEmitterError(ConversionError):
     """A typed schema cannot be represented by the configured Arrow policy."""
-
-
-def assemble_pyarrow_schema(
-    component: pa.StructType | Sequence[pa.Field],
-    *,
-    metadata: Mapping[str, str | bytes] | None = None,
-) -> pa.Schema:
-    """Assemble a PyArrow table schema from a ``pa.StructType`` component or sequence of ``pa.Field``s.
-
-    :param component: struct component or sequence of PyArrow fields
-    :type component: pa.StructType | Sequence[pa.Field]
-    :param metadata: optional schema-level metadata
-    :type metadata: Mapping[str, str | bytes] | None
-    :return: assembled PyArrow schema
-    :rtype: pa.Schema
-    :raises PyArrowEmitterError: if ``component`` contains no fields
-    """
-    fields = list(component)
-    if not fields:
-        msg = "Cannot assemble a PyArrow schema from an empty component"
-        raise PyArrowEmitterError(msg)
-    return pa.schema(fields, metadata=metadata)
 
 
 class PyArrowEmitter(_TabularEmitterBase[pa.DataType]):

@@ -9,7 +9,7 @@ import pytest
 
 from cdm_data_loaders.pipelines.xsv.pipeline import XsvWorkPaths
 from cdm_data_loaders.pipelines.xsv.settings import XsvIngestSettings
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
+from cdm_data_loaders.validation.jsonschema.models import generate_header
 from tests.helpers import make_cts_settings
 from tests.xsv_fixtures import COLUMNS, write_xsv
 

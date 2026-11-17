@@ -224,5 +224,5 @@ Pipelines that validate or parse individual files and records route failures to 
 
 ### Structured Logging and Slack Alerts
 
-- **Logging ([`src/cdm_data_loaders/utils/cdm_logger.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/cdm_logger.py))**: `init_logger(settings)` initializes structured JSON logging from `--log-config-file` (or the default bundled `logger_config.json`).
+- **Logging ([`src/cdm_data_loaders/utils/logging.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/logging.py))**: `init_logger(log_config_file)` initializes structured JSON logging from `--log-config-file` (or `CDL_LOG_CONFIG_FILE` / the built-in fallback configuration).
 - **Slack notifications**: When `runtime.slack_incoming_hook` (`RUNTIME__SLACK_INCOMING_HOOK`) is configured in `dlt`, `run_pipeline()` posts a completion or error summary alert.

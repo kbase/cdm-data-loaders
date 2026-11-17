@@ -17,7 +17,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import (
     SEP_TO_EXT,
     CleanerValidatorArgs,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
+from cdm_data_loaders.validation.jsonschema.models import (
     ValidatedXsvSchema,
     generate_header,
 )

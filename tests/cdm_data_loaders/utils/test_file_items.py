@@ -13,12 +13,12 @@ from dlt.sources.filesystem import filesystem
 from cdm_data_loaders.utils.file_items import (
     as_file_item,
     is_local,
-    join_url,
     local_copy,
     open_binary,
     source_id,
     source_url,
 )
+from cdm_data_loaders.utils.urls import join_url
 from tests.fs_backends import FsBackend
 
 CONTENT: Final[bytes] = b"id\tname\n1\tcaf\xc3\xa9\n"

@@ -18,10 +18,11 @@ from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import
     UnsupportedDialectError,
 )
 from cdm_data_loaders.converters.readers.json_schema_strict import StrictJsonSchemaReader
-from cdm_data_loaders.schemas.jsonschema import ValidatedSchema, dereference_schema
+from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
+from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 
 if TYPE_CHECKING:
-    from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
+    from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
 
 
 class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):

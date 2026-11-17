@@ -1,6 +1,5 @@
 """File-level pre-processors for validating or filtering input files before parsing."""
 
-import re
 from collections.abc import Iterable
 from typing import Any, Final
 
@@ -11,11 +10,14 @@ from cdm_data_loaders.core.registry import (
     PreprocessorRegistry,
     validate_registry_table_names,
 )
-from cdm_data_loaders.utils.checksums import HASH_CHUNK_BYTES, compute_stream_checksum
+from cdm_data_loaders.utils.checksums import (
+    HASH_CHUNK_BYTES,
+    compute_stream_checksum,
+)
+from cdm_data_loaders.utils.checksums import (
+    parse_md5_sidecar as _parse_md5_sidecar_text,
+)
 from cdm_data_loaders.utils.file_items import is_local, source_id
-
-MD5_BSD_RE: Final[re.Pattern[str]] = re.compile(r"^MD5\s*\(.+\)\s*=\s*(?P<digest>[0-9a-fA-F]{32})$")
-MD5_GNU_OR_BARE_RE: Final[re.Pattern[str]] = re.compile(r"^(?P<digest>[0-9a-fA-F]{32})(?:\s+\*?.+)?$")
 
 
 class FilePreprocessError(Exception):
@@ -25,9 +27,6 @@ class FilePreprocessError(Exception):
 def parse_md5_sidecar(content: str, source_file: str) -> str:
     """Extract the 32-character hex MD5 digest from sidecar file text.
 
-    Supports BSD/NCBI format (``MD5(file.xml.gz)= <hex>``), GNU ``md5sum`` format
-    (``<hex>  file.xml.gz`` or ``<hex> *file.xml.gz``), and bare 32-character hex digests.
-
     :param content: raw text content of the ``.md5`` sidecar file
     :type content: str
     :param source_file: relative path of the data file being validated
@@ -36,18 +35,7 @@ def parse_md5_sidecar(content: str, source_file: str) -> str:
     :rtype: str
     :raises FilePreprocessError: if ``content`` is empty or does not contain a valid MD5 digest
     """
-    for raw_line in content.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        match = MD5_BSD_RE.match(line) or MD5_GNU_OR_BARE_RE.match(line)
-        if match is not None:
-            return match.group("digest").lower()
-        msg = f"Invalid MD5 sidecar content for {source_file}: {line!r}"
-        raise FilePreprocessError(msg)
-
-    msg = f"Empty MD5 sidecar file for {source_file}"
-    raise FilePreprocessError(msg)
+    return _parse_md5_sidecar_text(content, source_file, error_cls=FilePreprocessError)
 
 
 def validate_md5_sidecar(file_item: FileItemDict) -> FileItemDict:

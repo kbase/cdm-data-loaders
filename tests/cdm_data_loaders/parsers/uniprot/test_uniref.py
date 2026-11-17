@@ -9,7 +9,6 @@ import pytest
 from lxml.etree import XMLParser, fromstring
 
 from cdm_data_loaders.coercion.xml import make_xml_element_converter
-from cdm_data_loaders.converters.readers.xsd import load_schema
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
 from cdm_data_loaders.parsers.uniprot.uniref import (
     ENTRY_XML_TAG,
@@ -22,6 +21,7 @@ from cdm_data_loaders.parsers.uniprot.uniref import (
 )
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import UNIREF_XSD_FILE
 from cdm_data_loaders.readers.xml import stream_xml_file
+from cdm_data_loaders.validation.xsd.traversal import load_schema
 from tests.cdm_data_loaders.parsers.conftest import wrap_entry_xml
 from tests.conftest import TEST_DATA_DIR
 

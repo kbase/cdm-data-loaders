@@ -2,6 +2,6 @@
 
 from pydantic import BaseModel
 
-from cdm_data_loaders.schemas.ncbi_datasets.openapi_pydantic import V2reportsAssemblyDataReport
+from tests.data.ncbi_datasets.openapi_pydantic import V2reportsAssemblyDataReport
 
 ENTITY_MODELS: dict[str, type[BaseModel]] = {"dataset": V2reportsAssemblyDataReport}

@@ -12,7 +12,7 @@ from jsonschema.exceptions import ValidationError
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir_values import Value, freeze_mapping, mutable_value
-from cdm_data_loaders.schemas.jsonschema import get_xsv_config_schema
+from cdm_data_loaders.validation.jsonschema.metaschema import get_xsv_config_schema
 
 type ExtensionSchemaLoader = Callable[[], Mapping[str, object] | bool]
 

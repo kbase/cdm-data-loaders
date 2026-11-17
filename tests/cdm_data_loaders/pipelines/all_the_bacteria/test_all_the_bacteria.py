@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from requests.exceptions import HTTPError
 
 from cdm_data_loaders.core.fields import PIPELINE_DIR_NAME
+from cdm_data_loaders.io.core import NonRetryableDownloadError
 from cdm_data_loaders.pipelines import all_the_bacteria
 from cdm_data_loaders.pipelines.all_the_bacteria import (
     ALL_ATB_FILE_NAME,
@@ -30,7 +31,6 @@ from cdm_data_loaders.pipelines.all_the_bacteria import (
     run_atb_pipeline,
 )
 from cdm_data_loaders.pipelines.core import PipelineCli
-from cdm_data_loaders.utils.file_transfer.core import NonRetryableDownloadError
 from tests.cdm_data_loaders.pipelines.conftest import VALID_DESTINATIONS
 from tests.conftest import S3
 

@@ -33,7 +33,7 @@ from pyiceberg.types import (
     StructType,
 )
 
-from cdm_data_loaders.utils.iceberg_cleanup import install_iceberg_catalog_cleanup
+from cdm_data_loaders.utils.iceberg.cleanup import install_iceberg_catalog_cleanup
 from tests.cdm_data_loaders.pipelines.helpers import is_metadata_table, read_jsonl_file, strip_metadata_columns
 
 TABLE_NAME: Final[str] = "widget"

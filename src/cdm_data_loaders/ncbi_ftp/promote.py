@@ -18,6 +18,14 @@ from typing import Any, Final
 import botocore.exceptions
 import tqdm
 
+from cdm_data_loaders.io.s3 import client
+from cdm_data_loaders.io.s3.object_utils import (
+    copy_object,
+    delete_objects,
+    list_objects,
+    object_exists,
+    upload_file,
+)
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path, parse_assembly_path
 from cdm_data_loaders.ncbi_ftp.metadata import (
     DescriptorResource,
@@ -25,14 +33,6 @@ from cdm_data_loaders.ncbi_ftp.metadata import (
     build_descriptor_key,
     create_descriptor,
     upload_descriptor,
-)
-from cdm_data_loaders.utils.file_transfer.s3 import client
-from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
-    copy_object,
-    delete_objects,
-    list_objects,
-    object_exists,
-    upload_file,
 )
 
 logger: Logger = getLogger(__name__)

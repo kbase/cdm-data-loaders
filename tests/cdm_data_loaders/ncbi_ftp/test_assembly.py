@@ -7,8 +7,8 @@ import pytest
 from cdm_data_loaders.ncbi_ftp.assembly import (
     build_accession_path,
     parse_assembly_path,
-    parse_md5_checksums_file,
 )
+from cdm_data_loaders.utils.checksums import parse_md5_checksums_file
 
 from .conftest import ACC_PATH_215
 

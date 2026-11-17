@@ -11,7 +11,10 @@ from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 from cdm_data_loaders.core.transforms import accepts_pyarrow_table, emit_raw_table
-from cdm_data_loaders.parsers.uniprot.idmapping import transform_uniprot_id_mapping
+from cdm_data_loaders.parsers.uniprot.idmapping import (
+    UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
+    transform_uniprot_id_mapping,
+)
 from cdm_data_loaders.pipelines.uniprot_idmapping import (
     DEFAULT_IDMAPPING_FILE_GLOB,
     DEFAULT_PARTITION_BUCKETS,
@@ -24,7 +27,6 @@ from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     RAW_ID_MAPPING_DESCRIPTION,
     RAW_ID_MAPPING_SCHEMA,
     RAW_ID_MAPPING_TABLE_NAME,
-    UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
 )
 from tests.cdm_data_loaders.conftest import check_settings
 from tests.conftest import LOCAL_FS

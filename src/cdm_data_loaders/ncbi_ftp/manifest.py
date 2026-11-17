@@ -20,23 +20,23 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from cdm_data_loaders.ncbi_ftp.assembly import (
-    build_accession_path,
-    filter_assembly_checksums,
-    parse_assembly_path,
-    parse_md5_checksums_file,
-)
-from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, FTP_HOST
-from cdm_data_loaders.utils.file_transfer.ftp_client import (
+from cdm_data_loaders.io.ftp_client import (
     connect_ftp,
     ftp_noop_keepalive,
     ftp_retrieve_text,
     ftp_session,
 )
-from cdm_data_loaders.utils.file_transfer.s3.object_utils import (
+from cdm_data_loaders.io.s3.object_utils import (
     get_existing_object_info,
     list_objects,
 )
+from cdm_data_loaders.ncbi_ftp.assembly import (
+    build_accession_path,
+    filter_assembly_checksums,
+    parse_assembly_path,
+)
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, FTP_HOST
+from cdm_data_loaders.utils.checksums import parse_md5_checksums_file
 
 logger: Logger = getLogger(__name__)
 

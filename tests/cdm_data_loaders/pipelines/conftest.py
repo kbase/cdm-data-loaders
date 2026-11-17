@@ -14,10 +14,10 @@ import pytest
 import xmltodict
 from dlt.common.pipeline import LoadInfo
 
-from cdm_data_loaders.core.fields import GZIP_SUFFIX
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.pipelines import core
 from cdm_data_loaders.readers.xml import DEFAULT_XMLTODICT_ARGS
+from cdm_data_loaders.utils.gz import GZIP_SUFFIX
 from tests.cdm_data_loaders.pipelines.framework import (
     EXECUTION_MODES,
     ExecutionMode,

@@ -8,30 +8,14 @@ from fsspec.core import split_protocol
 from pydantic import AfterValidator, BeforeValidator, DirectoryPath, Field, StringConstraints
 from pydantic_core import PydanticCustomError
 
+from cdm_data_loaders.utils.urls import is_local_url, url_protocol
+
 VALID_PATH_ONE_CHAR: Final[str] = "A valid path must contain at least one character"
-FILE_PROTOCOL: Final[str] = "file"
 PATH_EMPTY: Final[str] = "Path must not be empty."
 PATH_NOT_LOCAL: Final[str] = "Path must be on the local filesystem, not a URL"
 PATH_NOT_DIRECTORY_ERROR_TYPE: Final[str] = "path_not_directory"
 PATH_NOT_DIRECTORY: Final[str] = "Path does not point to a directory"
 DIR_NOT_CREATED: Final[str] = "Cannot create directory "
-
-
-def url_protocol(url: str) -> str:
-    """Return the canonical protocol of a path or URL. Plain paths count as 'file'.
-
-    :param url: path or URL
-    :type url: str
-    :return: lower-case protocol name, with aliases (e.g. s3a -> s3) applied
-    :rtype: str
-    """
-    protocol, _ = split_protocol(url)
-    return (protocol or FILE_PROTOCOL).lower()
-
-
-def is_local(url: str) -> bool:
-    """Whether a path or URL is on the local filesystem."""
-    return url_protocol(url) == FILE_PROTOCOL
 
 
 def check_local_path(value: Any) -> Any:  # noqa: ANN401
@@ -49,7 +33,7 @@ def check_local_path(value: Any) -> Any:  # noqa: ANN401
         # pydantic's Path validation handles these
         return value
     value = value.strip()
-    if not is_local(value):
+    if not is_local_url(value):
         err_msg = f"{PATH_NOT_LOCAL}: {value!r}"
         raise ValueError(err_msg)
     _, path = split_protocol(value)
@@ -149,7 +133,7 @@ def check_input_dir(value: Any) -> Any:  # noqa: ANN401
     if not isinstance(value, str):
         return value
     value = value.strip()
-    if is_local(value):
+    if is_local_url(value):
         return _resolve_existing_local_dir(Path(check_local_path(value)))
     normalised = normalise_dir(value)
     protocol = url_protocol(normalised)

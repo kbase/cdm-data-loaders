@@ -26,8 +26,8 @@ from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     LoggerSettings,
 )
-from cdm_data_loaders.utils.cdm_logger import init_logger
-from cdm_data_loaders.utils.iceberg_cleanup import install_iceberg_catalog_cleanup
+from cdm_data_loaders.utils.iceberg.cleanup import install_iceberg_catalog_cleanup
+from cdm_data_loaders.utils.logging import init_logger
 
 if TYPE_CHECKING:
     from cdm_data_loaders.core.transforms import OutputTableHints
@@ -78,7 +78,7 @@ def run_cli(
     """
     try:
         settings = CliApp.run(settings_cls, cli_args=cli_args, **(settings_kwargs or {}))
-        init_logger(settings)
+        init_logger(settings.log_config_file)
     except (SettingsError, ValidationError, ValueError):
         logger.exception("Error initialising config")
         raise

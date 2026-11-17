@@ -38,18 +38,20 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     resolve_scalar_type,
 )
-from cdm_data_loaders.converters.readers.xsd import (
+from cdm_data_loaders.validation.xsd.particles import resolve_child_cardinality
+from cdm_data_loaders.validation.xsd.scalars import (
     BUILTIN_LIST_ITEM_TYPES,
     FORBIDDEN_RECURSIVE_XSD_TYPES,
-    _builtin_xsd_name,
-    _classify_leaf_element_type,
-    _collect_attributes,
-    _collect_unique_children,
-    _require_complex_type,
-    _resolve_child_cardinality,
-    _resolve_target_element,
-    _unwrap_item_type,
+    builtin_xsd_name,
+    unwrap_item_type,
+)
+from cdm_data_loaders.validation.xsd.traversal import (
+    classify_leaf_element_type,
+    collect_attributes,
+    collect_unique_children,
     load_schema,
+    require_complex_type,
+    resolve_target_element,
 )
 from tests.conftest import BASE_DIR
 from tests.converter_spec import Case, Run, load_cases
@@ -100,12 +102,12 @@ def _xsd_simple_type_strategy(simple_type: XsdType | None) -> SearchStrategy[str
         if non_empty_enums:
             return st.sampled_from(non_empty_enums)
 
-    builtin_name = _builtin_xsd_name(simple_type)
+    builtin_name = builtin_xsd_name(simple_type)
     if builtin_name in BUILTIN_LIST_ITEM_TYPES:
         return st.lists(stripped_text_strategy(min_size=1, max_size=8), min_size=1, max_size=3).map(" ".join)
 
     if simple_type.is_list():
-        item_type = _unwrap_item_type(simple_type)
+        item_type = unwrap_item_type(simple_type)
         return st.lists(_xsd_simple_type_strategy(item_type), min_size=1, max_size=3).map(" ".join)
 
     member_types = getattr(simple_type, "member_types", None)
@@ -170,7 +172,7 @@ def _populate_attributes(
     :return: True if at least one attribute was set on ``element``.
     :rtype: bool
     """
-    attrs = [a for a in _collect_attributes(complex_type) if a.local_name and a.use != "prohibited"]
+    attrs = [a for a in collect_attributes(complex_type) if a.local_name and a.use != "prohibited"]
     req_attrs = [a for a in attrs if a.use == "required"]
     opt_attrs = [a for a in attrs if a.use != "required"]
 
@@ -210,7 +212,7 @@ def _child_hits_recursion_limit(
     :return: True if expanding ``child_decl`` would exceed ``max_depth``.
     :rtype: bool
     """
-    if _classify_leaf_element_type(child_decl.type) is not None:
+    if classify_leaf_element_type(child_decl.type) is not None:
         return False
     if isinstance(child_decl.type, XsdComplexType):
         return type_counts.get(id(child_decl.type), 0) >= max_depth
@@ -281,10 +283,10 @@ def _populate_complex_children(
     req_children: list[tuple[XsdElement, bool]] = []
     opt_children: list[tuple[XsdElement, bool]] = []
 
-    for child_decl in _collect_unique_children(schema, complex_type):
+    for child_decl in collect_unique_children(schema, complex_type):
         if child_decl.max_occurs == 0:
             continue
-        is_list, child_nullable = _resolve_child_cardinality(model_group, child_decl)
+        is_list, child_nullable = resolve_child_cardinality(model_group, child_decl)
         if not child_nullable:
             req_children.append((child_decl, is_list))
         elif not _child_hits_recursion_limit(child_decl, next_counts, max_depth):
@@ -354,11 +356,11 @@ def _build_element_occurrence(
         elem.set(XSI_NIL, "true")
         return elem
 
-    leaf_info = _classify_leaf_element_type(xsd_element.type)
+    leaf_info = classify_leaf_element_type(xsd_element.type)
     if leaf_info is not None:
         return _populate_leaf_element(draw, elem, leaf_info[0], leaf_info[1])
 
-    complex_type = _require_complex_type(xsd_element.type, tag_name)
+    complex_type = require_complex_type(xsd_element.type, tag_name)
     next_counts = {**type_counts, id(complex_type): type_counts.get(id(complex_type), 0) + 1}
 
     if complex_type.has_simple_content() or complex_type.mixed:
@@ -398,7 +400,7 @@ def xml_elements_for_xsd(
     :return: Hypothesis strategy yielding ``lxml.etree.Element`` instances.
     :rtype: SearchStrategy[Element]
     """
-    target_elem = _resolve_target_element(schema, xml_tag)
+    target_elem = resolve_target_element(schema, xml_tag)
 
     @st.composite
     def _gen(draw: st.DrawFn) -> Element:

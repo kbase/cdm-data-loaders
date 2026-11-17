@@ -14,7 +14,7 @@ from cdm_data_loaders.converters.core.guards import (
 )
 from cdm_data_loaders.converters.core.inference import infer_implicit_type
 from cdm_data_loaders.converters.core.ir import Field, NodeType, Provenance, SchemaDocument, TypedNode
-from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
+from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
 
 TYPES: Final[frozenset[str]] = frozenset({"object", "array", "string", "integer", "number", "boolean", "null"})
 ANNOTATIONS: Final[frozenset[str]] = frozenset(

@@ -9,12 +9,12 @@ from typing import Annotated, Final, Protocol
 
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
-from pyiceberg.catalog import load_catalog
 from pyiceberg.table import Table
 
 from cdm_data_loaders.core.fields import OUTPUT_DIR, NonEmptyStr
 from cdm_data_loaders.core.path_fields import LocalOutputDir
 from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
+from cdm_data_loaders.utils.iceberg.catalog import connect_catalog
 
 CATALOG_CLI_SHORTCUTS: Final[dict[str, str]] = {
     OUTPUT_DIR: "o",
@@ -58,22 +58,6 @@ class CatalogDumpDriver[SchemaT]:
     write_schema: Callable[[SchemaT, Path, str], None]
 
 
-def write_schema_text(text: str, out_file: Path, log: Logger) -> None:
-    """Write serialized schema text to disk, warning before replacing an existing file.
-
-    :param text: Serialized schema text to write.
-    :type text: str
-    :param out_file: Destination file path.
-    :type out_file: Path
-    :param log: Logger instance.
-    :type log: Logger
-    """
-    if out_file.exists():
-        log.warning("Overwriting existing schema file %s", out_file)
-    out_file.write_text(text, encoding="utf-8")
-    log.info("Wrote schema to %s", out_file)
-
-
 def dump_catalog[SchemaT](
     settings: IcebergCatalogDumpSettings,
     driver: CatalogDumpDriver[SchemaT],
@@ -91,7 +75,7 @@ def dump_catalog[SchemaT](
     generated_at = datetime.now(UTC).isoformat()
     failures = 0
 
-    with load_catalog(settings.catalog) as catalog:
+    with connect_catalog(settings.catalog) as catalog:
         namespaces = catalog.list_namespaces()
         log.info("Dumping schemas for %d namespace(s) from catalog %r", len(namespaces), settings.catalog)
         for namespace in namespaces:

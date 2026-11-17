@@ -59,7 +59,7 @@ from cdm_data_loaders.pipelines.jsonlines.exceptions import (
     UnsupportedJsonlArrowSchemaError,
     UnsupportedJsonlSchemaDialectError,
 )
-from cdm_data_loaders.schemas.jsonschema import DereferencingError
+from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError
 
 logger: Logger = getLogger(__name__)
 
@@ -68,7 +68,7 @@ EXTRACT_PIPELINE_NAME: Final[str] = "jsonlines_extract"
 PYDANTIC_PIPELINE_NAME: Final[str] = "jsonlines_pydantic"
 JSONSCHEMA_PIPELINE_NAME: Final[str] = "jsonlines_jsonschema"
 NCBI_DATASETS_PIPELINE_NAME: Final[str] = "ncbi_datasets"
-NCBI_DATASETS_SCHEMA_MODULE: Final[str] = "cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"
+NCBI_DATASETS_SCHEMA_MODULE: Final[str] = "cdm_data_loaders.datasets.ncbi_datasets.hooks"
 
 ENTITY_MODELS_MODULE: Final[str] = "entity_models"
 ENTITY_SCHEMAS_MODULE: Final[str] = "entity_schemas"

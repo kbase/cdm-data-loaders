@@ -102,12 +102,12 @@ sections:
       - id: R-NCBI-PRESET
         statement: |
           `NcbiDatasetsSettings` (`ncbi_datasets` CLI) subclasses `JsonlJsonschemaIngestSettings`,
-          locking `dataset_name="ncbi_datasets"`, `entity_schemas="cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"`,
-          `transforms_module="cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"`,
-          `output_schemas_module="cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi"`, and precomputed `SCHEMAS` for
+          locking `dataset_name="ncbi_datasets"`, `entity_schemas="cdm_data_loaders.datasets.ncbi_datasets.hooks"`,
+          `transforms_module="cdm_data_loaders.datasets.ncbi_datasets.hooks"`,
+          `output_schemas_module="cdm_data_loaders.datasets.ncbi_datasets.hooks"`, and precomputed `SCHEMAS` for
           `annotation_report` and `dataset_report`.
       - id: R-NCBI-FILTER-EMPTY
         statement: |
-          `filter_annotation_report` in `cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi` drops `annotation_report`
+          `filter_annotation_report` in `cdm_data_loaders.datasets.ncbi_datasets.hooks` drops `annotation_report`
           records whose `reports` list is missing or empty (such as `{"total_count": 0}`) before buffering,
           retaining only records with a non-empty `reports` list.

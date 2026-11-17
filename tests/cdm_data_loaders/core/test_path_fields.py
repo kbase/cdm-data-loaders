@@ -19,11 +19,10 @@ from cdm_data_loaders.core.path_fields import (
     check_input_dir,
     check_local_path,
     ensure_dir,
-    is_local,
     normalise_dir,
     to_absolute,
-    url_protocol,
 )
+from cdm_data_loaders.utils.urls import is_local_url, url_protocol
 
 
 class FsspecInputDirModel(BaseModel):
@@ -83,9 +82,9 @@ def test_url_protocol_pass(url: str, expected: str) -> None:
 
 
 @pytest.mark.parametrize(("url", "protocol"), URL_PROTOCOL_CASES)
-def test_is_local_pass(url: str, protocol: str) -> None:
-    """Test that is_local is True only for paths with the file protocol."""
-    assert is_local(url) is (protocol == "file")
+def test_is_local_url_pass(url: str, protocol: str) -> None:
+    """Test that is_local_url is True only for paths with the file protocol."""
+    assert is_local_url(url) is (protocol == "file")
 
 
 @pytest.mark.parametrize(

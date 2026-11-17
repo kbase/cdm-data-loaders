@@ -15,7 +15,7 @@ from cdm_data_loaders.converters.facades.jsonschema_to_dlt import (
     InvalidJSONSchemaError,
     JSONSchemaToDlt,
 )
-from cdm_data_loaders.schemas.jsonschema import dereference_schema
+from cdm_data_loaders.validation.jsonschema.dereference import dereference_schema
 from tests.cdm_data_loaders.converters.conftest import base_object_schema
 
 

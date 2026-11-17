@@ -31,7 +31,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import (
     run_qsv_null_replacement,
     run_qsv_validate,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
+from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
 from tests.cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.conftest import (
     DELIMITERS,
     FAKE_QSV_CMD,

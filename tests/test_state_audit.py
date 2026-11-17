@@ -249,7 +249,7 @@ def _baseline_snapshot() -> StateSnapshot:
         module_vars={
             "cdm_data_loaders.mod.STATE": ("dict", "{}"),
             "cdm_data_loaders.mod.TO_DELETE": ("int", 1),
-            "cdm_data_loaders.utils.cdm_logger.applied_key": ("NoneType", None),
+            "cdm_data_loaders.utils.logging.applied_key": ("NoneType", None),
         },
         caches={"cdm_data_loaders.mod.lookup": 0},
         scoped_fixtures={"tests::shared[module]": ("dict", "{'a': 1}")},
@@ -322,7 +322,7 @@ def test_diff_state_snapshots_module_vars_caches_and_sys_modules_rules() -> None
         module_vars={
             "cdm_data_loaders.mod.STATE": ("dict", "{}"),
             "cdm_data_loaders.mod.TO_DELETE": ("int", 1),
-            "cdm_data_loaders.utils.cdm_logger.applied_key": ("tuple", "changed-dedicated-ignored-here"),
+            "cdm_data_loaders.utils.logging.applied_key": ("tuple", "changed-dedicated-ignored-here"),
         },
         caches={
             "cdm_data_loaders.mod.lookup": 0,

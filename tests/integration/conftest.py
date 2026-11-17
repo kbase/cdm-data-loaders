@@ -18,6 +18,8 @@ import pytest
 from botocore.exceptions import ClientError
 from types_boto3_s3 import S3Client
 
+from cdm_data_loaders.io.s3 import client
+from cdm_data_loaders.io.s3.client import _client_config, reset_s3_client
 from cdm_data_loaders.ncbi_ftp.assembly import build_accession_path
 from cdm_data_loaders.ncbi_ftp.manifest import (
     AssemblyRecord,
@@ -25,8 +27,6 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     filter_by_prefix_range,
     parse_assembly_summary,
 )
-from cdm_data_loaders.utils.file_transfer.s3 import client
-from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
 from tests.cdm_data_loaders.ncbi_ftp.conftest import md5_hex
 
 # Maximum length of a bucket name per S3/DNS spec

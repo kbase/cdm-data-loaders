@@ -25,7 +25,7 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
     generate_pyarrow_schema,
 )
-from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI
+from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI
 from tests.conftest import BASE_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
 from tests.pyarrow_spec_helpers import (

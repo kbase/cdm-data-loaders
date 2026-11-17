@@ -119,6 +119,7 @@ exclude = [
     "deps",
     "dist",
     "node_modules",
+    "not_for_github",
     "python-coverage",
     "venv",
 ]
@@ -217,6 +218,7 @@ ignore = [
 # ARG002: unused mock args
 # PLR0913: too many arguments
 "tests/**/*.py" = ["D401", "S101", "T201", "FBT001", "FBT002", "ARG002", "PLR0913", "PLR0917"]
+"tests/data/ncbi_datasets/openapi_pydantic.py" = ["D100", "D101"]
 # specs directory
 "specs/**/*.py" = ["INP001", "D101", "D102"]
 

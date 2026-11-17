@@ -14,8 +14,8 @@ from cdm_data_loaders.converters.cli.iceberg_base import (
     CatalogDumpDriver,
     IcebergCatalogDumpSettings,
     dump_catalog,
-    write_schema_text,
 )
+from cdm_data_loaders.converters.core.io import write_schema_text
 from cdm_data_loaders.converters.emitters.linkml import LINKML_PREFIX
 from cdm_data_loaders.converters.facades.pyiceberg_to_linkml import table_to_linkml
 from cdm_data_loaders.core.settings import default_settings_with_shortcuts

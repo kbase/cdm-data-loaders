@@ -21,7 +21,7 @@ from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
 from cdm_data_loaders.converters.readers.xsd import (
     XSD_SCALAR_SPEC,
     XsdReader,
-    _simple_type_to_ir_node,
+    simple_type_to_ir_node,
 )
 
 DEFAULT_EMITTER: Final[PyArrowEmitter] = PyArrowEmitter(max_nesting=100)
@@ -42,7 +42,7 @@ def resolve_scalar_type(simple_type: XsdType) -> tuple[pa.DataType, str]:
     :return: Tuple of ``(pa.DataType, xsd_type_str)``.
     :rtype: tuple[pa.DataType, str]
     """
-    node = _simple_type_to_ir_node(simple_type, (), nullable=True)
+    node = simple_type_to_ir_node(simple_type, (), nullable=True)
     arrow_type = DEFAULT_EMITTER.emit_node(node)
     xsd_type_str = str(node.provenance.metadata.get("xsd_type", "xs:string")) if node.provenance else "xs:string"
     return arrow_type, xsd_type_str

@@ -933,7 +933,7 @@ def render_python_schema_module(
         "",
         "import pyarrow as pa",
         "",
-        "from cdm_data_loaders.converters.emitters.pyarrow import assemble_pyarrow_schema",
+        "from cdm_data_loaders.utils.arrow_schema import assemble_pyarrow_schema",
         "",
     ]
 

@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 from types_boto3_s3 import S3Client
 
+from cdm_data_loaders.io.ftp_client import connect_ftp, ftp_retrieve_text
 from cdm_data_loaders.ncbi_ftp.assembly import FILE_FILTERS, build_accession_path, parse_md5_checksums_file
 from cdm_data_loaders.ncbi_ftp.constants import FTP_HOST
 from cdm_data_loaders.ncbi_ftp.manifest import (
@@ -24,7 +25,6 @@ from cdm_data_loaders.ncbi_ftp.manifest import (
     write_updated_manifest,
 )
 from cdm_data_loaders.pipelines.ncbi_ftp_promote import DEFAULT_DESTINATION_PREFIX
-from cdm_data_loaders.utils.file_transfer.ftp_client import connect_ftp, ftp_retrieve_text
 from tests.integration.conftest import STABLE_PREFIX, clone_assemblies, download_and_filter_refseq, s3_backends
 
 # Max number of files to transfer for partial upload

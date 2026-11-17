@@ -5,8 +5,6 @@ from typing import Final
 
 import pyarrow as pa
 
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry
-
 IDMAPPING_SCHEMA_FILE: Final[Path] = Path(__file__).resolve().parent / "idmapping.schema.json"
 
 ID_MAPPING_TABLE_NAME: Final[str] = "id_mapping"
@@ -77,11 +75,4 @@ ID_MAPPING_SCHEMA: Final[pa.Schema] = pa.schema(
         ),
     ],
     metadata={"comment": ID_MAPPING_DESCRIPTION},
-)
-
-UNIPROT_IDMAPPING_OUTPUT_SCHEMAS: Final[ArrowSchemaRegistry] = ArrowSchemaRegistry(
-    registry={
-        RAW_ID_MAPPING_TABLE_NAME: RAW_ID_MAPPING_SCHEMA,
-        ID_MAPPING_TABLE_NAME: ID_MAPPING_SCHEMA,
-    }
 )

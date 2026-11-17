@@ -690,8 +690,8 @@ def test_process_xml_file_to_pyarrow_pass_prepares_xsd_target_traversal_at_most_
     """Verify XSD target resolution and particle validation is not repeated for every XML element."""
     file_path = write_xml_file(tmp_path, "five.xml", PEOPLE_XML_5)
     settings = fake_xmltopyarrow_settings(table_name="people", xml_tag="person")
-    prepare_spy = MagicMock(wraps=xml_coercion_module._prepare_target_traversal)  # noqa: SLF001
-    monkeypatch.setattr(xml_coercion_module, "_prepare_target_traversal", prepare_spy)
+    prepare_spy = MagicMock(wraps=xml_coercion_module.prepare_target_traversal)
+    monkeypatch.setattr(xml_coercion_module, "prepare_target_traversal", prepare_spy)
 
     tagged = table_and_data(process_xml_file_to_pyarrow(file_path, settings))
 

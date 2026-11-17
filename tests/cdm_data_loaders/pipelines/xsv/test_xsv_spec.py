@@ -31,8 +31,8 @@ from cdm_data_loaders.pipelines.xsv.settings import (
     PIPELINE_NAME,
     XsvIngestSettings,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import validate_jsonschema
 from cdm_data_loaders.utils.buffer import REJECTED_PYARROW_SCHEMA
+from cdm_data_loaders.validation.jsonschema.models import validate_xsv_jsonschema
 from tests.cdm_data_loaders.pipelines.helpers import fetch_all_duckdb, run_with_duckdb_pipeline
 from tests.conftest import PIPELINE_SPECS_DIR
 from tests.converter_spec import Case, ErrorCase, Run, load_cases, load_error_cases, load_rules
@@ -157,7 +157,7 @@ def test_manifests_pass_error_codes_unique_and_covered() -> None:
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
 def test_convert_xsv_schema_to_pyarrow_pass_cases(case: Case, run: Run) -> None:
     """convert_xsv_schema_to_pyarrow produces the exact expected PyArrow schema."""
-    validated = validate_jsonschema(case.schema)
+    validated = validate_xsv_jsonschema(case.schema)
     pa_schema = convert_xsv_schema_to_pyarrow(validated)
     assert_schema_matches_expected(pa_schema, case.expected_schema, run.schema_attr)
 

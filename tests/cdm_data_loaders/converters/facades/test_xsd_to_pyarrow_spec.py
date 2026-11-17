@@ -30,7 +30,7 @@ from cdm_data_loaders.converters.cli.xsd_to_pyarrow import (
 )
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema import JsonSchemaEmitter
-from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter, assemble_pyarrow_schema
+from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
 from cdm_data_loaders.converters.emitters.pyarrow_codegen import (
     _decode_metadata,
     _fmt_str,
@@ -55,12 +55,7 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schemas_at_level,
     generate_pyarrow_struct,
 )
-from cdm_data_loaders.converters.readers.xsd import (
-    XsdReader,
-    load_schema,
-    resolve_elements_at_level,
-    resolve_root_elements,
-)
+from cdm_data_loaders.converters.readers.xsd import XsdReader
 from cdm_data_loaders.schemas.pubmed.schema import (
     DELETE_CITATION_STRUCT,
     MEDLINE_CITATION_STRUCT,
@@ -93,7 +88,13 @@ from cdm_data_loaders.schemas.uniref.schema import (
 from cdm_data_loaders.schemas.uniref.schema import (
     SCHEMAS as UNIREF_SCHEMAS,
 )
+from cdm_data_loaders.utils.arrow_schema import assemble_pyarrow_schema
 from cdm_data_loaders.utils.xml_utils import local_name
+from cdm_data_loaders.validation.xsd.traversal import (
+    load_schema,
+    resolve_elements_at_level,
+    resolve_root_elements,
+)
 from scripts.gen_pyarrow_schema import (
     CONFIGS as SCHEMA_CODEGEN_CONFIGS,
 )

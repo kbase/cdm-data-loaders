@@ -13,8 +13,8 @@ from cdm_data_loaders.converters.cli.iceberg_base import (
     CatalogDumpDriver,
     IcebergCatalogDumpSettings,
     dump_catalog,
-    write_schema_text,
 )
+from cdm_data_loaders.converters.core.io import write_schema_text
 from cdm_data_loaders.converters.emitters.json_schema import JSON_SCHEMA_DIALECT
 from cdm_data_loaders.converters.facades.pyiceberg_to_jsonschema import table_to_json_schema
 from cdm_data_loaders.core.settings import default_settings_with_shortcuts

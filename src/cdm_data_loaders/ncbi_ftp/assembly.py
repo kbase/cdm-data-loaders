@@ -11,14 +11,14 @@ from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
-from cdm_data_loaders.utils.checksums import compute_file_checksum
-from cdm_data_loaders.utils.file_transfer.ftp_client import (
+from cdm_data_loaders.io.ftp_client import (
     ftp_list_dir,
     ftp_noop_keepalive,
     ftp_retrieve_text,
     ftp_session,
 )
+from cdm_data_loaders.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, ASSEMBLY_PATH_REGEX, FTP_HOST
+from cdm_data_loaders.utils.checksums import compute_file_checksum, parse_md5_checksums_file
 
 logger: Logger = getLogger(__name__)
 
@@ -34,24 +34,6 @@ FILE_FILTERS = [
     "_gene_expression_counts.txt.gz",
     "_normalized_gene_expression_counts.txt.gz",
 ]
-
-
-def parse_md5_checksums_file(text: str) -> dict[PurePosixPath, str]:
-    """Parse an NCBI ``md5checksums.txt`` file into a filename-to-hash mapping.
-
-    Each line has the format ``<md5>  ./<filename>`` (two-space separator).
-
-    :param text: raw text of the md5checksums.txt file
-    :type text: str
-    :return: dict mapping filename to MD5 hex digest
-    """
-    checksums: dict[PurePosixPath, str] = {}
-    for raw_line in text.strip().splitlines():
-        parts = raw_line.strip().split("  ", maxsplit=1)
-        if len(parts) == 2:  # noqa: PLR2004
-            md5_hash, filename = parts
-            checksums[PurePosixPath(filename.removeprefix("./"))] = md5_hash.strip()
-    return checksums
 
 
 def filter_assembly_checksums(checksums: dict[PurePosixPath, str]) -> dict[PurePosixPath, str]:

@@ -166,7 +166,7 @@ def test_discover_and_render_bundled_schemas_and_published_jsonschemas_pass() ->
     assert "cdm_data_loaders.core.reporting" in module_paths
     assert "cdm_data_loaders.core.settings" in module_paths
     assert "cdm_data_loaders.pipelines.core" in module_paths
-    assert "cdm_data_loaders.utils.iceberg_cleanup" in module_paths
+    assert "cdm_data_loaders.utils.iceberg.cleanup" in module_paths
 
     assert not (DOCS_DIR / "schema_source").exists()
 

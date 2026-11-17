@@ -25,8 +25,8 @@ from typing import Any, Final, TypedDict
 
 from frictionless import Package
 
-from cdm_data_loaders.utils.file_transfer.s3 import client
-from cdm_data_loaders.utils.file_transfer.s3.object_utils import copy_object, object_exists
+from cdm_data_loaders.io.s3 import client
+from cdm_data_loaders.io.s3.object_utils import copy_object, object_exists
 
 logger: Logger = getLogger(__name__)
 

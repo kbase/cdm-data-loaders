@@ -16,6 +16,7 @@ from cdm_data_loaders.core.transforms import emit_raw_table
 from cdm_data_loaders.parsers.uniprot.idmapping import (
     OUTPUT_SCHEMAS,
     TABLE_TRANSFORMS,
+    UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
     transform_uniprot_id_mapping,
 )
 from cdm_data_loaders.pipelines.core import PipelineCli
@@ -25,8 +26,6 @@ from cdm_data_loaders.pipelines.uniprot_idmapping import (
     cli,
 )
 from cdm_data_loaders.pipelines.xsv.pipeline import run_xsv_pipeline
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import validate_jsonschema
-from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
 from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     DB_REFERENCE_DESCRIPTION,
     ID_MAPPING_DESCRIPTION,
@@ -37,14 +36,15 @@ from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     RAW_ID_MAPPING_SCHEMA,
     SOURCE_DESCRIPTION,
     UNIPROT_ID_DESCRIPTION,
-    UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
 )
+from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
+from cdm_data_loaders.validation.jsonschema.models import validate_xsv_jsonschema
 from tests.cdm_data_loaders.pipelines.uniprot_idmapping.conftest import SAMPLE_RAW_ROWS
 
 
 def test_uniprot_idmapping_schemas_match_jsonschema_and_descriptions() -> None:
     """RAW_ID_MAPPING_SCHEMA and ID_MAPPING_SCHEMA carry non-nullable string fields and expected descriptions."""
-    derived = convert_xsv_schema_to_pyarrow(validate_jsonschema(IDMAPPING_SCHEMA_FILE)).with_metadata(
+    derived = convert_xsv_schema_to_pyarrow(validate_xsv_jsonschema(IDMAPPING_SCHEMA_FILE)).with_metadata(
         {"comment": RAW_ID_MAPPING_DESCRIPTION}
     )
     from_file = (

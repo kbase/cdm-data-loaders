@@ -31,7 +31,7 @@ from cdm_data_loaders.converters.core.ir import (
     TypedNode,
 )
 from cdm_data_loaders.converters.readers.json_schema import extract_constraints, extract_extensions
-from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
+from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI, register_xsv_validator
 
 SUPPORTED_SCHEMA_DIALECTS: Final[frozenset[str]] = frozenset(
     {

@@ -31,11 +31,11 @@ from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     default_settings_with_shortcuts,
 )
+from cdm_data_loaders.io.sync_client import FileDownloader
 from cdm_data_loaders.pipelines.core import (
     PipelineCli,
     run_pipeline,
 )
-from cdm_data_loaders.utils.file_transfer.sync_client import FileDownloader
 
 logger: Logger = getLogger(__name__)
 

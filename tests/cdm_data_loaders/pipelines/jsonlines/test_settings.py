@@ -31,6 +31,14 @@ from cdm_data_loaders.core.registry import (
     TransformRegistry,
 )
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
+from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
+    ANNOTATION_REPORT_TABLE,
+    DATASET_REPORT_TABLE,
+    filter_annotation_report,
+)
+from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
+    ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
+)
 from cdm_data_loaders.pipelines.jsonlines.exceptions import InvalidJsonlEntitySchemaError
 from cdm_data_loaders.pipelines.jsonlines.settings import (
     BY_ALIAS,
@@ -50,21 +58,13 @@ from cdm_data_loaders.pipelines.jsonlines.settings import (
     NcbiDatasetsSettings,
     build_output_schema_registry,
 )
-from cdm_data_loaders.schemas.jsonschema import (
+from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
+from cdm_data_loaders.validation.jsonschema.dereference import DereferencingError
+from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,
-    DereferencingError,
-    ValidatedSchema,
     get_xsv_meta_schema,
 )
-from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
-    ANNOTATION_REPORT_TABLE,
-    DATASET_REPORT_TABLE,
-    filter_annotation_report,
-)
-from cdm_data_loaders.schemas.ncbi_datasets.ncbi_openapi import (
-    ENTITY_SCHEMAS as NCBI_DATASETS_ENTITY_SCHEMAS,
-)
-from cdm_data_loaders.schemas.ncbi_datasets.schema import SCHEMAS as NCBI_DATASETS_SCHEMAS
+from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 from tests.cdm_data_loaders.conftest import check_settings, cts_expected
 from tests.cdm_data_loaders.pipelines.jsonlines.integration.dataset_report_schemas import (
     ENTITY_SCHEMAS as DATASET_ENTITY_SCHEMAS,

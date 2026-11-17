@@ -35,9 +35,9 @@ from cdm_data_loaders.pipelines.xsv.settings import PIPELINE_NAME, XsvIngestSett
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import read_validated_rows
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import CleanerValidatorArgs, ErrorRecord
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.qsv import clean_validate_file, qsv_check
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import generate_header
 from cdm_data_loaders.utils.buffer import DictBuffer
 from cdm_data_loaders.utils.file_items import local_copy, source_id
+from cdm_data_loaders.validation.jsonschema.models import generate_header
 
 
 @dataclass

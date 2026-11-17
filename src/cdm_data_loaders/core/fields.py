@@ -14,7 +14,6 @@ DEFAULT_JSONL_FILE_GLOB: Final[str] = "*.jsonl*"
 XML_GZ_FILE_GLOB: Final[str] = "*.xml.gz"
 DEFAULT_XML_FILE_GLOB: Final[str] = "*.xml*"
 REJECTED_TABLE_NAME: Final[str] = "_rejected"
-GZIP_SUFFIX: Final[str] = ".gz"
 
 CTS_GLOBSTAR: Final[str] = "__GLOBSTAR__"
 CTS_STAR: Final[str] = "__STAR__"

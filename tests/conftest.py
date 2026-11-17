@@ -31,10 +31,10 @@ from moto import mock_aws
 from pyspark.sql import SparkSession
 from types_boto3_s3.client import S3Client
 
-import cdm_data_loaders.utils.file_transfer.s3.client as s3_client
-from cdm_data_loaders.schemas.jsonschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
-from cdm_data_loaders.utils import cdm_logger
-from cdm_data_loaders.utils.file_transfer.s3.client import _client_config, reset_s3_client
+import cdm_data_loaders.io.s3.client as s3_client
+import cdm_data_loaders.utils.logging as cdm_logging
+from cdm_data_loaders.io.s3.client import _client_config, reset_s3_client
+from cdm_data_loaders.validation.jsonschema.metaschema import CUSTOM_META_SCHEMA_URI, get_xsv_meta_schema
 from tests.dlt_config_isolation import isolated_dlt_config
 from tests.state_audit import StateAuditPlugin
 from tests.xml_samples import LIBRARY_XSD
@@ -626,7 +626,7 @@ class LoggerState:
 
 @contextmanager
 def preserve_logging_state(exclude_handler: logging.Handler | None = None) -> Generator[None]:
-    """Snapshot all logger states and ``cdm_logger.applied_key``, restoring them and closing new handlers on exit.
+    """Snapshot all logger states, ``cdm_logging.applied_key``, and ``sys.excepthook``, restoring them on exit.
 
     :param exclude_handler: Optional handler managed externally per test phase.
     :type exclude_handler: logging.Handler | None
@@ -636,14 +636,15 @@ def preserve_logging_state(exclude_handler: logging.Handler | None = None) -> Ge
     root = logging.getLogger()
     manager = logging.Logger.manager
     saved_manager_disable = manager.disable
+    saved_excepthook = sys.excepthook
     root_state = LoggerState.capture(root, exclude=exclude_handler)
     saved = {
         name: LoggerState.capture(lg, exclude=exclude_handler)
         for name, lg in manager.loggerDict.items()
         if isinstance(lg, logging.Logger)
     }
-    saved_applied_key = cdm_logger.applied_key
-    cdm_logger.applied_key = None
+    saved_applied_key = cdm_logging.applied_key
+    cdm_logging.applied_key = None
 
     try:
         yield
@@ -659,7 +660,8 @@ def preserve_logging_state(exclude_handler: logging.Handler | None = None) -> Ge
         for name, lg in loggers.items():
             saved.get(name, LoggerState()).restore(lg)
         logging.disable(saved_manager_disable)
-        cdm_logger.applied_key = saved_applied_key
+        cdm_logging.applied_key = saved_applied_key
+        sys.excepthook = saved_excepthook
 
 
 @contextmanager

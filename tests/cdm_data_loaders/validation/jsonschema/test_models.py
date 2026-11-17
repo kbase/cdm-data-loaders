@@ -1,0 +1,512 @@
+"""Unit tests for ``cdm_data_loaders.validation.jsonschema.models``."""
+
+import json
+import re
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, Final
+
+import jsonschema
+import jsonschema.exceptions
+import jsonschema.validators
+import pytest
+from pydantic import ValidationError
+
+from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import SEP_TO_EXT
+from cdm_data_loaders.validation.jsonschema.metaschema import (
+    CUSTOM_META_SCHEMA_URI,
+    get_xsv_meta_schema,
+    register_xsv_validator,
+)
+from cdm_data_loaders.validation.jsonschema.models import (
+    ValidatedXsvSchema,
+    generate_first_pass_schema,
+    generate_header,
+    get_schema_parsing_metadata,
+    validate_xsv_jsonschema,
+)
+from tests.xsv_fixtures import COLUMNS
+
+SCHEMAS_DIR: Final[Path] = Path("tests") / "data" / "qsv" / "schemas"
+DELIMITERS: Final[list[str]] = list(SEP_TO_EXT)
+VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2019-09/schema"
+SCHEMA_KEY_VALUE: dict[str, str] = {"$schema": VALID_SCHEMA_URI}
+
+
+@pytest.fixture(scope="session")
+def first_pass_schema_path() -> Path:
+    """Path to the first-pass JSON Schema fixture."""
+    return SCHEMAS_DIR / "first_pass_schema.json"
+
+
+@pytest.fixture(scope="session")
+def post_norm_schema_path() -> Path:
+    """Path to the post-normalisation JSON Schema fixture."""
+    return SCHEMAS_DIR / "post_norm_schema.json"
+
+
+@pytest.fixture(scope="session")
+def derived_first_pass_schema_path() -> Path:
+    """Path to the derived first-pass JSON Schema fixture."""
+    return SCHEMAS_DIR / "derived_first_pass_schema.json"
+
+
+@pytest.fixture(scope="session")
+def derived_first_pass_schema(derived_first_pass_schema_path: Path) -> dict[str, Any]:
+    """Parsed content of ``derived_first_pass_schema_path``."""
+    return json.loads(derived_first_pass_schema_path.read_bytes())
+
+
+@pytest.fixture
+def make_schema_file(tmp_path: Path) -> Callable[..., Path]:
+    """Write a JSON-serializable schema payload to a temporary file."""
+
+    def _make(schema: object, file_name: str = "schema.json") -> Path:
+        path = tmp_path / file_name
+        path.write_text(json.dumps(schema), encoding="utf-8")
+        return path
+
+    return _make
+
+
+INVALID_TOP_LEVEL_SCHEMA_LIST = [
+    pytest.param(["a", "b"], id="schema-is-a-list"),
+    pytest.param("just a string", id="schema-is-string"),
+    pytest.param(42, id="schema-is-a-number"),
+    pytest.param(None, id="schema-is-null"),
+    pytest.param(True, id="schema-is-bool"),
+]
+MISSING_EMPTY_REQUIRED_LIST = [
+    pytest.param({}, id="missing-required-key"),
+    pytest.param({"required": []}, id="empty-required-list"),
+]
+INVALID_REQUIRED_LIST = [
+    pytest.param({"required": "not-a-list"}, id="required-is-a-string"),
+    pytest.param({"required": None}, id="required-is-null"),
+    pytest.param({"required": {"a": 1}}, id="required-is-a-dict"),
+]
+
+
+@pytest.fixture
+def valid_schema() -> ValidatedXsvSchema:
+    """Minimal ValidatedXsvSchema object."""
+    return ValidatedXsvSchema(
+        jsonschema={"$schema": VALID_SCHEMA_URI, "required": COLUMNS},
+    )
+
+
+"""validate_jsonschema"""
+
+
+def test_validate_jsonschema_pass_valid_schema(make_schema_file: Callable[..., Path]) -> None:
+    """A well-formed schema, complete with $schema keyword, is returned unchanged."""
+    schema = {
+        "$schema": VALID_SCHEMA_URI,
+        "type": "object",
+        "required": ["a"],
+        "properties": {"a": {"type": "string"}},
+    }
+    schema_path = make_schema_file(schema)
+
+    result = validate_xsv_jsonschema(schema_path)
+    assert isinstance(result, ValidatedXsvSchema)
+    assert {**result.jsonschema} == schema
+
+
+def test_validate_jsonschema_fail_missing_file(tmp_path: Path) -> None:
+    """A schema_path that doesn't exist on disk raises FileNotFoundError when read."""
+    with pytest.raises(FileNotFoundError, match="No such file or directory"):
+        validate_xsv_jsonschema(tmp_path / "does-not-exist.json")
+
+
+def test_validate_jsonschema_fail_invalid_json_content(tmp_path: Path) -> None:
+    """A file that isn't valid JSON raises a JSONDecodeError."""
+    bad_json_path = tmp_path / "not-json.json"
+    bad_json_path.write_text("{this is not: valid json,,,")
+
+    with pytest.raises(json.JSONDecodeError):
+        validate_xsv_jsonschema(bad_json_path)
+
+
+@pytest.mark.parametrize("schema", INVALID_TOP_LEVEL_SCHEMA_LIST)
+def test_validate_jsonschema_fail_non_dict_schema_or_invalid_schema_raises_error(
+    make_schema_file: Callable[..., Path], schema: list | str | int | None
+) -> None:
+    """A schema whose top-level JSON value isn't a dict raises TypeError."""
+    schema_path = make_schema_file(schema)
+
+    with pytest.raises(ValidationError, match="Input should be a valid dictionary"):
+        validate_xsv_jsonschema(schema_path)
+
+
+@pytest.mark.parametrize("schema", INVALID_REQUIRED_LIST + MISSING_EMPTY_REQUIRED_LIST)
+def test_validate_jsonschema_fail_no_schema_keyword_missing_or_empty_required_raises_value_error(
+    make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema with no `$schema` keyword raises a ValueError."""
+    schema_path = make_schema_file(schema)
+
+    with pytest.raises(ValueError, match=r"JSON Schema is missing the \$schema keyword"):
+        validate_xsv_jsonschema(schema_path)
+
+
+@pytest.mark.parametrize("schema", INVALID_REQUIRED_LIST)
+def test_validate_jsonschema_fail_invalid_required_format_error(
+    make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema whose required field isn't a list of strings raises SchemaError."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, **schema})
+
+    with pytest.raises(jsonschema.exceptions.SchemaError, match="is not of type 'array'"):
+        validate_xsv_jsonschema(schema_path)
+
+
+@pytest.mark.parametrize("schema", MISSING_EMPTY_REQUIRED_LIST)
+def test_validate_jsonschema_pass_missing_empty_required_list_is_fine_fine_fine(
+    make_schema_file: Callable[..., Path], schema: dict[str, Any]
+) -> None:
+    """A schema whose required field is missing or empty throws a validation error."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, **schema})
+    with pytest.raises(ValidationError, match="Could not find any required cols in schema"):
+        validate_xsv_jsonschema(schema_path)
+
+
+@pytest.mark.parametrize(
+    "schema_uri",
+    [
+        pytest.param("https://not-a-real-schema.uri", id="unrecognised-uri"),
+        pytest.param("not-a-real-schema-uri", id="invalid-uri"),
+    ],
+)
+def test_validate_jsonschema_fail_unsupported_schema_uri(
+    make_schema_file: Callable[..., Path],
+    schema_uri: str,
+) -> None:
+    """A `$schema` value that does not correspond to a supported JSON Schema draft raises ValidationError."""
+    schema = {"$schema": schema_uri, "required": ["a"]}
+    schema_path = make_schema_file(schema)
+    with pytest.raises(ValidationError, match=f"Unsupported JSON Schema draft: {re.escape(schema_uri)}"):
+        validate_xsv_jsonschema(schema_path)
+
+
+def test_validate_jsonschema_fail_invalid_schema_content_logs_and_raises_schema_error(
+    make_schema_file: Callable[..., Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    """A schema with other invalid fields raises a SchemaError."""
+    schema = {"$schema": VALID_SCHEMA_URI, "type": "not-a-real-type", "required": ["a"]}
+    schema_path = make_schema_file(schema)
+
+    with pytest.raises(
+        jsonschema.exceptions.SchemaError, match="'not-a-real-type' is not valid under any of the given schemas"
+    ):
+        validate_xsv_jsonschema(schema_path)
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].getMessage().startswith("Error validating JSON Schema")
+
+
+@pytest.mark.parametrize(
+    "fixture_name", ["first_pass_schema_path", "post_norm_schema_path", "derived_first_pass_schema_path"]
+)
+def test_validate_jsonschema_fixtures_are_valid_schemas(fixture_name: str, request: pytest.FixtureRequest) -> None:
+    """Ensure that all the JSON Schemas used as fixtures are valid."""
+    schema = request.getfixturevalue(fixture_name)
+    validate_xsv_jsonschema(schema)
+
+
+"""get_schema_parsing_metadata"""
+
+
+def test_get_schema_parsing_metadata_pass_transforms_keys() -> None:
+    """Keys prefixed with "x-" are stripped of the prefix and hyphens become underscores."""
+    vs = ValidatedXsvSchema(
+        jsonschema={
+            "$schema": VALID_SCHEMA_URI,
+            "required": ["a"],
+            "x-xsv-config": {
+                "x-has-header": True,
+                "x-delimiter": ",",
+                "x-comment-char": "#",
+                "x-quote": '"',
+                "x-escape": "\\",
+                "x-quoting-policy": "necessary",
+                "x-null-regex": "^(NA|NULL)$",
+                "x-null-cols": ["a", "b"],
+            },
+        },
+    )
+
+    result = get_schema_parsing_metadata(vs)
+
+    assert result == {
+        "has_header": True,
+        "delimiter": ",",
+        "comment_char": "#",
+        "quote": '"',
+        "escape": "\\",
+        "quoting_policy": "necessary",
+        "null_regex": "^(NA|NULL)$",
+        "null_cols": ["a", "b"],
+    }
+
+
+def test_get_schema_parsing_metadata_fail_no_xsv_config_key() -> None:
+    """A schema with no x-xsv-config key raises ValueError."""
+    vs = ValidatedXsvSchema(
+        jsonschema={"$schema": VALID_SCHEMA_URI, "required": ["a"]},
+    )
+
+    with pytest.raises(ValueError, match="No xsv config information found in schema"):
+        get_schema_parsing_metadata(vs)
+
+
+def test_get_schema_parsing_metadata_fail_empty_xsv_config() -> None:
+    """A schema with an empty x-xsv-config object raises ValueError."""
+    vs = ValidatedXsvSchema(
+        jsonschema={"$schema": VALID_SCHEMA_URI, "required": ["a"], "x-xsv-config": {}},
+    )
+
+    with pytest.raises(ValueError, match="No xsv config information found in schema"):
+        get_schema_parsing_metadata(vs)
+
+
+"""register_xsv_validator"""
+
+
+def test_register_xsv_validator_pass_registers_validator_for_custom_uri() -> None:
+    """After registration, `validator_for` returns a validator class using the custom meta-schema."""
+    register_xsv_validator()
+
+    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
+
+    assert get_xsv_meta_schema() == validator_cls.META_SCHEMA
+
+
+def test_register_xsv_validator_pass_idempotent() -> None:
+    """Calling register_xsv_validator multiple times does not raise and stays consistent."""
+    register_xsv_validator()
+    register_xsv_validator()
+
+    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
+    assert get_xsv_meta_schema() == validator_cls.META_SCHEMA
+
+
+@pytest.mark.parametrize(
+    "x_xsv_config",
+    [
+        pytest.param(
+            {
+                "x-has-header": True,
+                "x-delimiter": ",",
+                "x-quote": '"',
+                "x-escape": "\\",
+                "x-quoting-policy": "necessary",
+            },
+            id="full-parser-config",
+        ),
+        pytest.param({"x-null-cols": ["a", "b"]}, id="null-cols-multi"),
+        pytest.param({"x-null-cols": ["a"]}, id="null-cols-single"),
+    ],
+)
+def test_custom_xsv_metaschema_pass_accepts_valid_config(
+    make_schema_file: Callable[..., Path],
+    x_xsv_config: dict[str, Any],
+) -> None:
+    """A schema with a well-formed x-xsv-config block passes both check_schema and validate_jsonschema."""
+    register_xsv_validator()
+    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
+    schema = {
+        "$schema": CUSTOM_META_SCHEMA_URI,
+        "required": ["a", "b"],
+        "x-xsv-config": x_xsv_config,
+    }
+
+    validator_cls.check_schema(schema)
+    result = validate_xsv_jsonschema(make_schema_file(schema))
+
+    assert isinstance(result, ValidatedXsvSchema)
+    assert result.has_xsv_metaschema
+    assert result.has_xsv_parser_config
+    assert result.jsonschema == schema
+
+
+@pytest.mark.parametrize(
+    ("x_xsv_config", "error_match"),
+    [
+        pytest.param(
+            {"x-not-a-real-option": True},
+            "Additional properties are not allowed",
+            id="additional-property-not-allowed",
+        ),
+        pytest.param({"x-delimiter": ",;"}, "is too long", id="field-exceeds-max-length"),
+        pytest.param({"x-null-cols": "col_a"}, "is not of type 'array'", id="null-cols-wrong-type"),
+        pytest.param({"x-null-cols": ["col_a", 42]}, "is not of type 'string'", id="null-cols-non-string-items"),
+        pytest.param({"x-null-cols": []}, "should be non-empty", id="null-cols-empty-array"),
+        pytest.param({"x-has-header": "yes"}, "is not of type 'boolean'", id="has-header-wrong-type"),
+        pytest.param({"x-quoting-policy": "sometimes"}, "is not one of", id="quoting-policy-bad-enum"),
+    ],
+)
+def test_custom_xsv_metaschema_fail_rejects_invalid_config(
+    make_schema_file: Callable[..., Path],
+    x_xsv_config: dict[str, Any],
+    error_match: str,
+) -> None:
+    """A schema whose x-xsv-config block violates the custom metaschema raises SchemaError."""
+    register_xsv_validator()
+    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
+    schema = {
+        "$schema": CUSTOM_META_SCHEMA_URI,
+        "required": ["a"],
+        "x-xsv-config": x_xsv_config,
+    }
+
+    with pytest.raises(jsonschema.exceptions.SchemaError, match=error_match):
+        validator_cls.check_schema(schema)
+    with pytest.raises(jsonschema.exceptions.SchemaError, match=error_match):
+        validate_xsv_jsonschema(make_schema_file(schema))
+
+
+"""generate_header"""
+
+
+def test_generate_header_pass_uses_defaults(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
+    """With no overrides, the header is written to `header.txt` using a tab delimiter."""
+    result = generate_header(valid_schema, tmp_path)
+    assert result == tmp_path / "header.txt"
+    assert result.read_text() == "\t".join(COLUMNS) + "\n"
+
+
+@pytest.mark.parametrize("delimiter", DELIMITERS)
+def test_generate_header_pass_with_various_delimiters(
+    tmp_path: Path, delimiter: str, valid_schema: ValidatedXsvSchema
+) -> None:
+    """Every delimiter supported by SEP_TO_EXT produces a correctly-joined header row."""
+    result = generate_header(valid_schema, tmp_path, delimiter=delimiter)
+    assert result.read_text() == delimiter.join(COLUMNS) + "\n"
+
+
+def test_generate_header_pass_with_custom_file_name(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
+    """A custom header_file_name is respected in both the returned path and the file written."""
+    result = generate_header(valid_schema, tmp_path, header_file_name="custom-header.tsv")
+    assert result == tmp_path / "custom-header.tsv"
+    assert result.read_text() == "\t".join(COLUMNS) + "\n"
+
+
+def test_generate_header_pass_overwrites_existing_file(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
+    """An existing header file at the target path is overwritten."""
+    (tmp_path / "header.txt").write_text("stale content\n")
+    result = generate_header(valid_schema, tmp_path)
+    assert result.read_text() == "\t".join(COLUMNS) + "\n"
+
+
+def test_generate_header_fail_missing_target_dir(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
+    """A target_dir that doesn't exist fails DirectoryPath validation."""
+    missing_dir = tmp_path / "no-such-dir"
+
+    with pytest.raises(ValidationError, match="Path does not point to a directory"):
+        generate_header(valid_schema, missing_dir)
+
+
+def test_generate_header_fail_empty_header_file_name(tmp_path: Path, valid_schema: ValidatedXsvSchema) -> None:
+    """An empty header_file_name fails the NonEmptyStr constraint."""
+    with pytest.raises(ValidationError, match="String should have at least 1 character"):
+        generate_header(valid_schema, tmp_path, header_file_name="")
+
+
+@pytest.mark.parametrize(
+    "delimiter",
+    [
+        pytest.param("", id="empty-delimiter"),
+        pytest.param(",;", id="multi-character-delimiter"),
+    ],
+)
+def test_generate_header_fail_invalid_delimiter_length(
+    tmp_path: Path, make_schema_file: Callable[..., Path], delimiter: str
+) -> None:
+    """A delimiter that isn't exactly one character fails the CharStr constraint."""
+    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, "required": COLUMNS})
+    err_msg = re.compile("String should have at (mo|lea)st 1 character")
+    vs = validate_xsv_jsonschema(schema_path)
+    with pytest.raises(ValidationError, match=err_msg):
+        generate_header(vs, tmp_path, delimiter=delimiter)
+
+
+"""generate_first_pass_schema"""
+
+
+def test_generate_first_pass_schema_pass_happy_path(
+    post_norm_schema_path: Path, derived_first_pass_schema: dict[str, Any]
+) -> None:
+    """A first pass schema can be generated from an existing schema file."""
+    vs = validate_xsv_jsonschema(post_norm_schema_path)
+    validated_schema = generate_first_pass_schema(vs)
+    assert validated_schema.jsonschema == derived_first_pass_schema
+
+
+def test_generate_first_pass_schema_pass_bare_minimum(make_schema_file: Callable[[Any, str], Path]) -> None:
+    """Test that a schema can be generated from the very barest of bare minimum JSON schema."""
+    bare_minimum = {"required": ["this", "that"], **SCHEMA_KEY_VALUE}
+    type_dict = {"type": ["string", "null"]}
+    schema_path = make_schema_file(bare_minimum, "schema.json")
+    vs = validate_xsv_jsonschema(schema_path)
+
+    validated_schema = generate_first_pass_schema(vs)
+    assert validated_schema.jsonschema == {
+        **bare_minimum,
+        "type": "object",
+        "properties": {"this": type_dict, "that": type_dict},
+    }
+
+
+def test_generate_first_pass_schema_pass_custom_xsv_metaschema_uri(
+    make_schema_file: Callable[[Any, str], Path],
+) -> None:
+    """A schema using the custom XSV metaschema URI preserves `$schema` in the first-pass schema."""
+    schema = {
+        "$schema": CUSTOM_META_SCHEMA_URI,
+        "required": ["a"],
+        "x-xsv-config": {"x-delimiter": ","},
+    }
+    schema_path = make_schema_file(schema, "schema.json")
+    vs = validate_xsv_jsonschema(schema_path)
+
+    validated_schema = generate_first_pass_schema(vs)
+    assert validated_schema.jsonschema == {
+        "$schema": CUSTOM_META_SCHEMA_URI,
+        "required": ["a"],
+        "type": "object",
+        "properties": {
+            "a": {"type": ["string", "null"]},
+        },
+    }
+
+
+def test_generate_first_pass_schema_pass_retains_only_allowed_top_level_keys() -> None:
+    """Only $schema, $id, title, and required are copied from the original schema."""
+    schema = {
+        "$schema": VALID_SCHEMA_URI,
+        "$id": "https://example.com/schemas/my-schema.json",
+        "title": "My Schema",
+        "description": "This should not appear in the first-pass schema",
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["a", "b"],
+        "properties": {
+            "a": {"type": "string"},
+            "b": {"type": "integer"},
+        },
+    }
+    vs = ValidatedXsvSchema(jsonschema=schema)
+
+    validated_schema = generate_first_pass_schema(vs)
+    assert validated_schema.jsonschema == {
+        "$schema": VALID_SCHEMA_URI,
+        "$id": "https://example.com/schemas/my-schema.json",
+        "title": "My Schema",
+        "type": "object",
+        "required": ["a", "b"],
+        "properties": {
+            "a": {"type": ["string", "null"]},
+            "b": {"type": ["string", "null"]},
+        },
+    }

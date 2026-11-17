@@ -16,7 +16,7 @@ import boto3
 import pytest
 from _pytest.mark.structures import ParameterSet
 
-from cdm_data_loaders.utils.file_transfer.s3.client import get_s3_client, reset_s3_client
+from cdm_data_loaders.io.s3.client import get_s3_client, reset_s3_client
 from tests.cdm_data_loaders.pipelines import framework
 from tests.cdm_data_loaders.pipelines.framework import (
     ExecutionMode,

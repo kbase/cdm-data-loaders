@@ -12,7 +12,7 @@ from cdm_data_loaders.readers.jsonschema_xsv.xsv_reader import (
     resolve_duckdb_column_config,
     resolve_xsv_parsing_config,
 )
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import ValidatedXsvSchema
+from cdm_data_loaders.validation.jsonschema.models import ValidatedXsvSchema
 from tests.xsv_fixtures import COLUMNS, write_xsv
 
 VALID_SCHEMA_URI: Final[str] = "https://json-schema.org/draft/2020-12/schema"

@@ -19,7 +19,7 @@ from cdm_data_loaders.core.registry import (
     TransformRegistry,
     load_registry_dict,
 )
-from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
+from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 from tests.helpers import register_temp_module
 
 WIDGET_PA_SCHEMA = pa.schema([pa.field("id", pa.string())])

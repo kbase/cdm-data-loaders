@@ -1,6 +1,7 @@
 """Schema input parsing and shared converter facade base class."""
 
 import json
+from logging import Logger
 from pathlib import Path
 from typing import Annotated, Any, ClassVar
 
@@ -46,6 +47,22 @@ def load_schema_file(path: str | Path) -> dict[str, Any]:
     return _require_mapping(loader(path.read_bytes()), f"from {path}")
 
 
+def write_schema_text(text: str, out_file: Path, log: Logger) -> None:
+    """Write serialized schema text to disk, warning before replacing an existing file.
+
+    :param text: serialized schema text to write
+    :type text: str
+    :param out_file: destination file path
+    :type out_file: Path
+    :param log: logger instance
+    :type log: Logger
+    """
+    if out_file.exists():
+        log.warning("Overwriting existing schema file %s", out_file)
+    out_file.write_text(text, encoding="utf-8")
+    log.info("Wrote schema to %s", out_file)
+
+
 def coerce_extra_metadata_keywords(value: object) -> object:
     """Normalize supported metadata keyword collections into a frozenset.
 
@@ -71,7 +88,7 @@ class JsonSchemaConverterBase[OutputT](BaseModel):
     _invalid_schema_error_cls: ClassVar[type[ConversionError]] = ConversionError
     _converter_name: ClassVar[str] = ""
     _root_target_label: ClassVar[str] = ""
-    _dereference_function: ClassVar[str] = "cdm_data_loaders.schemas.jsonschema.dereference_schema"
+    _dereference_function: ClassVar[str] = "cdm_data_loaders.validation.jsonschema.dereference.dereference_schema"
 
     extension_registry: InstanceOf[ExtensionRegistry] = DEFAULT_EXTENSIONS
 

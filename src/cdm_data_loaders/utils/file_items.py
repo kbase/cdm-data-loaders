@@ -13,7 +13,6 @@ repository-specific gzip handling is needed. Build ``FileItemDict`` objects with
 import errno
 import glob
 import os
-import posixpath
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
@@ -22,7 +21,7 @@ from typing import IO, Any
 import fsspec
 from dlt.common.storages.fsspec_filesystem import FileItemDict, glob_files
 
-from cdm_data_loaders.core.path_fields import FILE_PROTOCOL
+from cdm_data_loaders.utils.urls import FILE_PROTOCOL
 
 FileSource = str | Path | FileItemDict
 """A local file path or a dlt file item."""
@@ -55,23 +54,6 @@ def as_file_item(file: FileSource) -> FileItemDict:
     if not matches:
         raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), str(file))
     return FileItemDict(matches[0], local_fs)
-
-
-def join_url(bucket_url: str, *parts: str) -> str:
-    """Join path parts onto a bucket URL (``s3://bucket/prefix``, ``file:///dir``, ...) or a local path.
-
-    URLs are joined with ``/``; local paths with the operating system's separator.
-
-    :param bucket_url: bucket URL or local directory path
-    :type bucket_url: str
-    :param parts: path parts to append
-    :type parts: str
-    :return: joined URL or path
-    :rtype: str
-    """
-    if "://" in bucket_url:
-        return posixpath.join(bucket_url, *parts)
-    return str(Path(bucket_url, *parts))
 
 
 def source_id(file: FileSource) -> str:

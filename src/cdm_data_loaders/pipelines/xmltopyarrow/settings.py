@@ -23,7 +23,6 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
     generate_pyarrow_schema,
     generate_pyarrow_schemas_at_level,
 )
-from cdm_data_loaders.converters.readers.xsd import load_schema
 from cdm_data_loaders.core.fields import (
     XML_GZ_FILE_GLOB,
     FileGlob,
@@ -32,6 +31,7 @@ from cdm_data_loaders.core.fields import (
     file_glob_description,
 )
 from cdm_data_loaders.core.preprocessors import validate_md5_sidecar
+from cdm_data_loaders.validation.xsd.traversal import load_schema
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     FilePreprocessFn,
@@ -55,6 +55,7 @@ from cdm_data_loaders.pipelines.xmltopyarrow.exceptions import (
 from cdm_data_loaders.schemas.pubmed.schema import SCHEMAS as PUBMED_SCHEMAS
 from cdm_data_loaders.schemas.uniprot.schema import SCHEMA as UNIPROT_SCHEMA
 from cdm_data_loaders.schemas.uniref.schema import SCHEMA as UNIREF_SCHEMA
+from cdm_data_loaders.validation.xsd.traversal import load_schema
 
 PIPELINE_NAME: Final[str] = "xmltopyarrow"
 PUBMED_PIPELINE_NAME: Final[str] = "pubmed"

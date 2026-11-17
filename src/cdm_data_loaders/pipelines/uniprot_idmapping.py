@@ -15,7 +15,10 @@ from cdm_data_loaders.core.settings import (
     select_cli_shortcuts,
 )
 from cdm_data_loaders.core.transforms import OutputTableHints, emit_raw_table
-from cdm_data_loaders.parsers.uniprot.idmapping import transform_uniprot_id_mapping
+from cdm_data_loaders.parsers.uniprot.idmapping import (
+    UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
+    transform_uniprot_id_mapping,
+)
 from cdm_data_loaders.pipelines.core import PipelineCli
 from cdm_data_loaders.pipelines.xsv.pipeline import run_xsv_pipeline
 from cdm_data_loaders.pipelines.xsv.settings import SHORTCUTS, XsvIngestSettings
@@ -26,7 +29,6 @@ from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     RAW_ID_MAPPING_DESCRIPTION,
     RAW_ID_MAPPING_TABLE_NAME,
     UNIPROT_ID_COL,
-    UNIPROT_IDMAPPING_OUTPUT_SCHEMAS,
 )
 
 PIPELINE_NAME: Final[str] = "uniprot_idmapping"

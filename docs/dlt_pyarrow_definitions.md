@@ -11,7 +11,7 @@ This guide summarises what table metadata, column descriptions, types, nullabili
 - **Schema registry (`ArrowSchemaRegistry`)**: [`src/cdm_data_loaders/core/registry.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/registry.py)
 - **Resource hint registrar (`OutputTableHints`)**: [`src/cdm_data_loaders/core/transforms.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms.py)
 - **Polaris Iceberg definition sync CLI**: [`scripts/apply_polaris_schema_definitions.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/apply_polaris_schema_definitions.py)
-- **PyIceberg SQLite connection cleanup**: [`src/cdm_data_loaders/utils/iceberg_cleanup.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/iceberg_cleanup.py)
+- **PyIceberg SQLite connection cleanup**: [`src/cdm_data_loaders/utils/iceberg/cleanup.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/iceberg/cleanup.py)
 - **Companion nested output and `max_table_nesting` guide**: [`dlt` Nested Output Behaviour](dlt_nested_output_behaviour.md)
 
 ---

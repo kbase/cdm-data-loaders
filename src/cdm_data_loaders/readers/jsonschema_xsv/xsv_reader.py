@@ -17,12 +17,12 @@ from dlt.sources.filesystem import read_csv_duckdb
 
 from cdm_data_loaders.core.transforms import align_and_cast_table
 from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.helpers import non_header_lines_present
-from cdm_data_loaders.readers.jsonschema_xsv.xsv_validator.schema_utils import (
+from cdm_data_loaders.utils.buffer import DEFAULT_BUFFER_MAX_ITEMS
+from cdm_data_loaders.utils.file_items import as_file_item
+from cdm_data_loaders.validation.jsonschema.models import (
     ValidatedXsvSchema,
     get_schema_parsing_metadata,
 )
-from cdm_data_loaders.utils.buffer import DEFAULT_BUFFER_MAX_ITEMS
-from cdm_data_loaders.utils.file_items import as_file_item
 
 # maps x-xsv-config metadata keys (after get_schema_parsing_metadata strips the "x-" prefix) to
 # the CleanerValidatorArgs kwarg they configure. x-quoting-policy is omitted: it configures XSV

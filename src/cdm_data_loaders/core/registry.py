@@ -12,7 +12,7 @@ from dlt.common.storages.fsspec_filesystem import FileItemDict
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, InstanceOf, StringConstraints, model_validator
 
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
-from cdm_data_loaders.schemas.jsonschema import ValidatedSchema
+from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
 
 DEFAULT_PREPROCESSORS_ATTR: Final[str] = "FILE_PREPROCESSORS"
 
