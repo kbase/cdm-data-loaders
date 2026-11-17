@@ -4,8 +4,8 @@ End-to-end (E2E) and smoke tests execute specification-driven pipeline cases acr
 
 - **Specification-driven smoke suite**: [`tests/e2e/test_pipeline_smoke_spec.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/e2e/test_pipeline_smoke_spec.py)
 - **Unified test runner**: [`tests/e2e/framework.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/e2e/framework.py) (`PipelineTestRunner`)
-- **Environment specification and staging**: [`tests/_support/pipeline_env.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/_support/pipeline_env.py) (`PipelineEnvSpec`, `load_pipeline_env_from_dir`, `stage_input_directory`)
-- **`dlt` configuration isolation**: [`tests/_support/dlt_isolation.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/_support/dlt_isolation.py) (`isolated_dlt_config`, `load_dlt_toml_files`)
+- **Environment specification and staging**: [`tests/helpers/pipeline_env.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/helpers/pipeline_env.py) (`PipelineEnvSpec`, `load_pipeline_env_from_dir`, `stage_input_directory`)
+- **`dlt` configuration isolation**: [`tests/helpers/dlt_isolation.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/helpers/dlt_isolation.py) (`isolated_dlt_config`, `load_dlt_toml_files`)
 
 ---
 
@@ -74,7 +74,7 @@ uv run pytest tests/e2e/test_pipeline_smoke_spec.py -m requires_ceph
 
 ## Running Against a Custom Environment
 
-When `--dlt-config-dir` or `--settings-file` is provided on the `pytest` command line, `load_pipeline_env_from_dir()` in [`tests/_support/pipeline_env.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/_support/pipeline_env.py) builds a `PipelineEnvSpec` and switches parametrization from the built-in fixtures to that custom environment.
+When `--dlt-config-dir` or `--settings-file` is provided on the `pytest` command line, `load_pipeline_env_from_dir()` in [`tests/helpers/pipeline_env.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/helpers/pipeline_env.py) builds a `PipelineEnvSpec` and switches parametrization from the built-in fixtures to that custom environment.
 
 ### Create a `dlt` Configuration Directory (`--dlt-config-dir`)
 
@@ -213,7 +213,7 @@ This prevents table collisions, schema pollution, or report overwrites when mult
 
 ## What Every Run Verifies
 
-Regardless of execution mode (`core`, `cli`, or `docker`) or storage backend (`local_fs`, `s3_moto`, `s3_ceph`, or `custom`), `assert_smoke_run_output()` in [`tests/_support/table_readers.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/_support/table_readers.py) verifies:
+Regardless of execution mode (`core`, `cli`, or `docker`) or storage backend (`local_fs`, `s3_moto`, `s3_ceph`, or `custom`), `assert_smoke_run_output()` in [`tests/helpers/table_readers.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/helpers/table_readers.py) verifies:
 
 - **Exit Code Contract**: Even when a run records rejected files or failed records (`status: "completed with errors"`), the CLI and Docker process exit with code `0` so the KBase CDM Task Service (CTS) preserves output artifacts and logs.
 - **Summary Report (`report.txt`)**: Parses `<output_dir>/report.txt` and matches `pipeline`, `dataset`, `status`, `ingested_files`, `load_errors`, `pipeline_load_info_errs`, `load_ids`, and `started` / `finished` timestamps against `expected_report` in `case.yaml`.

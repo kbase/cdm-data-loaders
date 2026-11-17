@@ -98,7 +98,7 @@ For multi-environment pipeline smoke tests (`core`, `cli`, and `docker` modes ac
 
 ### Global State Mutation Audit
 
-Tests marked with `@pytest.mark.state_audit` ([`tests/harness/test_global_state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/harness/test_global_state_audit.py)) are skipped during normal `pytest` runs unless selected with `-m state_audit`. When selected, the suite runs clean `pytest` subprocesses with `--state-audit` ([`tests/_support/state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/_support/state_audit.py)) to verify that module collection and test execution leave zero unreverted mutations in environment variables, `sys.argv`, `sys.path`, `sys.modules`, logging state, `dlt` context, `boto3` sessions, S3 client singletons, `jsonschema` validator registries, module globals, caches, or scoped fixtures:
+Tests marked with `@pytest.mark.state_audit` ([`tests/harness/test_global_state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/harness/test_global_state_audit.py)) are skipped during normal `pytest` runs unless selected with `-m state_audit`. When selected, the suite runs clean `pytest` subprocesses with `--state-audit` ([`tests/helpers/state_audit.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/helpers/state_audit.py)) to verify that module collection and test execution leave zero unreverted mutations in environment variables, `sys.argv`, `sys.path`, `sys.modules`, logging state, `dlt` context, `boto3` sessions, S3 client singletons, `jsonschema` validator registries, module globals, caches, or scoped fixtures:
 
 ```sh
 # run the full global state mutation audit across all local test slices

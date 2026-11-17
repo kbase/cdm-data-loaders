@@ -98,17 +98,17 @@ Pipeline error scenarios are modeled as `case.yaml` runs that verify both `_reje
 
 Failed files and failed records are routed to the `_rejected` table (`REJECTED_PYARROW_SCHEMA` in [`src/cdm_data_loaders/core/buffer.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/buffer.py)):
 
-| Column | File Pre-processor Failure | Record Parse or Validation Failure |
-| :--- | :--- | :--- |
-| `table_name` | Target table name or `None` (multi-table XML level mode) | Entity table name (for example, `"annotation_report"`) |
-| `source_file` | Relative path of the rejected file | Relative path of the input file |
-| `line_no` | `None` | 1-based line number in the input file |
-| `raw_record` | `None` | Raw unparsed text of the rejected line |
+| Column         | File Pre-processor Failure                                          | Record Parse or Validation Failure                           |
+| :------------- | :------------------------------------------------------------------ | :----------------------------------------------------------- |
+| `table_name`   | Target table name or `None` (multi-table XML level mode)            | Entity table name (for example, `"annotation_report"`)       |
+| `source_file`  | Relative path of the rejected file                                  | Relative path of the input file                              |
+| `line_no`      | `None`                                                              | 1-based line number in the input file                        |
+| `raw_record`   | `None`                                                              | Raw unparsed text of the rejected line                       |
 | `error_detail` | Pre-processor error message (for example, `"MD5 mismatch for ..."`) | Decode error string or JSON list of schema validation errors |
 
 ### `expected_report` in `case.yaml`
 
-Each run in `case.yaml` declares an `expected_report` block checked by `assert_smoke_run_output()` in [`tests/_support/table_readers.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/_support/table_readers.py):
+Each run in `case.yaml` declares an `expected_report` block checked by `assert_smoke_run_output()` in [`tests/helpers/table_readers.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/tests/helpers/table_readers.py):
 
 ```yaml
 runs:
