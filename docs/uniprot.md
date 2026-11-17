@@ -88,7 +88,7 @@ uv run uniref90_cdm \
 
 [`presets/uniprot_idmapping.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/presets/uniprot_idmapping.py) provides a preset XSV pipeline (`UniProtIdMappingSettings`, sharing `run_xsv_pipeline`) for ingesting headerless, tab-delimited UniProt `idmapping.dat` and `idmapping.dat.gz` files validated against [`idmapping.schema.json`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/idmapping.schema.json).
 
-Each validated `pyarrow.Table` batch passes through two composed `TABLE_TRANSFORMS` steps ([`emit_raw_table`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/routing.py) and [`transform_uniprot_id_mapping`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/uniprot/idmapping.py)), emitting both a raw table and a standardised cross-reference table under dataset `uniprot_idmapping`. Both tables carry PyArrow schemas ([`schemas/uniprot/idmapping/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/schema.py)) and Iceberg hash-bucket partition specs (`bucket(N, "uniprot_id")`, configurable via `--partition-buckets`).
+Each validated `pyarrow.Table` batch passes through two composed `TABLE_TRANSFORMS` steps ([`emit_raw_table`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/routing.py) and [`transform_uniprot_id_mapping`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/uniprot/idmapping.py)), emitting both a raw table and a standardised cross-reference table under dataset `uniprot_idmapping`. Both tables carry PyArrow schemas defined in [`schemas/uniprot/idmapping/schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/idmapping/schema.py).
 
 ### Output Tables
 
@@ -105,8 +105,7 @@ Each validated `pyarrow.Table` batch passes through two composed `TABLE_TRANSFOR
 uv run uniprot_idmapping \
   --input-dir /path/to/idmapping \
   --output-dir /path/to/output \
-  --loader-file-format iceberg \
-  --partition-buckets 64
+  --loader-file-format iceberg
 ```
 
 ---

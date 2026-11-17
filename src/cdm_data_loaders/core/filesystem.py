@@ -23,7 +23,6 @@ from cdm_data_loaders.core.settings import (
 
 if TYPE_CHECKING:
     from cdm_data_loaders.core.registry import FilePreprocessFn
-    from cdm_data_loaders.core.transforms.hints import OutputTableHints
 
 logger: Logger = getLogger(__name__)
 
@@ -255,11 +254,6 @@ def build_filesystem_resource(  # noqa: PLR0913
         resource.apply_hints(schema_contract=TSchemaContractDict(**schema_contract))  # pyright: ignore[reportCallIssue]
     if isinstance(settings, FileFormatIngestSettings) and settings.loader_file_format == LoaderFileFormatEnum.ICEBERG:
         resource.apply_hints(table_format="iceberg", file_format="parquet")
-    output_table_hints: tuple[OutputTableHints, ...] = (
-        settings.get_output_table_hints() if hasattr(settings, "get_output_table_hints") else ()
-    )
-    for table_hint in output_table_hints:
-        table_hint.apply_to_resource(resource)
     return resource
 
 

@@ -6,14 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any, Final
 
-import dlt
 import pyarrow as pa
 import pytest
-from dlt.destinations.impl.filesystem.iceberg_adapter import (
-    PARTITION_HINT,
-    TABLE_PROPERTIES_HINT,
-    iceberg_partition,
-)
 from frozendict import frozendict
 from pydantic import BaseModel, SecretStr, ValidationError
 from pydantic_settings import CliApp, SettingsError
@@ -27,10 +21,6 @@ from cdm_data_loaders.core.registry import (
     TableTransformFn,
     TransformContext,
     TransformRegistry,
-)
-from cdm_data_loaders.core.transforms.hints import (
-    OutputTableHints,
-    extract_schema_descriptions,
 )
 from cdm_data_loaders.core.transforms.introspection import (
     accepts_pyarrow_table,
@@ -883,60 +873,6 @@ def test_align_and_cast_table_casts_reorders_fills_missing_and_attaches_metadata
     assert aligned.to_pylist() == [{"id": "a1", "count": 3, "note": None}]
     # fast-path returns the exact same table instance when schema and metadata already match
     assert align_and_cast_table(aligned, target_schema) is aligned
-
-
-COMMENTED_HINTS_SCHEMA: Final[pa.Schema] = pa.schema(
-    [
-        pa.field("uniprot_id", pa.string(), nullable=False, metadata={"comment": "Protein ID"}),
-        pa.field("uncommented", pa.string(), nullable=True),
-    ],
-    metadata={"comment": "Schema-level table comment"},
-)
-
-
-@pytest.mark.parametrize(
-    ("schema", "expected"),
-    [
-        pytest.param(
-            COMMENTED_HINTS_SCHEMA,
-            ("Schema-level table comment", {"uniprot_id": "Protein ID"}),
-            id="commented_schema",
-        ),
-        pytest.param(
-            pa.schema([pa.field("x", pa.int64())]),
-            (None, {}),
-            id="uncommented_schema",
-        ),
-    ],
-)
-def test_extract_schema_descriptions_pass_commented_and_uncommented(
-    schema: pa.Schema,
-    expected: tuple[str | None, dict[str, str]],
-) -> None:
-    """extract_schema_descriptions extracts schema and field comments or returns empty defaults when absent."""
-    assert extract_schema_descriptions(schema) == expected
-
-
-def test_output_table_hints_pass_apply_to_resource() -> None:
-    """OutputTableHints registers isolated table descriptions, column descriptions, and Iceberg partitions on DltResource."""
-    resource = dlt.resource([{"uniprot_id": "P12345"}], name="src")
-    bucket_count = 32
-    hint = OutputTableHints(
-        table_name="id_mapping",
-        pyarrow_schema=COMMENTED_HINTS_SCHEMA,
-        description="Explicit override description",
-        iceberg_partitions=(iceberg_partition.bucket(bucket_count, "uniprot_id"),),
-    )
-    hint.apply_to_resource(resource)
-    marked = dlt.mark.with_table_name({"uniprot_id": "P12345"}, "id_mapping")
-    computed = resource.compute_table_schema(marked.data, marked.meta)
-    assert computed["name"] == "id_mapping"
-    assert computed["description"] == "Explicit override description"
-    assert computed["columns"]["uniprot_id"]["description"] == "Protein ID"
-    assert computed[TABLE_PROPERTIES_HINT] == {"comment": "Explicit override description"}
-    assert computed[PARTITION_HINT] == [
-        {"transform": "bucket", "source_column": "uniprot_id", "param_value": bucket_count}
-    ]
 
 
 def test_compose_transforms_fails_with_no_transforms() -> None:

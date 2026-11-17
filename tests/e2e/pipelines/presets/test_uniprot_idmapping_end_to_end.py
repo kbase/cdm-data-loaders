@@ -6,31 +6,24 @@ from operator import itemgetter
 from pathlib import Path
 
 import pytest
-from dlt.destinations.impl.filesystem.iceberg_adapter import PARTITION_HINT, TABLE_PROPERTIES_HINT
 from pyiceberg.catalog import load_catalog
-from pyiceberg.transforms import BucketTransform
 
 import cdm_data_loaders.pipelines.xsv.pipeline as xsv_pipeline_module
 from cdm_data_loaders.pipelines.presets.uniprot_idmapping import (
-    DEFAULT_PARTITION_BUCKETS,
     PIPELINE_NAME,
     UniProtIdMappingSettings,
 )
 from cdm_data_loaders.pipelines.xsv.pipeline import run_xsv_pipeline
 from cdm_data_loaders.pipelines.xsv.settings import XsvIngestSettings
 from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
-    DB_REFERENCE_DESCRIPTION,
-    ID_MAPPING_DESCRIPTION,
     ID_MAPPING_TABLE_NAME,
     IDMAPPING_SCHEMA_FILE,
-    RAW_ID_MAPPING_DESCRIPTION,
     RAW_ID_MAPPING_TABLE_NAME,
-    SOURCE_DESCRIPTION,
-    UNIPROT_ID_DESCRIPTION,
 )
 from tests.e2e.pipelines.presets._helpers import SAMPLE_RAW_ROWS
 from tests.helpers.cli_assertions import make_cts_settings
 from tests.helpers.dlt_isolation import isolated_dlt_config
+from tests.helpers.iceberg_catalog import configure_pyiceberg_home_sqlite_catalog
 from tests.helpers.paths_and_constants import LOCAL_FS
 from tests.helpers.table_readers import (
     fetch_all_duckdb,
@@ -75,25 +68,6 @@ def test_run_xsv_pipeline_uniprot_idmapping_duckdb_multi_file_and_rejections(
         expected_dataset_name=PIPELINE_NAME,
         pipeline_name_prefix=f"uniprot_idmap_{loader_file_format}",
     )
-
-    schema_tables = load_info.pipeline.default_schema.tables
-    assert schema_tables[RAW_ID_MAPPING_TABLE_NAME]["description"] == RAW_ID_MAPPING_DESCRIPTION
-    assert schema_tables[ID_MAPPING_TABLE_NAME]["description"] == ID_MAPPING_DESCRIPTION
-    assert schema_tables[RAW_ID_MAPPING_TABLE_NAME][TABLE_PROPERTIES_HINT] == {  # type: ignore[typeddict-item]
-        "comment": RAW_ID_MAPPING_DESCRIPTION
-    }
-    assert schema_tables[ID_MAPPING_TABLE_NAME][TABLE_PROPERTIES_HINT] == {  # type: ignore[typeddict-item]
-        "comment": ID_MAPPING_DESCRIPTION
-    }
-    assert schema_tables[RAW_ID_MAPPING_TABLE_NAME][PARTITION_HINT] == [  # type: ignore[typeddict-item]
-        {"transform": "bucket", "source_column": "uniprot_id", "param_value": DEFAULT_PARTITION_BUCKETS}
-    ]
-    assert schema_tables[ID_MAPPING_TABLE_NAME][PARTITION_HINT] == [  # type: ignore[typeddict-item]
-        {"transform": "bucket", "source_column": "uniprot_id", "param_value": DEFAULT_PARTITION_BUCKETS}
-    ]
-    assert schema_tables[ID_MAPPING_TABLE_NAME]["columns"]["uniprot_id"]["description"] == UNIPROT_ID_DESCRIPTION
-    assert schema_tables[ID_MAPPING_TABLE_NAME]["columns"]["db_reference"]["description"] == DB_REFERENCE_DESCRIPTION
-    assert schema_tables[ID_MAPPING_TABLE_NAME]["columns"]["source"]["description"] == SOURCE_DESCRIPTION
 
     raw_rows = fetch_all_duckdb(
         load_info.pipeline,
@@ -164,43 +138,22 @@ def test_run_xsv_pipeline_generic_settings_with_idmapping_transforms_module(tmp_
 
 
 @pytest.mark.usefixtures("qsv_cmd")
-def test_run_xsv_pipeline_uniprot_idmapping_iceberg_bucket_partition_and_descriptions(
+def test_run_xsv_pipeline_uniprot_idmapping_iceberg_tables(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Iceberg output partitions both raw_id_mapping and id_mapping on bucket(N, uniprot_id) with table comments."""
-    fake_home = tmp_path / "iceberg_home"
-    fake_home.mkdir()
-    monkeypatch.setenv("HOME", str(fake_home))
-    monkeypatch.setenv("PYICEBERG_HOME", str(fake_home))
-
-    catalog_db = tmp_path / "uniprot_iceberg_catalog.db"
-    warehouse_dir = tmp_path / "warehouse"
-    warehouse_dir.mkdir()
-    catalog_cfg = {
-        "type": "sql",
-        "uri": f"sqlite:///{catalog_db.as_posix()}",
-        "warehouse": f"file://{warehouse_dir.as_posix()}",
-    }
-    (fake_home / ".pyiceberg.yaml").write_text(
-        "catalog:\n"
-        "  default:\n"
-        "    type: sql\n"
-        f"    uri: {catalog_cfg['uri']}\n"
-        f"    warehouse: {catalog_cfg['warehouse']}\n",
-        encoding="utf-8",
+    """Iceberg output writes both raw_id_mapping and id_mapping tables for UniProtIdMappingSettings."""
+    warehouse_dir, catalog_cfg = configure_pyiceberg_home_sqlite_catalog(
+        tmp_path,
+        monkeypatch,
+        db_filename="uniprot_iceberg_catalog.db",
     )
-
-    # initialize the SQLite catalog tables once so parallel dlt load workers do not race on DDL
-    with load_catalog("default", **catalog_cfg):
-        pass
 
     input_dir = tmp_path / "input"
     input_dir.mkdir()
     with gzip.open(input_dir / "HUMAN_9606_idmapping.dat.gz", "wt", encoding="utf-8") as gz_fh:
         gz_fh.write("P12345\tNCBI_TaxID\t9606\nQ8N158\tGeneID\t284697\n")
 
-    custom_buckets = 16
     settings = make_cts_settings(
         UniProtIdMappingSettings,
         tmp_path,
@@ -208,7 +161,6 @@ def test_run_xsv_pipeline_uniprot_idmapping_iceberg_bucket_partition_and_descrip
         output_dir=str(tmp_path / "cts_out"),
         use_destination=LOCAL_FS,
         loader_file_format="iceberg",
-        partition_buckets=custom_buckets,
     )
 
     dlt_cfg = {
@@ -228,18 +180,6 @@ def test_run_xsv_pipeline_uniprot_idmapping_iceberg_bucket_partition_and_descrip
     with load_catalog("default", **catalog_cfg) as catalog:
         raw_table = catalog.load_table((PIPELINE_NAME, RAW_ID_MAPPING_TABLE_NAME))
         std_table = catalog.load_table((PIPELINE_NAME, ID_MAPPING_TABLE_NAME))
-
-        assert raw_table.properties.get("comment") == RAW_ID_MAPPING_DESCRIPTION
-        assert std_table.properties.get("comment") == ID_MAPPING_DESCRIPTION
-
-        for tbl in (raw_table, std_table):
-            spec = tbl.spec()
-            assert len(spec.fields) == 1
-            part_field = spec.fields[0]
-            assert part_field.transform == BucketTransform(custom_buckets)
-            src_field = tbl.schema().find_field(part_field.source_id)
-            assert src_field.name == "uniprot_id"
-            assert src_field.required is True
 
         raw_records = sorted(
             raw_table.scan(selected_fields=("uniprot_id", "db_reference_type", "db_reference_id"))

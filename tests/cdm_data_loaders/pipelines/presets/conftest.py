@@ -18,7 +18,6 @@ from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
 )
 from cdm_data_loaders.pipelines.presets.uniprot_idmapping import (
     DEFAULT_IDMAPPING_FILE_GLOB,
-    DEFAULT_PARTITION_BUCKETS,
 )
 from cdm_data_loaders.pipelines.presets.uniprot_xml import UNIPROT_XSD_FILE, UNIREF_XSD_FILE
 from cdm_data_loaders.schemas.uniprot.idmapping.schema import IDMAPPING_SCHEMA_FILE
@@ -174,7 +173,6 @@ def test_uniprot_idmapping_settings(test_cts_settings: frozendict[str, Any]) -> 
             LOADER_FILE_FORMAT: "parquet",
             PREPROCESSORS_MODULE: "cdm_data_loaders.core.md5_preprocessor",
             "schema_file": str(IDMAPPING_SCHEMA_FILE),
-            "partition_buckets": DEFAULT_PARTITION_BUCKETS,
         }
     )
 
@@ -197,6 +195,5 @@ def test_uniprot_idmapping_settings_reconciled(
             LOADER_FILE_FORMAT: LoaderFileFormatEnum.PARQUET,
             PREPROCESSORS_MODULE: "cdm_data_loaders.core.md5_preprocessor",
             "schema_file": IDMAPPING_SCHEMA_FILE,
-            "partition_buckets": DEFAULT_PARTITION_BUCKETS,
         }
     )

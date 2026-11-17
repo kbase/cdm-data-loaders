@@ -35,6 +35,7 @@ from cdm_data_loaders.pipelines.xsv.exceptions import (
     XSV_SCHEMA_ERRORS,
     XsvSchemaError,
 )
+from cdm_data_loaders.pipelines.xsv.settings import XsvIngestSettings
 from docs_macros.formatting import pyarrow_to_python_type_label
 from docs_macros.render import (
     render_converter_spec,
@@ -42,6 +43,7 @@ from docs_macros.render import (
     render_reference_table,
 )
 from docs_macros.specs.discovery import discover_converter_specs, discover_pipeline_specs
+from docs_macros.specs.hierarchy import introspect_preset_overrides
 from docs_macros.specs.models import PipelineSpecConfig
 from docs_macros.sync import build_generated_docs_plan
 from specs._loader.converter_spec import load_cases, load_rules
@@ -227,7 +229,8 @@ def test_render_reference_table_expected_rows(table_id: str, expected_fragments:
             "xsv",
             (
                 "### Preset Pipeline: `uniprot_idmapping` (`UniProtIdMappingSettings`)",
-                "| `partition_buckets` | Added preset field | — | `64` |",
+                "| `dataset_name` | Locked `ClassVar` (CLI flag removed) |",
+                "| `file_glob` | Overridden field default |",
             ),
             id="xsv",
         ),
@@ -237,10 +240,26 @@ def test_render_pipeline_spec_preset_overrides_pass(
     pipeline_name: str,
     expected_snippets: tuple[str, ...],
 ) -> None:
-    """Preset hierarchy tables render public preset bindings and added preset fields."""
+    """Preset hierarchy tables render public preset bindings, locked ClassVars, and overridden defaults."""
     rendered = render_pipeline_spec(pipeline_name)
     for snippet in expected_snippets:
         assert snippet in rendered
+
+
+def test_introspect_preset_overrides_pass_added_preset_field() -> None:
+    """introspect_preset_overrides emits an 'Added preset field' row for new fields on a preset subclass."""
+
+    class _ExtendedXsvSettings(XsvIngestSettings):
+        extra_limit: int = 42
+
+    added_rows = [
+        row
+        for row in introspect_preset_overrides(XsvIngestSettings, _ExtendedXsvSettings)
+        if row.kind == "Added preset field"
+    ]
+    assert len(added_rows) == 1
+    assert added_rows[0].attr_name == "extra_limit"
+    assert added_rows[0].preset_val == "`42`"
 
 
 @pytest.mark.parametrize(

@@ -2,12 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import Any, Final
+from typing import Any
 
 import pyarrow as pa
 import pytest
 from frozendict import frozendict
-from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
 from cdm_data_loaders.core.cli import CliRunner
@@ -19,7 +18,6 @@ from cdm_data_loaders.datasets.uniprot.idmapping import (
 )
 from cdm_data_loaders.pipelines.presets.uniprot_idmapping import (
     DEFAULT_IDMAPPING_FILE_GLOB,
-    DEFAULT_PARTITION_BUCKETS,
     PIPELINE_NAME,
     UniProtIdMappingSettings,
     cli,
@@ -58,25 +56,17 @@ def test_uniprot_idmapping_settings_all_params_set(
     check_settings(settings, test_uniprot_idmapping_settings_reconciled)
 
 
-CUSTOM_PARTITION_BUCKETS: Final[int] = 16
-
-
 @pytest.mark.parametrize(
-    ("scenario", "expected_buckets"),
+    "scenario",
     [
-        pytest.param("preset_defaults", DEFAULT_PARTITION_BUCKETS, id="preset-defaults"),
-        pytest.param("custom_schema_file", DEFAULT_PARTITION_BUCKETS, id="custom-schema-file"),
-        pytest.param(
-            "jsonl_custom_buckets",
-            CUSTOM_PARTITION_BUCKETS,
-            id="jsonl-custom-partition-buckets",
-        ),
+        pytest.param("preset_defaults", id="preset-defaults"),
+        pytest.param("custom_schema_file", id="custom-schema-file"),
+        pytest.param("jsonl_format", id="jsonl-format"),
     ],
 )
-def test_uniprot_idmapping_settings_defaults_schema_override_and_validation(
+def test_uniprot_idmapping_settings_defaults_and_schema_override(
     tmp_path: Path,
     scenario: str,
-    expected_buckets: int,
 ) -> None:
     """``UniProtIdMappingSettings`` sets preset defaults, binds Arrow transforms, and derives custom schemas."""
     input_dir = tmp_path / "in"
@@ -89,9 +79,8 @@ def test_uniprot_idmapping_settings_defaults_schema_override_and_validation(
         custom_schema_doc["properties"]["extra_col"] = {"type": ["integer", "null"], "description": "Optional rank"}
         custom_schema_file.write_text(json.dumps(custom_schema_doc), encoding="utf-8")
         overrides["schema_file"] = str(custom_schema_file)
-    elif scenario == "jsonl_custom_buckets":
+    elif scenario == "jsonl_format":
         overrides["loader_file_format"] = "jsonl"
-        overrides["partition_buckets"] = CUSTOM_PARTITION_BUCKETS
 
     settings = make_cts_settings(
         UniProtIdMappingSettings,
@@ -103,19 +92,8 @@ def test_uniprot_idmapping_settings_defaults_schema_override_and_validation(
     assert settings.dataset_name == PIPELINE_NAME
     assert settings.table_name == ID_MAPPING_TABLE_NAME
     assert settings.file_glob == DEFAULT_IDMAPPING_FILE_GLOB
-    assert settings.partition_buckets == expected_buckets
     assert settings.get_table_transforms(ID_MAPPING_TABLE_NAME) == (emit_raw_table, transform_uniprot_id_mapping)
     assert accepts_pyarrow_table(settings.get_table_transform(ID_MAPPING_TABLE_NAME)) is True
-
-    hints_by_table = {h.table_name: h for h in settings.get_output_table_hints()}
-    assert set(hints_by_table) == {RAW_ID_MAPPING_TABLE_NAME, ID_MAPPING_TABLE_NAME}
-    for hint in hints_by_table.values():
-        assert len(hint.iceberg_partitions) == 1
-        assert hint.iceberg_partitions[0].to_dict() == {
-            "transform": "bucket",
-            "source_column": "uniprot_id",
-            "param_value": expected_buckets,
-        }
 
     if scenario == "preset_defaults":
         assert settings.schema_file == IDMAPPING_SCHEMA_FILE
@@ -130,20 +108,6 @@ def test_uniprot_idmapping_settings_defaults_schema_override_and_validation(
         assert raw_override_schema.metadata == {b"comment": RAW_ID_MAPPING_DESCRIPTION.encode("utf-8")}
     else:
         assert settings.schema_map is None
-
-
-def test_uniprot_idmapping_settings_fail_zero_partition_buckets(tmp_path: Path) -> None:
-    """``UniProtIdMappingSettings`` rejects ``partition_buckets=0`` with ``ValidationError``."""
-    input_dir = tmp_path / "in"
-    input_dir.mkdir()
-    with pytest.raises(ValidationError, match="partition_buckets"):
-        make_cts_settings(
-            UniProtIdMappingSettings,
-            tmp_path,
-            input_dir=str(input_dir),
-            use_destination=LOCAL_FS,
-            partition_buckets=0,
-        )
 
 
 @pytest.mark.parametrize(

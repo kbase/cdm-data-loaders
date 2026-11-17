@@ -24,7 +24,6 @@ from cdm_data_loaders.core.registry import (
     load_registry_dict,
     validate_registry_table_names,
 )
-from cdm_data_loaders.core.transforms.hints import OutputTableHints
 from cdm_data_loaders.core.transforms.routing import compose_transforms, resolve_schema_map
 
 
@@ -350,11 +349,3 @@ class TransformSettingsMixin(BaseModel):
         if composed is None:
             return None
         return composed.get(table_name)
-
-    def get_output_table_hints(self) -> tuple[OutputTableHints, ...]:
-        """Return per-table output hints (descriptions and Iceberg partitions) for this pipeline.
-
-        :return: tuple of output table hints
-        :rtype: tuple[OutputTableHints, ...]
-        """
-        return ()

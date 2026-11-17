@@ -10,11 +10,6 @@ import pyarrow as pa
 import pytest
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
-from dlt.destinations.impl.filesystem.iceberg_adapter import (
-    PARTITION_HINT,
-    TABLE_PROPERTIES_HINT,
-    iceberg_partition,
-)
 from dlt.sources.filesystem import filesystem
 from pydantic_settings import CliApp
 
@@ -36,7 +31,6 @@ from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     InputLocalOutputSettings,
 )
-from cdm_data_loaders.core.transforms.hints import OutputTableHints
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.pipelines.runner import DEFAULT_SCHEMA_CONTRACT
 from cdm_data_loaders.pipelines.xml_common import XmlIngestSettings
@@ -530,47 +524,22 @@ def test_build_filesystem_resource_pass_preprocessors_filter_reject_and_skip_emp
         assert emitted == [expected_rejected_row, *expected_valid_rows]
 
 
-def test_build_filesystem_resource_pass_iceberg_and_output_table_hints(tmp_path: Path) -> None:
-    """build_filesystem_resource applies Iceberg format hints and settings.get_output_table_hints()."""
-    commented_schema = pa.schema(
-        [pa.field("entity_id", pa.string(), nullable=False, metadata={"comment": "Primary ID"})],
-        metadata={"comment": "Entity table description"},
-    )
-    bucket_count = 16
-
-    class _HintedIngestSettings(FileFormatIngestSettings):
-        def get_output_table_hints(self) -> tuple[OutputTableHints, ...]:
-            return (
-                OutputTableHints(
-                    table_name="entities",
-                    pyarrow_schema=commented_schema,
-                    iceberg_partitions=(iceberg_partition.bucket(bucket_count, "entity_id"),),
-                ),
-            )
-
+def test_build_filesystem_resource_pass_iceberg_format_hints(tmp_path: Path) -> None:
+    """build_filesystem_resource applies Iceberg table and Parquet file format hints when loader_file_format is iceberg."""
     settings = make_cts_settings(
-        _HintedIngestSettings,
+        FileFormatIngestSettings,
         tmp_path,
         dataset_name="iceberg_hints_ds",
         loader_file_format="iceberg",
     )
 
-    def read_items(_items: TDataItems, _cfg: _HintedIngestSettings) -> Iterator[dict[str, str]]:
+    def read_items(_items: TDataItems, _cfg: FileFormatIngestSettings) -> Iterator[dict[str, str]]:
         yield {"entity_id": "e1"}
 
-    resource = build_filesystem_resource(settings, read_items, name="hinted_reader", parallelized=False)
+    resource = build_filesystem_resource(settings, read_items, name="iceberg_reader", parallelized=False)
     base_schema = resource.compute_table_schema()
     assert base_schema["table_format"] == "iceberg"
     assert base_schema["file_format"] == "parquet"
-
-    marked = dlt.mark.with_table_name({"entity_id": "e1"}, "entities")
-    variant_schema = resource.compute_table_schema(marked.data, marked.meta)
-    assert variant_schema["description"] == "Entity table description"
-    assert variant_schema["columns"]["entity_id"]["description"] == "Primary ID"
-    assert variant_schema[TABLE_PROPERTIES_HINT] == {"comment": "Entity table description"}
-    assert variant_schema[PARTITION_HINT] == [
-        {"transform": "bucket", "source_column": "entity_id", "param_value": bucket_count}
-    ]
 
 
 @pytest.mark.parametrize(

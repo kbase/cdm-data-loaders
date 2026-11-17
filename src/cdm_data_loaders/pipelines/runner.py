@@ -21,7 +21,6 @@ from cdm_data_loaders.core.settings import (
     CtsSettings,
     FileFormatIngestSettings,
 )
-from cdm_data_loaders.core.transforms.hints import propagate_run_hints_to_variants
 from cdm_data_loaders.utils.iceberg.cleanup import install_iceberg_catalog_cleanup
 
 DEFAULT_SCHEMA_CONTRACT: Final[TSchemaContractDict] = {
@@ -91,7 +90,6 @@ def run_pipeline(
         logger.info("No Slack alerts will be sent: %s", WEBHOOK_NOT_CONFIGURED)
 
     collector = attach_file_collector(resource)
-    propagate_run_hints_to_variants(settings, resource, pipeline_run_kwargs)
     load_info: LoadInfo | None = None
     err_msg: str | None = None
     try:

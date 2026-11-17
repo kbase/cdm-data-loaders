@@ -3,9 +3,8 @@
 from typing import Annotated, ClassVar, Final
 
 import pyarrow as pa
-from dlt.destinations.impl.filesystem.iceberg_adapter import iceberg_partition
 from frozendict import frozendict
-from pydantic import Field, FilePath, PositiveInt
+from pydantic import Field, FilePath
 from pydantic_settings import SettingsConfigDict
 
 from cdm_data_loaders.core.cli import CliRunner
@@ -15,7 +14,6 @@ from cdm_data_loaders.core.settings import (
     default_settings_with_shortcuts,
     select_cli_shortcuts,
 )
-from cdm_data_loaders.core.transforms.hints import OutputTableHints
 from cdm_data_loaders.core.transforms.routing import emit_raw_table
 from cdm_data_loaders.core.transforms.settings_mixin import LockedTransformHooksMixin
 from cdm_data_loaders.datasets.uniprot.idmapping import (
@@ -30,13 +28,11 @@ from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     IDMAPPING_SCHEMA_FILE,
     RAW_ID_MAPPING_DESCRIPTION,
     RAW_ID_MAPPING_TABLE_NAME,
-    UNIPROT_ID_COL,
 )
 from cdm_data_loaders.utils.arrow_schema import with_schema_description
 
 PIPELINE_NAME: Final[str] = "uniprot_idmapping"
 DEFAULT_IDMAPPING_FILE_GLOB: Final[str] = "**/*idmapping*.dat*"
-DEFAULT_PARTITION_BUCKETS: Final[int] = 64
 
 UNIPROT_IDMAPPING_SHORTCUTS: Final[frozendict[str, str]] = frozendict(
     select_cli_shortcuts(
@@ -72,13 +68,6 @@ class UniProtIdMappingSettings(LockedTransformHooksMixin, XsvIngestSettings):
             description="Path to the JSON Schema file describing the UniProt ID mapping TSV columns.",
         ),
     ]
-    partition_buckets: Annotated[
-        PositiveInt,
-        Field(
-            default=DEFAULT_PARTITION_BUCKETS,
-            description="Number of Iceberg hash buckets for partitioning output tables on uniprot_id.",
-        ),
-    ]
 
     def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
         """Bind the UniProt ID mapping table transforms and output PyArrow schemas.
@@ -104,26 +93,6 @@ class UniProtIdMappingSettings(LockedTransformHooksMixin, XsvIngestSettings):
                     }
                 )
             )
-
-    def get_output_table_hints(self) -> tuple[OutputTableHints, ...]:
-        """Return table descriptions, column descriptions, and Iceberg bucket partitions for both output tables.
-
-        :return: output table hints for ``raw_id_mapping`` and ``id_mapping``
-        :rtype: tuple[OutputTableHints, ...]
-        """
-        bucket_spec = iceberg_partition.bucket(self.partition_buckets, UNIPROT_ID_COL)
-        return (
-            OutputTableHints(
-                table_name=RAW_ID_MAPPING_TABLE_NAME,
-                pyarrow_schema=self.pyarrow_schema,
-                iceberg_partitions=(bucket_spec,),
-            ),
-            OutputTableHints(
-                table_name=ID_MAPPING_TABLE_NAME,
-                pyarrow_schema=ID_MAPPING_SCHEMA,
-                iceberg_partitions=(bucket_spec,),
-            ),
-        )
 
 
 cli = CliRunner(UniProtIdMappingSettings, run_xsv_pipeline)
