@@ -191,7 +191,7 @@ How `PipelineTestRunner` ([`tests/e2e/framework.py`](https://github.com/kbase/cd
 
 - **Input directory and `dlt` configuration**: Local `input_dir` contents (along with `dlt_conf/config.toml`, `dlt_conf/secrets.toml`, and `$HOME/.pyiceberg.yaml` when present) are staged on the host and bind-mounted at `/input_dir`, while `output_dir` is bind-mounted at `/output_dir`.
 - **Remote URLs (`s3://...`)**: When `--input-dir` is an `s3://` URL, `PipelineTestRunner` passes the remote URL to the CLI command inside the container while mounting `/input_dir` so [`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh) copies `/input_dir/dlt_conf` into `$HOME/.dlt`.
-- **Auxiliary schema files and Python modules**: Local files passed via `--xsd-file`, `--schema-file`, `-s`, or `--log-config-file` are staged read-only at `/aux_dir`, and generated schema/model modules (`--entity-models`, `--entity-schemas`, `-m`) are materialized read-only at `/pymodules` on `PYTHONPATH`.
+- **Auxiliary schema files and Python modules**: Local files passed via `--xsd-file`, `--schema-file`, `-s`, `--log-config-file`, or `.py` paths on module flags are staged read-only at `/aux_dir`, and synthetic or non-container-importable Python modules (`--entity-models`, `--entity-schemas`, `-m`, `--preprocessors-module`, `--transforms-module`, `--output-schemas-module`) along with their dynamic model dependencies are materialized read-only at `/pymodules` on `PYTHONPATH`.
 
 ---
 

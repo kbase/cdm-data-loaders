@@ -4,10 +4,12 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Final, Self
 from unittest.mock import patch
 from uuid import uuid4
@@ -26,6 +28,7 @@ from cdm_data_loaders.core.pipeline_catalog import (
     discover_pipeline_targets,
     resolve_pipeline,
 )
+from cdm_data_loaders.core.registry import split_module_attr_spec
 from cdm_data_loaders.core.reporting import LOAD_INFO_TABLE_NAME
 from cdm_data_loaders.core.settings import CtsSettings, LoggerSettings
 from tests.helpers.cli_assertions import settings_to_argv
@@ -37,8 +40,10 @@ CONTAINER_INPUT_DIR: Final[str] = "/input_dir"
 CONTAINER_OUTPUT_DIR: Final[str] = "/output_dir"
 CONTAINER_AUX_DIR: Final[str] = "/aux_dir"
 CONTAINER_PYMODULES_DIR: Final[str] = "/pymodules"
+CONTAINER_MOUNTED_PACKAGES: Final[frozenset[str]] = frozenset({"specs", "tests"})
+LIBRARY_PATH_KEYS: Final[tuple[str, ...]] = ("purelib", "platlib", "stdlib", "platstdlib")
 
-# Flags whose values are local file paths that must be staged into the container in Docker mode
+# flags whose values are local file paths that must be staged into the container in Docker mode
 FILE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
     {
         "--xsd-file",
@@ -48,12 +53,15 @@ FILE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
     }
 )
 
-# Flags whose values are Python module paths that may be dynamically created in sys.modules
+# flags whose values are Python module paths or .py file specs that may need staging in Docker mode
 MODULE_PATH_FLAGS: Final[frozenset[str]] = frozenset(
     {
         "--entity-models",
         "--entity-schemas",
         "-m",
+        "--preprocessors-module",
+        "--transforms-module",
+        "--output-schemas-module",
     }
 )
 
@@ -314,25 +322,158 @@ def _normalize_cli_args(cli_args: list[str]) -> list[str]:
     return normalized
 
 
-def _materialize_dynamic_module(module_name: str, pymodules_dir: Path) -> bool:
-    """If ``module_name`` is an in-memory module in ``sys.modules``, write a ``.py`` file for Docker."""
-    module = sys.modules.get(module_name)
-    if module is None or getattr(module, "__file__", None) is not None:
+def _library_roots() -> frozenset[Path]:
+    """Return resolved and unresolved standard-library and site-packages roots.
+
+    :return: Set of host library root directories.
+    :rtype: frozenset[Path]
+    """
+    sys_paths = sysconfig.get_paths()
+    roots: set[Path] = set()
+    for key in LIBRARY_PATH_KEYS:
+        raw = sys_paths.get(key)
+        if raw:
+            path = Path(raw)
+            roots.add(path.absolute())
+            roots.add(path.resolve())
+    return frozenset(roots)
+
+
+def _is_container_importable_module(module_name: str, module_file: Path) -> bool:
+    """Return whether ``module_name`` resolves to ``module_file`` inside the Docker container without staging.
+
+    :param module_name: Valid dotted Python module name in ``sys.modules``.
+    :type module_name: str
+    :param module_file: Host file path backing ``module_name``.
+    :type module_file: Path
+    :return: ``True`` if ``module_name`` is importable from stdlib, ``.venv``, ``/app/src``, or ``/app``.
+    :rtype: bool
+    """
+    parts = module_name.split(".")
+    tail = parts[-1]
+    matches_tail = module_file.name.split(".", maxsplit=1)[0] == tail or (
+        module_file.name == "__init__.py" and module_file.parent.name == tail
+    )
+    if not matches_tail:
         return False
 
+    candidates = (module_file.absolute(), module_file.resolve())
+    if any(cand.is_relative_to(root) for cand in candidates for root in _library_roots()):
+        return True
+
+    rel_mod = Path(*parts)
+    resolved_file = candidates[1]
+    search_roots: list[Path] = [(BASE_DIR / "src").resolve()]
+    if parts[0] in CONTAINER_MOUNTED_PACKAGES:
+        search_roots.append(BASE_DIR.resolve())
+
+    return any(
+        (root / rel_mod).with_suffix(".py").resolve() == resolved_file
+        or (root / rel_mod / "__init__.py").resolve() == resolved_file
+        for root in search_roots
+    )
+
+
+def _write_pymodule_file(module_name: str, pymodules_dir: Path) -> Path:
+    """Prepare parent package directories under ``pymodules_dir`` and return the target ``.py`` path.
+
+    :param module_name: Valid dotted Python module name.
+    :type module_name: str
+    :param pymodules_dir: Staging root mounted at ``/pymodules`` in Docker.
+    :type pymodules_dir: Path
+    :return: Target ``.py`` file path under ``pymodules_dir``.
+    :rtype: Path
+    """
+    parts = module_name.split(".")
     pymodules_dir.mkdir(parents=True, exist_ok=True)
-    target_file = pymodules_dir / f"{module_name}.py"
+    current_pkg = pymodules_dir
+    for pkg_part in parts[:-1]:
+        current_pkg = current_pkg / pkg_part
+        current_pkg.mkdir(parents=True, exist_ok=True)
+        init_file = current_pkg / "__init__.py"
+        if not init_file.exists():
+            init_file.write_text("", encoding="utf-8")
+    return pymodules_dir.joinpath(*parts).with_suffix(".py")
+
+
+def _stage_file_module(
+    module: ModuleType,
+    module_name: str,
+    mod_file: Path,
+    pymodules_dir: Path,
+    seen: set[str],
+) -> bool:
+    """Copy a non-container-importable file-backed module and its dynamic dependencies into ``pymodules_dir``.
+
+    :param module: Loaded Python module object.
+    :type module: ModuleType
+    :param module_name: Dotted module name registered in ``sys.modules``.
+    :type module_name: str
+    :param mod_file: Host ``.py`` file backing ``module``.
+    :type mod_file: Path
+    :param pymodules_dir: Host directory mounted at ``/pymodules`` inside the container.
+    :type pymodules_dir: Path
+    :param seen: Set of already-visited module names.
+    :type seen: set[str]
+    :return: ``True`` if ``mod_file`` was copied to ``pymodules_dir``, else ``False``.
+    :rtype: bool
+    """
+    if _is_container_importable_module(module_name, mod_file) or not mod_file.is_file():
+        return False
+    target_file = _write_pymodule_file(module_name, pymodules_dir)
+    shutil.copy2(mod_file, target_file)
+    for attr_val in vars(module).values():
+        if isinstance(attr_val, ModuleType):
+            materialize_dynamic_module(attr_val.__name__, pymodules_dir, seen)
+        else:
+            dep_mod_name = getattr(attr_val, "__module__", None)
+            if isinstance(dep_mod_name, str):
+                materialize_dynamic_module(dep_mod_name, pymodules_dir, seen)
+    return True
+
+
+def materialize_dynamic_module(
+    module_name: str,
+    pymodules_dir: Path,
+    visited: set[str] | None = None,
+) -> bool:
+    """Materialize an in-memory or non-container-importable ``sys.modules`` entry into ``pymodules_dir``.
+
+    :param module_name: Dotted module name registered in ``sys.modules``.
+    :type module_name: str
+    :param pymodules_dir: Host directory mounted at ``/pymodules`` inside the container.
+    :type pymodules_dir: Path
+    :param visited: Optional set of already-inspected module names to prevent cycles.
+    :type visited: set[str] | None
+    :return: ``True`` if a module file was written to ``pymodules_dir``, else ``False``.
+    :rtype: bool
+    """
+    seen = visited if visited is not None else set()
+    if module_name in seen:
+        return False
+    seen.add(module_name)
+
+    module = sys.modules.get(module_name)
+    if module is None or not all(part.isidentifier() for part in module_name.split(".")):
+        return False
+
+    raw_file = getattr(module, "__file__", None)
+    if raw_file is not None:
+        return _stage_file_module(module, module_name, Path(raw_file), pymodules_dir, seen)
 
     if hasattr(module, "ENTITY_SCHEMAS"):
+        target_file = _write_pymodule_file(module_name, pymodules_dir)
         schemas = module.ENTITY_SCHEMAS
         target_file.write_text(f"ENTITY_SCHEMAS = {schemas!r}\n", encoding="utf-8")
         return True
 
     if hasattr(module, "ENTITY_MODELS"):
+        target_file = _write_pymodule_file(module_name, pymodules_dir)
         models: dict[str, Any] = module.ENTITY_MODELS
         imports: list[str] = []
         entries: list[str] = []
         for idx, (table_name, model_cls) in enumerate(models.items()):
+            materialize_dynamic_module(model_cls.__module__, pymodules_dir, seen)
             alias = f"_Model_{idx}"
             imports.append(f"from {model_cls.__module__} import {model_cls.__name__} as {alias}")
             entries.append(f"    {table_name!r}: {alias},")
@@ -341,6 +482,25 @@ def _materialize_dynamic_module(module_name: str, pymodules_dir: Path) -> bool:
         return True
 
     return False
+
+
+def _stage_aux_file(host_file: Path, aux_dir: Path, aux_counter: int) -> str:
+    """Copy ``host_file`` into ``aux_dir`` with an indexed filename and return its container path.
+
+    :param host_file: Host file path to stage.
+    :type host_file: Path
+    :param aux_dir: Host auxiliary directory mounted at ``/aux_dir``.
+    :type aux_dir: Path
+    :param aux_counter: Monotonic file index avoiding basename collisions.
+    :type aux_counter: int
+    :return: Container path string under ``/aux_dir``.
+    :rtype: str
+    """
+    resolved = host_file.resolve()
+    aux_dir.mkdir(parents=True, exist_ok=True)
+    staged_name = f"{aux_counter}_{resolved.name}"
+    shutil.copy2(resolved, aux_dir / staged_name)
+    return f"{CONTAINER_AUX_DIR}/{staged_name}"
 
 
 def _write_docker_dlt_config(config_path: Path, use_destination: str) -> None:
@@ -639,7 +799,17 @@ class PipelineTestRunner:
         aux_dir: Path,
         pymodules_dir: Path,
     ) -> list[str]:
-        """Rewrite host file paths and materialize dynamic modules for container execution."""
+        """Rewrite host file paths and materialize dynamic modules for container execution.
+
+        :param args: Normalized CLI argument tokens for the target pipeline.
+        :type args: list[str]
+        :param aux_dir: Host auxiliary directory mounted at ``/aux_dir``.
+        :type aux_dir: Path
+        :param pymodules_dir: Host directory mounted at ``/pymodules``.
+        :type pymodules_dir: Path
+        :return: Translated CLI argument list referencing container paths.
+        :rtype: list[str]
+        """
         translated: list[str] = []
         idx = 0
         aux_counter = 0
@@ -655,18 +825,23 @@ class PipelineTestRunner:
                 idx += 2
                 continue
             if token in FILE_PATH_FLAGS and idx + 1 < len(args):
-                host_file = Path(args[idx + 1]).resolve()
-                aux_dir.mkdir(parents=True, exist_ok=True)
-                staged_name = f"{aux_counter}_{host_file.name}"
+                staged_path = _stage_aux_file(Path(args[idx + 1]), aux_dir, aux_counter)
                 aux_counter += 1
-                shutil.copy2(host_file, aux_dir / staged_name)
-                translated.extend([token, f"{CONTAINER_AUX_DIR}/{staged_name}"])
+                translated.extend([token, staged_path])
                 idx += 2
                 continue
             if token in MODULE_PATH_FLAGS and idx + 1 < len(args):
-                module_name = args[idx + 1]
-                _materialize_dynamic_module(module_name, pymodules_dir)
-                translated.extend([token, module_name])
+                raw_spec = args[idx + 1]
+                target, explicit_attr = split_module_attr_spec(raw_spec)
+                candidate_path = Path(target)
+                if candidate_path.suffix == ".py" or candidate_path.is_file():
+                    staged_path = _stage_aux_file(candidate_path, aux_dir, aux_counter)
+                    aux_counter += 1
+                    staged_spec = f"{staged_path}:{explicit_attr}" if explicit_attr else staged_path
+                    translated.extend([token, staged_spec])
+                else:
+                    materialize_dynamic_module(target, pymodules_dir)
+                    translated.extend([token, raw_spec])
                 idx += 2
                 continue
             translated.append(token)
