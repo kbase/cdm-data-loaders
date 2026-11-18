@@ -28,6 +28,8 @@ from cdm_data_loaders.utils.checksums import (
 )
 
 TEST_ECHO_URL: Final[str] = "https://httpbin.org/bytes/1024"  # deterministic-size real
+EXPECTED_ECHO_BYTES: Final[int] = 1024
+SEEK_OFFSET: Final[int] = 5
 
 
 TEST_DATASETS: list[ParameterSet] = [
@@ -433,8 +435,8 @@ def test_hashingreader_pass_proxies_method_with_arguments() -> None:
     """Proxied methods that take arguments (not just no-arg attributes) work through __getattr__."""
     raw = BytesIO(b"0123456789")
     reader = HashingReader(raw, "md5")
-    reader.seek(5)
-    assert raw.tell() == 5
+    reader.seek(SEEK_OFFSET)
+    assert raw.tell() == SEEK_OFFSET
 
 
 def test_hashingreader_fail_context_manager_not_supported() -> None:
@@ -503,7 +505,7 @@ def test_hashing_reader_reads_real_http_response(requests_session: requests.Sess
     hasher = HashingReader(resp.raw, "sha256")
     body = hasher.read(-1)
 
-    assert len(body) == 1024
+    assert len(body) == EXPECTED_ECHO_BYTES
     # sanity check: hash is deterministic and matches recomputation
     assert hasher.hexdigest() == hashlib.sha256(body).hexdigest()
 
@@ -562,16 +564,21 @@ def test_parse_md5_sidecar_valid(content: str, expected: str) -> None:
     assert parse_md5_sidecar(content, "sample.xml.gz") == expected
 
 
-def test_parse_md5_sidecar_invalid_uses_error_cls() -> None:
+@pytest.mark.parametrize(
+    ("content", "match"),
+    [
+        pytest.param("   \n\n", "Empty MD5 sidecar file", id="whitespace-only"),
+        pytest.param("not-a-digest\n", "Invalid MD5 sidecar content", id="malformed-digest"),
+    ],
+)
+def test_parse_md5_sidecar_invalid_uses_error_cls(content: str, match: str) -> None:
     """Raise the caller-supplied exception class for empty or malformed MD5 sidecar text."""
 
     class CustomSidecarError(RuntimeError):
         pass
 
-    with pytest.raises(CustomSidecarError, match="Empty MD5 sidecar file"):
-        parse_md5_sidecar("   \n\n", "sample.xml.gz", error_cls=CustomSidecarError)
-    with pytest.raises(CustomSidecarError, match="Invalid MD5 sidecar content"):
-        parse_md5_sidecar("not-a-digest\n", "sample.xml.gz", error_cls=CustomSidecarError)
+    with pytest.raises(CustomSidecarError, match=match):
+        parse_md5_sidecar(content, "sample.xml.gz", error_cls=CustomSidecarError)
 
 
 def test_parse_md5_checksums_file_parses_gnu_manifest() -> None:

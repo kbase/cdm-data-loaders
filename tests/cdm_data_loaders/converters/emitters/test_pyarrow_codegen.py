@@ -1,5 +1,7 @@
 """Unit tests for PyArrow Python schema code generation and struct component assembly."""
 
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Final
 
@@ -74,10 +76,37 @@ from tests.helpers.paths_and_constants import BASE_DIR
 from tests.helpers.pyarrow_spec import load_module
 
 XSD_DATA_DIR: Final[Path] = (BASE_DIR / "specs" / "schema_converters" / "xsd_to_pyarrow").resolve()
+UNIPROT_XSD_SCHEMA: Final[xmlschema.XMLSchema] = load_schema(XSD_DATA_DIR / "examples" / "uniprot" / "uniprot.xsd")
+EMPTY_MARKER_CHILD_SCHEMA: Final[xmlschema.XMLSchema] = xmlschema.XMLSchema(
+    """<?xml version="1.0" encoding="UTF-8"?>
+    <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+      <xs:element name="root">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="flag"><xs:complexType/></xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+    """
+)
+LONG_COMMENT_TEXT: Final[str] = "A" * 110
+LONG_COMMENT_FIELD_SPEC: Final[RenderedFieldSpec] = RenderedFieldSpec(
+    name="longCommentStruct",
+    type_expr="SHARED_ITEM_STRUCT",
+    nullable=True,
+    metadata={"comment": LONG_COMMENT_TEXT},
+)
+MEDIUM_FIELD_SPEC: Final[RenderedFieldSpec] = RenderedFieldSpec(
+    name="mediumField",
+    type_expr="pa.string()",
+    nullable=False,
+    metadata={"xsd_type": "xs:string"},
+)
 
 
-def test_render_python_schema_module_and_write_file_pass_iceberg_and_dlt(tmp_path: Path) -> None:
-    """render_python_schema_module and write_python_schema_file emit executable Python modules."""
+def test_render_python_schema_module_pass_iceberg_single_document(tmp_path: Path) -> None:
+    """render_python_schema_module emits an executable Python module for a single Iceberg document."""
     iceberg_schema = Schema(
         iceberg_types.NestedField(1, "id", iceberg_types.LongType(), required=True),
         iceberg_types.NestedField(2, "price", iceberg_types.DecimalType(10, 2)),
@@ -91,14 +120,18 @@ def test_render_python_schema_module_and_write_file_pass_iceberg_and_dlt(tmp_pat
     )
     iceberg_doc = IcebergReader().read(iceberg_schema)
     emitter = PyArrowEmitter()
+    expected_schema = emitter.emit(iceberg_doc)
 
     source = render_python_schema_module(emitter, {"iceberg_record": iceberg_doc})
     iceberg_out = tmp_path / "iceberg_schema.py"
     iceberg_out.write_text(source, encoding="utf-8")
     iceberg_mod = load_module(iceberg_out)
-    assert iceberg_mod.SCHEMA.equals(emitter.emit(iceberg_doc), check_metadata=True)
-    assert iceberg_mod.ICEBERG_RECORD_SCHEMA.equals(emitter.emit(iceberg_doc), check_metadata=True)
+    assert iceberg_mod.SCHEMA.equals(expected_schema, check_metadata=True)
+    assert iceberg_mod.ICEBERG_RECORD_SCHEMA.equals(expected_schema, check_metadata=True)
 
+
+def test_write_python_schema_file_pass_dlt_multiple_documents(tmp_path: Path) -> None:
+    """write_python_schema_file writes an executable multi-schema Python module from dlt documents."""
     dlt_docs = DltReader().read(
         {
             "orders": {
@@ -117,13 +150,26 @@ def test_render_python_schema_module_and_write_file_pass_iceberg_and_dlt(tmp_pat
         }
     )
     out_file = tmp_path / "dlt_schemas.py"
-    written_path = write_python_schema_file(emitter, dlt_docs, out_file)
+    written_path = write_python_schema_file(PyArrowEmitter(), dlt_docs, out_file)
     assert written_path == out_file.resolve()
 
     dlt_mod = load_module(out_file)
+    expected_orders = pa.schema(
+        [
+            pa.field("id", pa.int16(), nullable=False),
+            pa.field("balance", pa.decimal256(76, 0)),
+            pa.field("seen", pa.timestamp("ms", tz="UTC")),
+        ]
+    )
+    expected_items = pa.schema(
+        [
+            pa.field("sku", pa.string(), nullable=False),
+            pa.field("raw", pa.binary()),
+        ]
+    )
     assert set(dlt_mod.SCHEMAS) == {"orders", "items"}
-    assert dlt_mod.SCHEMAS["orders"].equals(emitter.emit(dlt_docs["orders"]), check_metadata=True)
-    assert dlt_mod.SCHEMAS["items"].equals(emitter.emit(dlt_docs["items"]), check_metadata=True)
+    assert dlt_mod.SCHEMAS["orders"].equals(expected_orders, check_metadata=True)
+    assert dlt_mod.SCHEMAS["items"].equals(expected_items, check_metadata=True)
 
 
 @pytest.mark.parametrize(
@@ -150,6 +196,7 @@ def test_render_scalar_type_expr_pass_types(data_type: pa.DataType, expected_exp
     [
         pytest.param("PubmedArticleType", True, "PUBMED_ARTICLE", id="strip-type-suffix"),
         pytest.param("PubmedArticleType", False, "PUBMED_ARTICLE_TYPE", id="keep-type-suffix"),
+        pytest.param("Type", True, "TYPE", id="bare-type-word"),
         pytest.param("123_tag", False, "F_123_TAG", id="leading-digit"),
         pytest.param("---", False, "FIELD", id="non-alnum"),
     ],
@@ -159,104 +206,155 @@ def test_to_upper_snake_pass_identifiers(raw_name: str, strip_suffix: bool, expe
     assert to_upper_snake(raw_name, strip_type_suffix=strip_suffix) == expected
 
 
-def test_generate_pyarrow_struct_and_assemble_pyarrow_schema_pass_components() -> None:
-    """generate_pyarrow_struct builds reusable pa.StructType components that assemble into table schemas."""
+@pytest.mark.parametrize(
+    ("xml_tag", "expected_struct"),
+    [
+        pytest.param("property", PROPERTY_STRUCT, id="uniref-property"),
+        pytest.param("entry", ENTRY_STRUCT, id="uniref-entry"),
+    ],
+)
+def test_generate_pyarrow_struct_pass_components(
+    xml_tag: str,
+    expected_struct: pa.StructType,
+) -> None:
+    """generate_pyarrow_struct builds reusable pa.StructType components for XSD elements."""
     uniref_xsd = load_schema(XSD_DATA_DIR / "examples" / "uniref" / "uniref.xsd")
-    cache: dict[object, pa.StructType] = {}
-    prop_struct = generate_pyarrow_struct(uniref_xsd, "property", struct_cache=cache)
-    entry_struct = generate_pyarrow_struct(uniref_xsd, "entry", struct_cache=cache)
+    assert generate_pyarrow_struct(uniref_xsd, xml_tag, struct_cache={}) == expected_struct
 
-    assert prop_struct == PROPERTY_STRUCT
-    assert entry_struct == ENTRY_STRUCT
+
+def test_assemble_pyarrow_schema_pass_uniref_entry_components() -> None:
+    """assemble_pyarrow_schema assembles exported struct components into the table schema."""
     assert DB_REFERENCE_STRUCT.field("property").type.value_type == PROPERTY_STRUCT
     assert MEMBER_STRUCT.field("dbReference").type == DB_REFERENCE_STRUCT
     assert MEMBER_STRUCT.field("sequence").type == SEQUENCE_STRUCT
-    assert assemble_pyarrow_schema(entry_struct).equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
-
-    pubmed_xsd = load_schema(XSD_DATA_DIR / "examples" / "pubmed_article" / "pubmed.xsd")
-    pubmed_level_1 = generate_pyarrow_schemas_at_level(pubmed_xsd, 1, root_tag="PubmedArticleSet")
-    assert set(pubmed_level_1.keys()) == {"PubmedArticle", "PubmedBookArticle", "DeleteCitation"}
-    for tag, expected_schema in PUBMED_SCHEMAS.items():
-        assert pubmed_level_1[tag].equals(expected_schema, check_metadata=True)
     assert PUBMED_ARTICLE_STRUCT.field("MedlineCitation").type == MEDLINE_CITATION_STRUCT
     assert PUBMED_ARTICLE_STRUCT.field("PubmedData").type == PUBMED_DATA_STRUCT
     assert PUBMED_BOOK_ARTICLE_STRUCT.field("PubmedBookData").type == PUBMED_BOOK_DATA_STRUCT
     assert DELETE_CITATION_STRUCT.field("PMID").type.value_type == PMID_STRUCT
-
-    uniprot_xsd = load_schema(XSD_DATA_DIR / "examples" / "uniprot" / "uniprot.xsd")
-    uniprot_level_1 = generate_pyarrow_schemas_at_level(uniprot_xsd, 1)
-    assert set(uniprot_level_1.keys()) == {"entry", "copyright"}
-    for tag, expected_schema in UNIPROT_SCHEMAS.items():
-        assert uniprot_level_1[tag].equals(expected_schema, check_metadata=True)
     assert UNIPROT_ENTRY_STRUCT.field("protein").type == PROTEIN_STRUCT
     assert PROTEIN_STRUCT.field("allergenName").type == EVIDENCED_STRING_STRUCT
+    assert assemble_pyarrow_schema(ENTRY_STRUCT).equals(UNIREF_SCHEMAS["entry"], check_metadata=True)
 
 
-def test_component_schema_helpers_fail_non_struct_or_empty_inputs() -> None:
+@pytest.mark.parametrize(
+    ("xsd_rel_path", "root_tag", "expected_schemas"),
+    [
+        pytest.param(
+            Path("examples/pubmed_article/pubmed.xsd"),
+            "PubmedArticleSet",
+            PUBMED_SCHEMAS,
+            id="pubmed",
+        ),
+        pytest.param(
+            Path("examples/uniprot/uniprot.xsd"),
+            None,
+            UNIPROT_SCHEMAS,
+            id="uniprot",
+        ),
+    ],
+)
+def test_generate_pyarrow_schemas_at_level_pass_bundled_xsds(
+    xsd_rel_path: Path,
+    root_tag: str | None,
+    expected_schemas: dict[str, pa.Schema],
+) -> None:
+    """generate_pyarrow_schemas_at_level emits expected level-1 schemas for PubMed and UniProt."""
+    xsd_schema = load_schema(XSD_DATA_DIR / xsd_rel_path)
+    level_schemas = generate_pyarrow_schemas_at_level(xsd_schema, 1, root_tag=root_tag)
+    assert set(level_schemas.keys()) == set(expected_schemas.keys())
+    for tag, expected_schema in expected_schemas.items():
+        assert level_schemas[tag].equals(expected_schema, check_metadata=True)
+
+
+@pytest.mark.parametrize(
+    ("call", "error_type", "match"),
+    [
+        pytest.param(
+            partial(assemble_pyarrow_schema, []),
+            ValueError,
+            "Cannot assemble a PyArrow schema from an empty component",
+            id="empty-component-list",
+        ),
+        pytest.param(
+            partial(generate_pyarrow_struct, UNIPROT_XSD_SCHEMA, "copyright"),
+            NonStructXmlTagError,
+            "must have a complex type with attributes or child elements",
+            id="scalar-leaf-xml-tag",
+        ),
+        pytest.param(
+            partial(generate_pyarrow_schemas_at_level, EMPTY_MARKER_CHILD_SCHEMA, 1),
+            NonStructXmlTagError,
+            "empty complex type",
+            id="empty-marker-at-level",
+        ),
+    ],
+)
+def test_component_schema_helpers_fail_non_struct_or_empty_inputs(
+    call: Callable[[], object],
+    error_type: type[Exception],
+    match: str,
+) -> None:
     """assemble_pyarrow_schema, generate_pyarrow_struct, and generate_pyarrow_schemas_at_level reject invalid inputs."""
-    with pytest.raises(ValueError, match="Cannot assemble a PyArrow schema from an empty component"):
-        assemble_pyarrow_schema([])
-
-    uniprot_xsd = load_schema(XSD_DATA_DIR / "examples" / "uniprot" / "uniprot.xsd")
-    with pytest.raises(NonStructXmlTagError, match="must have a complex type with attributes or child elements"):
-        generate_pyarrow_struct(uniprot_xsd, "copyright")
-
-    empty_marker_child_schema = xmlschema.XMLSchema(
-        """<?xml version="1.0" encoding="UTF-8"?>
-        <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-          <xs:element name="root">
-            <xs:complexType>
-              <xs:sequence>
-                <xs:element name="flag"><xs:complexType/></xs:element>
-              </xs:sequence>
-            </xs:complexType>
-          </xs:element>
-        </xs:schema>
-        """
-    )
-    with pytest.raises(NonStructXmlTagError, match="empty complex type"):
-        generate_pyarrow_schemas_at_level(empty_marker_child_schema, 1)
+    with pytest.raises(error_type, match=match):
+        call()
 
 
-def test_render_schema_module_pass_codegen_rules_and_formatting(tmp_path: Path) -> None:
-    """render_schema_module and formatting helpers cover naming collisions, nillable variants, and line wrapping."""
-    assert fmt_str(r"path\to\item") == r'"path\\to\\item"'
-    assert fmt_str('quoted "value"') == "'quoted \"value\"'"
-    assert to_upper_snake("Type", strip_type_suffix=True) == "TYPE"
-    assert decode_sorted_metadata({b"xsd_type": b"xs:int", "comment": "doc"}) == {
-        "comment": "doc",
-        "xsd_type": "xs:int",
-    }
+@pytest.mark.parametrize(
+    ("raw_text", "expected_literal"),
+    [
+        pytest.param(r"path\to\item", r'"path\\to\\item"', id="backslashes"),
+        pytest.param('quoted "value"', "'quoted \"value\"'", id="double-quotes"),
+    ],
+)
+def test_fmt_str_pass_escaping_and_quotes(raw_text: str, expected_literal: str) -> None:
+    """fmt_str formats string literals with backslash escaping and quote selection."""
+    assert fmt_str(raw_text) == expected_literal
 
-    single_meta_spec = RenderedFieldSpec(
-        name="longCommentStruct",
-        type_expr="SHARED_ITEM_STRUCT",
-        nullable=True,
-        metadata={"comment": "A" * 110},
-    )
-    formatted_single_meta = format_field_indented(single_meta_spec, indent=8, trailing_comma=True)
+
+def test_decode_sorted_metadata_pass_mixed_bytes_and_str() -> None:
+    """decode_sorted_metadata decodes byte keys and values and sorts entries by key."""
+    decoded = decode_sorted_metadata({b"xsd_type": b"xs:int", "comment": "doc"})
+    assert decoded == {"comment": "doc", "xsd_type": "xs:int"}
+    assert list(decoded) == ["comment", "xsd_type"]
+
+
+def test_format_field_indented_pass_long_single_metadata_wraps() -> None:
+    """format_field_indented wraps a long single-entry metadata dictionary across lines."""
+    formatted_single_meta = format_field_indented(LONG_COMMENT_FIELD_SPEC, indent=8, trailing_comma=True)
     assert "metadata={\n" in formatted_single_meta
-    assert f'"comment": "{"A" * 110}"\n' in formatted_single_meta
+    assert f'"comment": "{LONG_COMMENT_TEXT}"\n' in formatted_single_meta
 
-    medium_field = RenderedFieldSpec(
-        name="mediumField",
-        type_expr="pa.string()",
-        nullable=False,
-        metadata={"xsd_type": "xs:string"},
-    )
-    wrapped_one_line = format_struct_assignment(
-        "VERY_LONG_COMPONENT_IDENTIFIER_FOR_SINGLE_FIELD_WRAP_TEST_STRUCT",
-        [medium_field],
-    )
-    assert wrapped_one_line.startswith("VERY_LONG_COMPONENT_IDENTIFIER_FOR_SINGLE_FIELD_WRAP_TEST_STRUCT")
-    assert "\n    [pa.field(" in wrapped_one_line
 
-    wrapped_multi_line = format_struct_assignment(
-        "SHORT_STRUCT",
-        [single_meta_spec],
-    )
-    assert "pa.struct(\n    [\n        pa.field(" in wrapped_multi_line
+@pytest.mark.parametrize(
+    ("const_name", "fields", "expected_snippet"),
+    [
+        pytest.param(
+            "VERY_LONG_COMPONENT_IDENTIFIER_FOR_SINGLE_FIELD_WRAP_TEST_STRUCT",
+            [MEDIUM_FIELD_SPEC],
+            "\n    [pa.field(",
+            id="long-identifier-single-field",
+        ),
+        pytest.param(
+            "SHORT_STRUCT",
+            [LONG_COMMENT_FIELD_SPEC],
+            "pa.struct(\n    [\n        pa.field(",
+            id="multiline-field-spec",
+        ),
+    ],
+)
+def test_format_struct_assignment_pass_line_wrapping(
+    const_name: str,
+    fields: list[RenderedFieldSpec],
+    expected_snippet: str,
+) -> None:
+    """format_struct_assignment wraps single-line and multi-line field expressions within line limits."""
+    rendered = format_struct_assignment(const_name, fields)
+    assert rendered.startswith(const_name)
+    assert expected_snippet in rendered
 
+
+def test_format_schema_exports_pass_short_scalar_schema() -> None:
+    """format_schema_exports emits inline assemble_pyarrow_schema calls for short scalar schemas."""
     short_scalar_exports = format_schema_exports(
         {"s": RenderedFieldSpec(name="#text", type_expr="pa.string()", nullable=True, metadata=None)},
         {},
@@ -266,6 +364,9 @@ def test_render_schema_module_pass_codegen_rules_and_formatting(tmp_path: Path) 
         in short_scalar_exports
     )
 
+
+def test_render_schema_module_pass_codegen_rules_and_collisions(tmp_path: Path) -> None:
+    """render_schema_module resolves naming collisions, nillable variants, and long scalar docstrings."""
     xsd_path = tmp_path / "codegen_edge_cases.xsd"
     long_doc = "Documentation text that exceeds one hundred and twenty characters on a single line " * 2
     xsd_path.write_text(

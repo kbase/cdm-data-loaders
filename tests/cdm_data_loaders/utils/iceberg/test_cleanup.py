@@ -205,13 +205,30 @@ def test_iceberg_catalog_cleanup_pass_cross_thread_sql_catalog_disposal(
     assert sqlite_warnings == []
 
 
-def test_iceberg_catalog_cleanup_pass_sql_catalog_integrity_error_becomes_namespace_exists() -> None:
+@pytest.mark.parametrize(
+    ("namespace", "properties"),
+    [
+        pytest.param("ns_one", None, id="without-properties"),
+        pytest.param("ns_two", {"owner": "cdm"}, id="with-properties"),
+    ],
+)
+def test_iceberg_catalog_cleanup_pass_sql_catalog_create_namespace(
+    namespace: str,
+    properties: dict[str, str] | None,
+) -> None:
+    """SqlCatalog.create_namespace creates namespaces with and without properties when cleanup is installed."""
+    install_iceberg_catalog_cleanup()
+    with SqlCatalog("create_ns", uri="sqlite:///:memory:") as catalog:
+        catalog.create_namespace(namespace, properties)
+        assert (namespace,) in catalog.list_namespaces()
+
+
+def test_iceberg_catalog_cleanup_fail_sql_catalog_integrity_error_becomes_namespace_exists() -> None:
     """SqlCatalog.create_namespace translates SQLAlchemy IntegrityError into NamespaceAlreadyExistsError."""
     install_iceberg_catalog_cleanup()
-    with SqlCatalog("dup_ns", uri="sqlite:///:memory:") as catalog:
-        catalog.create_namespace("ns_one")
-        with (
-            patch("sqlalchemy.orm.Session.commit", side_effect=IntegrityError("INSERT", {}, Exception("UNIQUE"))),
-            pytest.raises(NamespaceAlreadyExistsError, match="Namespace ns_two already exists"),
-        ):
-            catalog.create_namespace("ns_two", {"owner": "cdm"})
+    with (
+        SqlCatalog("dup_ns", uri="sqlite:///:memory:") as catalog,
+        patch("sqlalchemy.orm.Session.commit", side_effect=IntegrityError("INSERT", {}, Exception("UNIQUE"))),
+        pytest.raises(NamespaceAlreadyExistsError, match="Namespace ns_two already exists"),
+    ):
+        catalog.create_namespace("ns_two", {"owner": "cdm"})

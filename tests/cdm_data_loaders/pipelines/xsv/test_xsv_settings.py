@@ -391,37 +391,58 @@ def test_xsv_settings_pass_generates_pyarrow_schema_for_jsonl_format(
     assert settings.pyarrow_schema == convert_xsv_schema_to_pyarrow(settings.validated_schema)
 
 
+@pytest.mark.parametrize(
+    ("use_custom_metaschema", "expected_cache_size"),
+    [
+        pytest.param(False, 0, id="draft-2020-12-skips-metaschema"),
+        pytest.param(True, 1, id="custom-metaschema-lazy-loads"),
+    ],
+)
 def test_xsv_settings_pass_lazy_loads_and_validates_custom_metaschema(
+    settings_factory: Callable[..., XsvIngestSettings],
+    use_custom_metaschema: bool,
+    expected_cache_size: int,
+) -> None:
+    """XsvIngestSettings leaves the custom XSV metaschema unloaded for Draft 2020-12 and lazily loads it when declared."""
+    schema: dict[str, Any] = (
+        {**DEFAULT_XSV_SCHEMA, "$schema": CUSTOM_META_SCHEMA_URI}
+        if use_custom_metaschema
+        else {k: v for k, v in DEFAULT_XSV_SCHEMA.items() if k != "x-xsv-config"}
+    )
+    settings = settings_factory(schema=schema)
+    assert settings.validated_schema.has_xsv_metaschema is use_custom_metaschema
+    assert get_xsv_meta_schema.cache_info().currsize == expected_cache_size
+
+
+@pytest.mark.parametrize(
+    "corrupt_bundled_metaschema",
+    [False, True],
+    ids=["invalid-xsv-config-delimiter", "corrupt-bundled-metaschema"],
+)
+def test_xsv_settings_fail_custom_metaschema_validation(
     settings_factory: Callable[..., XsvIngestSettings],
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    corrupt_bundled_metaschema: bool,
 ) -> None:
-    """XsvIngestSettings lazily loads and validates the custom XSV metaschema only when needed and validates pipeline schemas against it."""
-    plain_draft_schema = {k: v for k, v in DEFAULT_XSV_SCHEMA.items() if k != "x-xsv-config"}
-    plain_settings = settings_factory(schema=plain_draft_schema)
-    assert plain_settings.validated_schema.has_xsv_metaschema is False
-    assert get_xsv_meta_schema.cache_info().currsize == 0
+    """XsvIngestSettings raises RuntimeError when a schema violates x-xsv-config or the bundled metaschema is invalid."""
+    custom_schema: dict[str, Any] = {**DEFAULT_XSV_SCHEMA, "$schema": CUSTOM_META_SCHEMA_URI}
+    if corrupt_bundled_metaschema:
+        bad_meta_root = tmp_path / "bad_metaschema_pkg"
+        bad_meta_dir = bad_meta_root / "xsv_config" / "0.1.0"
+        bad_meta_dir.mkdir(parents=True)
+        (bad_meta_dir / "schema.json").write_text(
+            json.dumps({"$schema": VALID_SCHEMA_URI, "type": "not-a-valid-type"}),
+            encoding="utf-8",
+        )
 
-    custom_schema = {**DEFAULT_XSV_SCHEMA, "$schema": CUSTOM_META_SCHEMA_URI}
-    custom_settings = settings_factory(schema=custom_schema)
-    assert custom_settings.validated_schema.has_xsv_metaschema is True
-    assert get_xsv_meta_schema.cache_info().currsize == 1
+        def _bad_files(_pkg: object) -> Path:
+            return bad_meta_root
 
-    invalid_pipeline_schema = {
-        **custom_schema,
-        "x-xsv-config": {"x-delimiter": "::"},
-    }
+        monkeypatch.setattr(importlib.resources, "files", _bad_files)
+        target_schema = custom_schema
+    else:
+        target_schema = {**custom_schema, "x-xsv-config": {"x-delimiter": "::"}}
+
     with pytest.raises(RuntimeError, match="Could not load JSON Schema"):
-        settings_factory(schema=invalid_pipeline_schema)
-
-    get_xsv_meta_schema.cache_clear()
-    bad_meta_root = tmp_path / "bad_metaschema_pkg"
-    bad_meta_dir = bad_meta_root / "xsv_config" / "0.1.0"
-    bad_meta_dir.mkdir(parents=True)
-    (bad_meta_dir / "schema.json").write_text(
-        json.dumps({"$schema": VALID_SCHEMA_URI, "type": "not-a-valid-type"}),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(importlib.resources, "files", lambda _pkg: bad_meta_root)
-    with pytest.raises(RuntimeError, match="Could not load JSON Schema"):
-        settings_factory(schema=custom_schema)
+        settings_factory(schema=target_schema)

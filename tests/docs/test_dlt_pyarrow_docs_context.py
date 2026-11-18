@@ -150,37 +150,92 @@ def test_format_dlt_column_def_orders_keys_and_nested_hint(
     assert format_dlt_column_def(col_def, is_nested=is_nested) == expected
 
 
-def test_format_arrow_field_summary_and_iceberg_slot_summary_variants() -> None:
-    """format_arrow_field_summary and format_iceberg_slot_summary format metadata, nullability, and slot kinds."""
-    plain_field = pa.field("code", pa.int16(), nullable=True)
-    meta_field = pa.field("id", pa.int64(), nullable=False, metadata={"comment": "c", "doc": "d"})
-    assert format_arrow_field_summary(plain_field, include_metadata=False) == "`pa.int16()`, `nullable=True`"
-    assert format_arrow_field_summary(plain_field, include_metadata=True) == "`pa.int16()`, `nullable=True` (—)"
-    assert (
-        format_arrow_field_summary(meta_field, include_metadata=True)
-        == "`pa.int64()`, `nullable=False` (`comment`, `doc`)"
-    )
+@pytest.mark.parametrize(
+    ("field", "include_metadata", "expected"),
+    [
+        pytest.param(
+            pa.field("code", pa.int16(), nullable=True),
+            False,
+            "`pa.int16()`, `nullable=True`",
+            id="without-metadata",
+        ),
+        pytest.param(
+            pa.field("code", pa.int16(), nullable=True),
+            True,
+            "`pa.int16()`, `nullable=True` (—)",
+            id="empty-metadata",
+        ),
+        pytest.param(
+            pa.field("id", pa.int64(), nullable=False, metadata={"comment": "c", "doc": "d"}),
+            True,
+            "`pa.int64()`, `nullable=False` (`comment`, `doc`)",
+            id="populated-metadata",
+        ),
+    ],
+)
+def test_format_arrow_field_summary_variants(
+    field: pa.Field,
+    include_metadata: bool,
+    expected: str,
+) -> None:
+    """format_arrow_field_summary formats field type, nullability, and optional metadata keys."""
+    assert format_arrow_field_summary(field, include_metadata=include_metadata) == expected
 
-    assert (
-        format_iceberg_slot_summary(LongType(), slot_kind=SlotKind.ROOT_COLUMN, required=True, doc="a|b")
-        == r"`LongType()`, `required=True`, `doc='a\|b'`"
-    )
-    assert (
-        format_iceberg_slot_summary(IntegerType(), slot_kind=SlotKind.STRUCT_FIELD, required=False, doc=None)
-        == "`IntegerType()`, `required=False`, `doc=None`"
-    )
-    assert (
-        format_iceberg_slot_summary(StringType(), slot_kind=SlotKind.LIST_ELEMENT, required=True, doc=None)
-        == "`StringType()`, `element_required=True` *(no `doc` slot)*"
-    )
-    assert (
-        format_iceberg_slot_summary(StringType(), slot_kind=SlotKind.MAP_KEY, required=True, doc=None)
-        == "`StringType()`, `key` *(no `doc` slot)*"
-    )
-    assert (
-        format_iceberg_slot_summary(LongType(), slot_kind=SlotKind.MAP_VALUE, required=False, doc=None)
-        == "`LongType()`, `value_required=False` *(no `doc` slot)*"
-    )
+
+@pytest.mark.parametrize(
+    ("iceberg_type", "slot_kind", "required", "doc", "expected"),
+    [
+        pytest.param(
+            LongType(),
+            SlotKind.ROOT_COLUMN,
+            True,
+            "a|b",
+            r"`LongType()`, `required=True`, `doc='a\|b'`",
+            id="root-column-escaped-doc",
+        ),
+        pytest.param(
+            IntegerType(),
+            SlotKind.STRUCT_FIELD,
+            False,
+            None,
+            "`IntegerType()`, `required=False`, `doc=None`",
+            id="struct-field-none-doc",
+        ),
+        pytest.param(
+            StringType(),
+            SlotKind.LIST_ELEMENT,
+            True,
+            None,
+            "`StringType()`, `element_required=True` *(no `doc` slot)*",
+            id="list-element",
+        ),
+        pytest.param(
+            StringType(),
+            SlotKind.MAP_KEY,
+            True,
+            None,
+            "`StringType()`, `key` *(no `doc` slot)*",
+            id="map-key",
+        ),
+        pytest.param(
+            LongType(),
+            SlotKind.MAP_VALUE,
+            False,
+            None,
+            "`LongType()`, `value_required=False` *(no `doc` slot)*",
+            id="map-value",
+        ),
+    ],
+)
+def test_format_iceberg_slot_summary_variants(
+    iceberg_type: IcebergType,
+    slot_kind: SlotKind,
+    required: bool,
+    doc: str | None,
+    expected: str,
+) -> None:
+    """format_iceberg_slot_summary formats root, struct, list element, map key, and map value slots."""
+    assert format_iceberg_slot_summary(iceberg_type, slot_kind=slot_kind, required=required, doc=doc) == expected
 
 
 def test_build_dlt_pyarrow_flat_and_nested_dlt_column_rows_match_fixtures() -> None:
@@ -235,29 +290,36 @@ def test_build_dlt_pyarrow_nested_path_rows_covers_all_deep_nested_nodes() -> No
     assert "`doc='Annotation text'`" in note_row.iceberg_summary
 
 
-def test_collect_nested_and_identifier_cursors_support_large_list_and_map_branches() -> None:
-    """collect_nested_slot_rows handles large_list and collect_identifier_slot_rows handles large_list and map."""
-    in_schema = pa.schema(
-        [
-            pa.field(
-                "bigItems",
-                pa.large_list(pa.field("bigElem", pa.string(), nullable=False, metadata={"doc": "Elem doc"})),
-                nullable=False,
-                metadata={"doc": "Big list doc"},
-            ),
-            pa.field(
-                "scoreMap",
-                pa.map_(
-                    pa.field("mapKey", pa.string(), nullable=False, metadata={"doc": "Key doc"}),
-                    pa.field("mapVal", pa.int64(), nullable=True, metadata={"doc": "Val doc"}),
-                ),
-                nullable=True,
-                metadata={"doc": "Map doc"},
-            ),
-        ]
+def _synthetic_large_list_and_map_schemas() -> tuple[pa.Schema, pa.Schema, pa.Schema]:
+    """Construct input, dlt-normalized, and Parquet-compliant Arrow schemas with large_list and map columns.
+
+    :return: Tuple of ``(in_schema, dlt_schema, pq_schema)``.
+    :rtype: tuple[pa.Schema, pa.Schema, pa.Schema]
+    """
+    big_items_field = pa.field(
+        "bigItems",
+        pa.large_list(pa.field("bigElem", pa.string(), nullable=False, metadata={"doc": "Elem doc"})),
+        nullable=False,
+        metadata={"doc": "Big list doc"},
     )
-    dlt_schema = pa.schema([in_schema.field(0).with_name("big_items"), in_schema.field(1).with_name("score_map")])
+    score_map_field = pa.field(
+        "scoreMap",
+        pa.map_(
+            pa.field("mapKey", pa.string(), nullable=False, metadata={"doc": "Key doc"}),
+            pa.field("mapVal", pa.int64(), nullable=True, metadata={"doc": "Val doc"}),
+        ),
+        nullable=True,
+        metadata={"doc": "Map doc"},
+    )
+    in_schema = pa.schema([big_items_field, score_map_field])
+    dlt_schema = pa.schema([big_items_field.with_name("big_items"), score_map_field.with_name("score_map")])
     pq_schema = with_parquet_compliant_list_elements(dlt_schema)
+    return in_schema, dlt_schema, pq_schema
+
+
+def test_collect_nested_slot_rows_supports_large_list_and_map_branches() -> None:
+    """collect_nested_slot_rows and build_dlt_pyarrow_nested_path_rows handle large_list and map columns."""
+    _, dlt_schema, pq_schema = _synthetic_large_list_and_map_schemas()
     ice_schema = IcebergSchema(
         NestedField(
             field_id=1,
@@ -312,12 +374,12 @@ def test_collect_nested_and_identifier_cursors_support_large_list_and_map_branch
             input_path="big_items",
             output_path="big_items",
             slot_kind=SlotKind.ROOT_COLUMN,
-            input_field=dlt_schema.field("big_items"),
-            parquet_field=pq_schema.field("big_items"),
+            input_field=dlt_schema[0],
+            parquet_field=pq_schema[0],
             iceberg_type=ice_schema.find_field("big_items").field_type,
             iceberg_required=True,
             iceberg_doc="Big list doc",
-            scan_field=scan_schema.field("big_items"),
+            scan_field=scan_schema[0],
         ),
         nested_rows,
     )
@@ -330,28 +392,38 @@ def test_collect_nested_and_identifier_cursors_support_large_list_and_map_branch
         "score_map.mapVal",
     ]
 
+
+@pytest.mark.parametrize(
+    ("field_index", "expected_parquet_paths"),
+    [
+        pytest.param(0, ["big_items", "big_items.element"], id="large-list"),
+        pytest.param(1, ["score_map", "score_map.mapKey", "score_map.mapVal"], id="map"),
+    ],
+)
+def test_collect_identifier_slot_rows_supports_large_list_and_map_branches(
+    field_index: int,
+    expected_parquet_paths: list[str],
+) -> None:
+    """collect_identifier_slot_rows handles large_list element renaming and map key/value slots."""
+    in_schema, dlt_schema, pq_schema = _synthetic_large_list_and_map_schemas()
+    in_top = in_schema[field_index]
+    dlt_top = dlt_schema[field_index]
+    pq_top = pq_schema[field_index]
     ident_rows: list[DltPyArrowIdentifierRow] = []
-    for in_top, dlt_top, pq_top in zip(in_schema, dlt_schema, pq_schema, strict=True):
-        collect_identifier_slot_rows(
-            IdentifierSlotCursor(
-                fixture_name="synthetic",
-                input_path=in_top.name,
-                dlt_path=dlt_top.name,
-                parquet_path=pq_top.name,
-                slot_kind=SlotKind.ROOT_COLUMN,
-                input_field=in_top,
-                dlt_field=dlt_top,
-                parquet_field=pq_top,
-            ),
-            ident_rows,
-        )
-    assert [r.parquet_path for r in ident_rows] == [
-        "big_items",
-        "big_items.element",
-        "score_map",
-        "score_map.mapKey",
-        "score_map.mapVal",
-    ]
+    collect_identifier_slot_rows(
+        IdentifierSlotCursor(
+            fixture_name="synthetic",
+            input_path=in_top.name,
+            dlt_path=dlt_top.name,
+            parquet_path=pq_top.name,
+            slot_kind=SlotKind.ROOT_COLUMN,
+            input_field=in_top,
+            dlt_field=dlt_top,
+            parquet_field=pq_top,
+        ),
+        ident_rows,
+    )
+    assert [r.parquet_path for r in ident_rows] == expected_parquet_paths
 
 
 def test_build_dlt_pyarrow_identifier_rows_and_page_materialization_pass() -> None:

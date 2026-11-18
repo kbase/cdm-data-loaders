@@ -880,25 +880,45 @@ def test_align_and_cast_table_casts_reorders_fills_missing_and_attaches_metadata
     assert align_and_cast_table(aligned, target_schema) is aligned
 
 
-def test_extract_schema_descriptions_and_output_table_hints() -> None:
-    """OutputTableHints registers isolated table descriptions, column descriptions, and Iceberg partitions on DltResource."""
-    commented_schema = pa.schema(
-        [
-            pa.field("uniprot_id", pa.string(), nullable=False, metadata={"comment": "Protein ID"}),
-            pa.field("uncommented", pa.string(), nullable=True),
-        ],
-        metadata={"comment": "Schema-level table comment"},
-    )
-    table_desc, col_descs = extract_schema_descriptions(commented_schema)
-    assert table_desc == "Schema-level table comment"
-    assert col_descs == {"uniprot_id": "Protein ID"}
-    assert extract_schema_descriptions(pa.schema([pa.field("x", pa.int64())])) == (None, {})
+COMMENTED_HINTS_SCHEMA: Final[pa.Schema] = pa.schema(
+    [
+        pa.field("uniprot_id", pa.string(), nullable=False, metadata={"comment": "Protein ID"}),
+        pa.field("uncommented", pa.string(), nullable=True),
+    ],
+    metadata={"comment": "Schema-level table comment"},
+)
 
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        pytest.param(
+            COMMENTED_HINTS_SCHEMA,
+            ("Schema-level table comment", {"uniprot_id": "Protein ID"}),
+            id="commented_schema",
+        ),
+        pytest.param(
+            pa.schema([pa.field("x", pa.int64())]),
+            (None, {}),
+            id="uncommented_schema",
+        ),
+    ],
+)
+def test_extract_schema_descriptions_pass_commented_and_uncommented(
+    schema: pa.Schema,
+    expected: tuple[str | None, dict[str, str]],
+) -> None:
+    """extract_schema_descriptions extracts schema and field comments or returns empty defaults when absent."""
+    assert extract_schema_descriptions(schema) == expected
+
+
+def test_output_table_hints_pass_apply_to_resource() -> None:
+    """OutputTableHints registers isolated table descriptions, column descriptions, and Iceberg partitions on DltResource."""
     resource = dlt.resource([{"uniprot_id": "P12345"}], name="src")
     bucket_count = 32
     hint = OutputTableHints(
         table_name="id_mapping",
-        pyarrow_schema=commented_schema,
+        pyarrow_schema=COMMENTED_HINTS_SCHEMA,
         description="Explicit override description",
         iceberg_partitions=(iceberg_partition.bucket(bucket_count, "uniprot_id"),),
     )
@@ -1193,30 +1213,46 @@ def test_source_file_propagated_to_table_transforms_in_xml_readers(
     assert xml_pages == {"items": [{"id": "x1", "source": "records.xml"}]}
 
 
-def test_make_record_router_pass_coerces_pydantic_base_model_and_custom_coercer() -> None:
-    """make_record_router coerces BaseModel instances when transform is None and coerces transformed dicts via record_coercer."""
+class _SecretItem(BaseModel):
+    id: SecretStr
 
-    class SecretItem(BaseModel):
-        id: SecretStr
 
-    target_schema = pa.schema([pa.field("id", pa.string(), nullable=False)])
-    schema_map = ArrowSchemaRegistry(registry={"items": target_schema})
+@pytest.mark.parametrize(
+    ("record", "transform", "schema_map", "source_file", "expected"),
+    [
+        pytest.param(
+            _SecretItem(id=SecretStr("s-1")),
+            None,
+            ArrowSchemaRegistry(registry={"items": pa.schema([pa.field("id", pa.string(), nullable=False)])}),
+            "batch.jsonl",
+            {"items": [{"id": "s-1"}]},
+            id="base_model_without_transform",
+        ),
+        pytest.param(
+            {"id": SecretStr("s-2")},
+            _dict_with_optional_ctx_param,
+            ArrowSchemaRegistry(registry={"items": SOURCED_ITEMS_SCHEMA}),
+            "sub/batch.jsonl",
+            {"items": [{"id": "s-2", "source": "batch.jsonl"}]},
+            id="dict_with_context_transform",
+        ),
+    ],
+)
+def test_make_record_router_pass_coerces_pydantic_base_model_and_custom_coercer(
+    record: BaseModel | dict[str, Any],
+    transform: TableTransformFn | None,
+    schema_map: ArrowSchemaRegistry,
+    source_file: str,
+    expected: dict[str, list[dict[str, Any]]],
+) -> None:
+    """make_record_router coerces BaseModel instances without a transform and transformed dicts via record_coercer."""
     router = make_record_router(
         "items",
+        transform=transform,
         schema_map=schema_map,
         record_coercer=coerce_pydantic_record_for_pyarrow,
     )
-    assert router(SecretItem(id=SecretStr("s-1")), "batch.jsonl") == {"items": [{"id": "s-1"}]}
-
-    transformed_router = make_record_router(
-        "items",
-        transform=_dict_with_optional_ctx_param,
-        schema_map=ArrowSchemaRegistry(registry={"items": SOURCED_ITEMS_SCHEMA}),
-        record_coercer=coerce_pydantic_record_for_pyarrow,
-    )
-    assert transformed_router({"id": SecretStr("s-2")}, "sub/batch.jsonl") == {
-        "items": [{"id": "s-2", "source": "batch.jsonl"}]
-    }
+    assert router(record, source_file) == expected
 
 
 def test_make_record_router_fail_rejects_base_model_when_transform_configured() -> None:

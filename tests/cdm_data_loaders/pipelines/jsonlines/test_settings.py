@@ -76,8 +76,8 @@ from tests.helpers.cli_assertions import (
     build_cli_arg_specs,
     check_settings,
     cts_expected,
+    make_cli_arg,
     register_temp_module,
-    settings_to_argv,
 )
 
 
@@ -812,6 +812,7 @@ def test_ncbi_datasets_settings_pass_defaults_and_precomputed_schemas(
     assert settings.schema_map == ArrowSchemaRegistry(registry=NCBI_DATASETS_SCHEMAS)
 
 
+@pytest.mark.parametrize("via_cli", [False, True], ids=["python-kwargs", "cli-args"])
 @pytest.mark.parametrize(
     ("locked_kwarg", "locked_flag", "locked_value"),
     [
@@ -827,15 +828,17 @@ def test_ncbi_datasets_settings_fail_locked_fields_rejected(
     locked_kwarg: str,
     locked_flag: str,
     locked_value: str,
+    via_cli: bool,
 ) -> None:
     """Locked ClassVar fields on NcbiDatasetsSettings are rejected as Python kwargs and CLI flags."""
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        NcbiDatasetsSettings(**test_defaults, **{locked_kwarg: locked_value})
-
-    base = NcbiDatasetsSettings(**test_defaults)
-    cli_args = [*settings_to_argv(base), locked_flag, locked_value]
-    with pytest.raises(SettingsError, match=f"unrecognized arguments: {locked_flag}"):
-        CliApp.run(NcbiDatasetsSettings, cli_args=cli_args)
+    if via_cli:
+        base_args = [arg for name, value in test_defaults.items() for arg in (make_cli_arg(name), str(value))]
+        cli_args = [*base_args, locked_flag, locked_value]
+        with pytest.raises(SettingsError, match=f"unrecognized arguments: {locked_flag}"):
+            CliApp.run(NcbiDatasetsSettings, cli_args=cli_args)
+    else:
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            NcbiDatasetsSettings(**test_defaults, **{locked_kwarg: locked_value})
 
 
 @pytest.mark.parametrize("kind", ["pydantic", "jsonschema"], ids=["pydantic", "jsonschema"])
@@ -870,43 +873,53 @@ def test_validated_jsonl_settings_pass_skips_pyarrow_conversion_for_jsonl_format
     assert spy.call_count == 0
 
 
+@pytest.mark.parametrize(
+    ("use_custom_metaschema", "expected_cache_size", "expected_table"),
+    [
+        pytest.param(False, 0, "widget", id="draft-2020-12-skips-metaschema"),
+        pytest.param(True, 1, "gadget", id="custom-metaschema-lazy-loads"),
+    ],
+)
 def test_jsonl_jsonschema_settings_pass_lazy_loads_and_validates_custom_metaschema(
     monkeypatch: pytest.MonkeyPatch,
     test_defaults: dict[str, Any],
     widget_schema: dict[str, Any],
+    use_custom_metaschema: bool,
+    expected_cache_size: int,
+    expected_table: str,
 ) -> None:
-    """JsonlJsonschemaIngestSettings leaves the custom metaschema unloaded for Draft 2020-12 and lazily loads/validates it for CUSTOM_META_SCHEMA_URI."""
-    standard_mod = register_temp_module(
-        monkeypatch,
-        "_test_jsonl_standard_metaschema",
-        ENTITY_SCHEMAS={"widget": widget_schema},
+    """JsonlJsonschemaIngestSettings leaves the custom metaschema unloaded for Draft 2020-12 and lazily loads it for CUSTOM_META_SCHEMA_URI."""
+    entity_schemas = (
+        {
+            "gadget": {
+                **GADGET_SCHEMA,
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "x-xsv-config": {"x-delimiter": "\t"},
+            }
+        }
+        if use_custom_metaschema
+        else {"widget": widget_schema}
     )
-    JsonlJsonschemaIngestSettings(
+    mod_name = register_temp_module(
+        monkeypatch,
+        "_test_jsonl_metaschema",
+        ENTITY_SCHEMAS=entity_schemas,
+    )
+    settings = JsonlJsonschemaIngestSettings(
         **test_defaults,
         dataset_name="test_ds",
-        entity_schemas=standard_mod,
+        entity_schemas=mod_name,
     )
-    assert get_xsv_meta_schema.cache_info().currsize == 0
+    assert get_xsv_meta_schema.cache_info().currsize == expected_cache_size
+    assert settings.schema_map is not None
+    assert expected_table in settings.schema_map.registry
 
-    custom_entity_schema = {
-        **GADGET_SCHEMA,
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "x-xsv-config": {"x-delimiter": "\t"},
-    }
-    custom_mod = register_temp_module(
-        monkeypatch,
-        "_test_jsonl_custom_metaschema",
-        ENTITY_SCHEMAS={"gadget": custom_entity_schema},
-    )
-    custom_settings = JsonlJsonschemaIngestSettings(
-        **test_defaults,
-        dataset_name="test_ds",
-        entity_schemas=custom_mod,
-    )
-    assert get_xsv_meta_schema.cache_info().currsize == 1
-    assert custom_settings.schema_map is not None
-    assert "gadget" in custom_settings.schema_map.registry
 
+def test_jsonl_jsonschema_settings_fail_invalid_custom_metaschema(
+    monkeypatch: pytest.MonkeyPatch,
+    test_defaults: dict[str, Any],
+) -> None:
+    """JsonlJsonschemaIngestSettings raises InvalidJsonlEntitySchemaError when a custom-metaschema entity violates x-xsv-config."""
     invalid_custom_mod = register_temp_module(
         monkeypatch,
         "_test_jsonl_invalid_custom_metaschema",

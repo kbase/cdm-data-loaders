@@ -1,6 +1,5 @@
 """Pure schema-object checks for the Arrow emitter."""
 
-import json
 from decimal import Decimal
 
 import pyarrow as pa
@@ -276,16 +275,28 @@ def test_build_metadata_pass_decimal_encoded_as_string() -> None:
     assert metadata == {"jsonschema": '{"multipleOf": "0.10"}'}
 
 
-def test_build_metadata_pass_original_union() -> None:
+@pytest.mark.parametrize(
+    ("emit_unions_as_json", "expected_field"),
+    [
+        pytest.param(
+            True,
+            pa.field("value", pa.string(), metadata={"original_union": '["string", "integer"]'}),
+            id="record-original-union",
+        ),
+        pytest.param(
+            False,
+            pa.field("value", pa.string()),
+            id="omit-original-union",
+        ),
+    ],
+)
+def test_build_metadata_pass_original_union(emit_unions_as_json: bool, expected_field: pa.Field) -> None:
     """Collapsed unions record their non-null members when requested."""
     document = JsonSchemaReader().read(
         {"$schema": DIALECT, "properties": {"value": {"type": ["string", "integer", "null"]}}}
     )
-    emitter = PyArrowEmitter(emit_unions_as_json=True)
-    schema = emitter.emit(document)
-    assert schema.field("value").type == pa.string()
-    assert json.loads(schema.field("value").metadata[b"original_union"]) == ["string", "integer"]
-    assert PyArrowEmitter().emit(document).field("value").metadata is None
+    schema = PyArrowEmitter(emit_unions_as_json=emit_unions_as_json).emit(document)
+    assert schema.field("value").equals(expected_field, check_metadata=True)
 
 
 def test_merge_format_map_pass_non_mapping_unchanged() -> None:

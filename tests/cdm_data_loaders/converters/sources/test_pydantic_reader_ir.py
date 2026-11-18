@@ -6,7 +6,9 @@ from typing import Annotated, Final
 
 import pyarrow as pa
 import pytest
+from linkml_runtime.linkml_model.meta import SchemaDefinition
 from pydantic import BaseModel, Field
+from pyspark.sql.types import StructType
 
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
@@ -91,44 +93,63 @@ def test_pyarrow_reader_pass_read_field_and_read_node() -> None:
     assert naive_ts_node.nullable is True
 
 
-def test_pydantic_reader_pass_emit_to_pyarrow_pyspark_dlt_jsonschema_linkml() -> None:
+class LinkMLCompatibleModel(BaseModel):
+    """Model with scalar and nested list fields compatible with LinkML emission."""
+
+    id: str
+    count: int
+    tags: list[NestedTag]
+
+
+@pytest.mark.parametrize(
+    ("target", "model_cls", "emitter"),
+    [
+        ("pyarrow", SampleAssemblyRecord, PyArrowEmitter()),
+        ("pyspark", SampleAssemblyRecord, PySparkEmitter()),
+        ("dlt", SampleAssemblyRecord, DltEmitter(schema_name="sample_assembly")),
+        ("jsonschema", SampleAssemblyRecord, JsonSchemaEmitter()),
+        ("linkml", LinkMLCompatibleModel, LinkMLEmitter()),
+    ],
+    ids=["pyarrow", "pyspark", "dlt", "jsonschema", "linkml"],
+)
+def test_pydantic_reader_pass_emit_to_pyarrow_pyspark_dlt_jsonschema_linkml(
+    target: str,
+    model_cls: type[BaseModel],
+    emitter: PyArrowEmitter | PySparkEmitter | DltEmitter | JsonSchemaEmitter | LinkMLEmitter,
+) -> None:
     """IR document from PydanticReader can be emitted to PyArrow, PySpark, dlt, JSON Schema, and LinkML."""
-    doc = PydanticReader().read(SampleAssemblyRecord)
-
-    arrow_schema = PyArrowEmitter().emit(doc)
-    assert isinstance(arrow_schema, pa.Schema)
-    assert arrow_schema.field("accession").type == pa.string()
-    assert arrow_schema.field("accession").nullable is False
-    assert arrow_schema.field("coverage").type == pa.decimal128(8, 2)
-    assert arrow_schema.field("release_date").type == pa.date32()
-
-    spark_schema = PySparkEmitter().emit(doc)
-    spark_fields = {f.name: f for f in spark_schema.fields}
-    assert spark_fields["accession"].nullable is False
-    assert spark_fields["checksum"].nullable is True
-
-    dlt_stored = DltEmitter(schema_name="sample_assembly").emit(doc)
-    dlt_columns = dlt_stored["tables"]["sample_assembly"]["columns"]
-    assert dlt_columns["accession"]["data_type"] == "text"
-    assert dlt_columns["accession"]["nullable"] is False
-    assert dlt_columns["contig_count"]["data_type"] == "bigint"
-    assert dlt_columns["coverage"]["data_type"] == "decimal"
-
-    json_schema = JsonSchemaEmitter().emit(doc)
-    assert json_schema["type"] == "object"
-    assert "accession" in json_schema["required"]
-    assert json_schema["properties"]["accession"]["description"] == "Primary assembly accession"
-
-    # linkml supports object/array/scalar trees (without dynamic dict maps)
-    class LinkMLCompatibleModel(BaseModel):
-        id: str
-        count: int
-        tags: list[NestedTag]
-
-    linkml_doc = PydanticReader().read(LinkMLCompatibleModel)
-    linkml_schema = LinkMLEmitter().emit(linkml_doc)
-    assert linkml_schema.name == "LinkMLCompatibleModel"
-    assert "LinkMLCompatibleModel" in linkml_schema.classes
+    doc = PydanticReader().read(model_cls)
+    emitted = emitter.emit(doc)
+    match target:
+        case "pyarrow":
+            assert isinstance(emitted, pa.Schema)
+            assert emitted.field("accession").type == pa.string()
+            assert emitted.field("accession").nullable is False
+            assert emitted.field("coverage").type == pa.decimal128(8, 2)
+            assert emitted.field("release_date").type == pa.date32()
+        case "pyspark":
+            assert isinstance(emitted, StructType)
+            spark_fields = {f.name: f for f in emitted.fields}
+            assert spark_fields["accession"].nullable is False
+            assert spark_fields["checksum"].nullable is True
+        case "dlt":
+            assert isinstance(emitted, dict)
+            dlt_columns = emitted["tables"]["sample_assembly"]["columns"]
+            assert dlt_columns["accession"]["data_type"] == "text"
+            assert dlt_columns["accession"]["nullable"] is False
+            assert dlt_columns["contig_count"]["data_type"] == "bigint"
+            assert dlt_columns["coverage"]["data_type"] == "decimal"
+        case "jsonschema":
+            assert isinstance(emitted, dict)
+            assert emitted["type"] == "object"
+            assert "accession" in emitted["required"]
+            assert emitted["properties"]["accession"]["description"] == "Primary assembly accession"
+        case "linkml":
+            assert isinstance(emitted, SchemaDefinition)
+            assert emitted.name == "LinkMLCompatibleModel"
+            assert "LinkMLCompatibleModel" in emitted.classes
+        case _:
+            pytest.fail(f"Unhandled target: {target}")
 
 
 @pytest.mark.parametrize(

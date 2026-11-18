@@ -243,30 +243,48 @@ def test_get_xsv_config_schema_fail_missing_or_non_mapping_xsv_config_property(
         get_xsv_config_schema()
 
 
-def test_validated_schema_pass_lazy_loads_custom_metaschema_only_when_referenced() -> None:
+@pytest.mark.parametrize(
+    ("schema", "expected_currsize", "expect_registered"),
+    [
+        pytest.param(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+            },
+            0,
+            False,
+            id="standard-draft-2020-12",
+        ),
+        pytest.param(
+            {
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "type": "object",
+                "required": ["id"],
+                "properties": {"id": {"type": "string"}},
+                "x-xsv-config": {"x-delimiter": "\t", "x-has-header": True},
+            },
+            1,
+            True,
+            id="custom-xsv-metaschema",
+        ),
+    ],
+)
+def test_validated_schema_pass_lazy_loads_custom_metaschema_only_when_referenced(
+    schema: dict[str, Any],
+    expected_currsize: int,
+    expect_registered: bool,
+) -> None:
     """Leave the custom metaschema unloaded for standard drafts and register it for ``CUSTOM_META_SCHEMA_URI``."""
-    standard_schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {"id": {"type": "string"}},
-    }
-    validated_standard = ValidatedSchema(jsonschema=standard_schema)
-    assert validated_standard.jsonschema == standard_schema
-    assert get_xsv_meta_schema.cache_info().currsize == 0
-    assert jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None) is None  # type: ignore[arg-type]
+    validated = ValidatedSchema(jsonschema=schema)
+    assert validated.jsonschema == schema
+    assert get_xsv_meta_schema.cache_info().currsize == expected_currsize
+    registered_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None)  # type: ignore[arg-type]
+    assert (registered_cls is not None) is expect_registered
 
-    custom_schema = {
-        "$schema": CUSTOM_META_SCHEMA_URI,
-        "type": "object",
-        "required": ["id"],
-        "properties": {"id": {"type": "string"}},
-        "x-xsv-config": {"x-delimiter": "\t", "x-has-header": True},
-    }
-    validated_custom = ValidatedSchema(jsonschema=custom_schema)
-    assert validated_custom.jsonschema == custom_schema
-    assert get_xsv_meta_schema.cache_info().currsize == 1
-    assert jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None) is not None  # type: ignore[arg-type]
 
+def test_validated_schema_fail_invalid_custom_metaschema() -> None:
+    """Raise ``SchemaError`` when a ``CUSTOM_META_SCHEMA_URI`` schema violates ``x-xsv-config`` constraints."""
     invalid_custom_schema = {
         "$schema": CUSTOM_META_SCHEMA_URI,
         "type": "object",
@@ -418,16 +436,26 @@ def test_resolve_jsonschema_validator_and_check_document_pass_supported_drafts(d
     check_jsonschema_document(doc)
 
 
-def test_ensure_custom_metaschema_registered_and_allow_custom_xsv_flag() -> None:
-    """Register the custom XSV validator on demand and reject self-referential custom URIs when disallowed."""
-    ensure_custom_metaschema_registered({"$schema": DRAFT_2020_12_SCHEMA_URI})
-    assert get_xsv_meta_schema.cache_info().currsize == 0
+@pytest.mark.parametrize(
+    ("schema_uri", "expected_currsize"),
+    [
+        pytest.param(DRAFT_2020_12_SCHEMA_URI, 0, id="draft-2020-12-skips-load"),
+        pytest.param(CUSTOM_META_SCHEMA_URI, 1, id="custom-xsv-loads"),
+    ],
+)
+def test_ensure_custom_metaschema_registered_pass_lazy_registration(
+    schema_uri: str,
+    expected_currsize: int,
+) -> None:
+    """Register the custom XSV validator only when ``$schema`` matches ``CUSTOM_META_SCHEMA_URI``."""
+    ensure_custom_metaschema_registered({"$schema": schema_uri})
+    assert get_xsv_meta_schema.cache_info().currsize == expected_currsize
 
+
+def test_resolve_jsonschema_validator_fail_disallowed_custom_xsv() -> None:
+    """Reject self-referential ``CUSTOM_META_SCHEMA_URI`` when ``allow_custom_xsv`` is ``False``."""
     with pytest.raises(ValueError, match=r"Custom metaschema cannot declare itself"):
         resolve_jsonschema_validator({"$schema": CUSTOM_META_SCHEMA_URI}, allow_custom_xsv=False)
-
-    ensure_custom_metaschema_registered({"$schema": CUSTOM_META_SCHEMA_URI})
-    assert get_xsv_meta_schema.cache_info().currsize == 1
 
 
 @pytest.mark.parametrize(

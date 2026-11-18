@@ -185,7 +185,7 @@ def test_read_fail_document(schema: dict[str, Any] | bool) -> None:
 
 
 def test_read_pass_custom_registry_and_empty_schemas() -> None:
-    """Custom extensions and empty object schemas need no nonempty required list."""
+    """Custom extensions and empty object subschemas need no nonempty required list."""
     registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-owned", {"type": ["array", "null"]}))
     root = (
         JsonSchemaReader(registry)
@@ -206,4 +206,8 @@ def test_read_pass_custom_registry_and_empty_schemas() -> None:
     assert root.properties[1].node.type == "unknown"
     assert root.properties[2].node.any_of == ()
     assert root.properties[2].node.prefix_items == ()
+
+
+def test_read_pass_nullable_object_root() -> None:
+    """Object-null union root schemas preserve nullable=True on the root node."""
     assert JsonSchemaReader().read({"$schema": DIALECT, "type": ["object", "null"]}).root.nullable is True

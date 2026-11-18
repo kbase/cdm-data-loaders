@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pyarrow as pa
 import pytest
@@ -58,23 +58,52 @@ def test_uniprot_idmapping_settings_all_params_set(
     check_settings(settings, test_uniprot_idmapping_settings_reconciled)
 
 
-def test_uniprot_idmapping_settings_defaults_schema_override_and_validation(tmp_path: Path) -> None:
-    """``UniProtIdMappingSettings`` sets preset defaults, binds Arrow transforms, derives custom schemas, and validates ``partition_buckets``."""
+CUSTOM_PARTITION_BUCKETS: Final[int] = 16
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_buckets"),
+    [
+        pytest.param("preset_defaults", DEFAULT_PARTITION_BUCKETS, id="preset-defaults"),
+        pytest.param("custom_schema_file", DEFAULT_PARTITION_BUCKETS, id="custom-schema-file"),
+        pytest.param(
+            "jsonl_custom_buckets",
+            CUSTOM_PARTITION_BUCKETS,
+            id="jsonl-custom-partition-buckets",
+        ),
+    ],
+)
+def test_uniprot_idmapping_settings_defaults_schema_override_and_validation(
+    tmp_path: Path,
+    scenario: str,
+    expected_buckets: int,
+) -> None:
+    """``UniProtIdMappingSettings`` sets preset defaults, binds Arrow transforms, and derives custom schemas."""
     input_dir = tmp_path / "in"
     input_dir.mkdir()
+
+    overrides: dict[str, object] = {}
+    custom_schema_file = tmp_path / "custom_idmapping.schema.json"
+    if scenario == "custom_schema_file":
+        custom_schema_doc = json.loads(IDMAPPING_SCHEMA_FILE.read_text(encoding="utf-8"))
+        custom_schema_doc["properties"]["extra_col"] = {"type": ["integer", "null"], "description": "Optional rank"}
+        custom_schema_file.write_text(json.dumps(custom_schema_doc), encoding="utf-8")
+        overrides["schema_file"] = str(custom_schema_file)
+    elif scenario == "jsonl_custom_buckets":
+        overrides["loader_file_format"] = "jsonl"
+        overrides["partition_buckets"] = CUSTOM_PARTITION_BUCKETS
+
     settings = make_cts_settings(
         UniProtIdMappingSettings,
         tmp_path,
         input_dir=str(input_dir),
         use_destination=LOCAL_FS,
+        **overrides,
     )
     assert settings.dataset_name == PIPELINE_NAME
     assert settings.table_name == ID_MAPPING_TABLE_NAME
     assert settings.file_glob == DEFAULT_IDMAPPING_FILE_GLOB
-    assert settings.schema_file == IDMAPPING_SCHEMA_FILE
-    assert settings.partition_buckets == DEFAULT_PARTITION_BUCKETS
-    assert settings.pyarrow_schema.equals(RAW_ID_MAPPING_SCHEMA, check_metadata=True)
-    assert settings.schema_map == UNIPROT_IDMAPPING_OUTPUT_SCHEMAS
+    assert settings.partition_buckets == expected_buckets
     assert settings.get_table_transforms(ID_MAPPING_TABLE_NAME) == (emit_raw_table, transform_uniprot_id_mapping)
     assert accepts_pyarrow_table(settings.get_table_transform(ID_MAPPING_TABLE_NAME)) is True
 
@@ -85,40 +114,29 @@ def test_uniprot_idmapping_settings_defaults_schema_override_and_validation(tmp_
         assert hint.iceberg_partitions[0].to_dict() == {
             "transform": "bucket",
             "source_column": "uniprot_id",
-            "param_value": DEFAULT_PARTITION_BUCKETS,
+            "param_value": expected_buckets,
         }
 
-    # custom --schema-file regenerates raw_id_mapping's PyArrow schema via convert_xsv_schema_to_pyarrow
-    custom_schema_doc = json.loads(IDMAPPING_SCHEMA_FILE.read_text(encoding="utf-8"))
-    custom_schema_doc["properties"]["extra_col"] = {"type": ["integer", "null"], "description": "Optional rank"}
-    custom_schema_file = tmp_path / "custom_idmapping.schema.json"
-    custom_schema_file.write_text(json.dumps(custom_schema_doc), encoding="utf-8")
-    custom_settings = make_cts_settings(
-        UniProtIdMappingSettings,
-        tmp_path,
-        input_dir=str(input_dir),
-        use_destination=LOCAL_FS,
-        schema_file=str(custom_schema_file),
-    )
-    assert custom_settings.schema_map is not None
-    raw_override_schema = custom_settings.schema_map.registry[RAW_ID_MAPPING_TABLE_NAME]
-    assert "extra_col" in raw_override_schema.names
-    assert raw_override_schema.field("extra_col").type == pa.int64()
-    assert raw_override_schema.metadata == {b"comment": RAW_ID_MAPPING_DESCRIPTION.encode("utf-8")}
+    if scenario == "preset_defaults":
+        assert settings.schema_file == IDMAPPING_SCHEMA_FILE
+        assert settings.pyarrow_schema.equals(RAW_ID_MAPPING_SCHEMA, check_metadata=True)
+        assert settings.schema_map == UNIPROT_IDMAPPING_OUTPUT_SCHEMAS
+    elif scenario == "custom_schema_file":
+        assert settings.schema_file == custom_schema_file
+        assert settings.schema_map is not None
+        raw_override_schema = settings.schema_map.registry[RAW_ID_MAPPING_TABLE_NAME]
+        assert "extra_col" in raw_override_schema.names
+        assert raw_override_schema.field("extra_col").type == pa.int64()
+        assert raw_override_schema.metadata == {b"comment": RAW_ID_MAPPING_DESCRIPTION.encode("utf-8")}
+    else:
+        assert settings.schema_map is None
 
-    custom_buckets = 16
-    jsonl_settings = make_cts_settings(
-        UniProtIdMappingSettings,
-        tmp_path,
-        input_dir=str(input_dir),
-        use_destination=LOCAL_FS,
-        loader_file_format="jsonl",
-        partition_buckets=custom_buckets,
-    )
-    assert jsonl_settings.schema_map is None
-    assert jsonl_settings.partition_buckets == custom_buckets
 
-    with pytest.raises(ValidationError):
+def test_uniprot_idmapping_settings_fail_zero_partition_buckets(tmp_path: Path) -> None:
+    """``UniProtIdMappingSettings`` rejects ``partition_buckets=0`` with ``ValidationError``."""
+    input_dir = tmp_path / "in"
+    input_dir.mkdir()
+    with pytest.raises(ValidationError, match="partition_buckets"):
         make_cts_settings(
             UniProtIdMappingSettings,
             tmp_path,

@@ -17,7 +17,12 @@ from pyiceberg.types import DecimalType, NestedField
 from pyspark.sql.types import StringType
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError, ExtensionSpec
+from cdm_data_loaders.converters.core.extensions import (
+    DEFAULT_EXTENSIONS,
+    ExtensionError,
+    ExtensionRegistry,
+    ExtensionSpec,
+)
 from cdm_data_loaders.converters.core.ir import Field, TypedNode
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema.common import JSON_SCHEMA_DIALECT
@@ -205,40 +210,77 @@ def test_facades_end_to_end_pass_dlt_spark_precision(
 
 @pytest.mark.parametrize("preserve", [True, False], ids=["keep", "drop"])
 def test_facades_end_to_end_pass_registered_dlt_hints(preserve: bool) -> None:
-    """Custom dlt hints need registration even when emission filters them out."""
+    """Registered custom dlt hints convert cleanly and honor preserve_unknown_hints."""
     source = {"records": {"columns": {"id": {"data_type": "bigint", "nullable": False, "x-owner": "lab"}}}}
-    with pytest.raises(DltToJSONSchemaError, match="Invalid x-dlt") as caught:
-        DltToJSONSchema(preserve_unknown_hints=preserve).convert(source)
-    assert isinstance(caught.value.__cause__, ExtensionError)
-    assert caught.value.__cause__.__cause__ is not None
     registry = DEFAULT_EXTENSIONS.extend_payload("x-dlt", {"x-owner": {"type": "string", "enum": ["lab"]}})
     result = DltToJSONSchema(preserve_unknown_hints=preserve, extension_registry=registry).convert(source)
     expected = {"type": "integer", **({"x-dlt": {"x-owner": "lab"}} if preserve else {})}
     assert result["records"]["properties"] == {"id": expected}
-    source["records"]["columns"]["id"]["x-owner"] = "unregistered-value"
-    with pytest.raises(DltToJSONSchemaError, match="Invalid x-dlt"):
+
+
+@pytest.mark.parametrize("preserve", [True, False], ids=["keep", "drop"])
+@pytest.mark.parametrize(
+    ("use_registered_contract", "owner_value"),
+    [
+        pytest.param(False, "lab", id="unregistered-hint"),
+        pytest.param(True, "unregistered-value", id="invalid-registered-enum"),
+    ],
+)
+def test_facades_end_to_end_fail_registered_dlt_hints(
+    preserve: bool,
+    use_registered_contract: bool,
+    owner_value: str,
+) -> None:
+    """Custom dlt hints fail without registration or when violating registered enum contracts."""
+    source = {"records": {"columns": {"id": {"data_type": "bigint", "nullable": False, "x-owner": owner_value}}}}
+    registry = (
+        DEFAULT_EXTENSIONS.extend_payload("x-dlt", {"x-owner": {"type": "string", "enum": ["lab"]}})
+        if use_registered_contract
+        else DEFAULT_EXTENSIONS
+    )
+    with pytest.raises(DltToJSONSchemaError, match="Invalid x-dlt") as caught:
         DltToJSONSchema(preserve_unknown_hints=preserve, extension_registry=registry).convert(source)
+    assert isinstance(caught.value.__cause__, ExtensionError)
+    assert caught.value.__cause__.__cause__ is not None
+
+
+def _build_vendor_converter(
+    route: str,
+    *,
+    registered: bool,
+) -> tuple[ExtensionRegistry, JSONSchemaToDlt | JSONSchemaToPySpark | JSONSchemaToPyArrow]:
+    """Construct an extension registry and forward facade converter for the given route."""
+    if registered:
+        contract: dict[str, Any] = {
+            "type": "object",
+            "properties": {"classification": {"enum": ["public"]}},
+            "required": ["classification"],
+            "additionalProperties": False,
+        }
+        registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-vendor", contract))
+        contract["properties"].clear()
+        if route == "dlt":
+            return registry, JSONSchemaToDlt(schema_name="records", extension_registry=registry)
+        if route == "spark":
+            return registry, JSONSchemaToPySpark(
+                extension_registry=registry,
+                extra_metadata_keywords=frozenset({"x-vendor"}),
+            )
+        return registry, JSONSchemaToPyArrow(
+            extension_registry=registry,
+            extra_metadata_keywords=frozenset({"x-vendor"}),
+        )
+    if route == "dlt":
+        return DEFAULT_EXTENSIONS, JSONSchemaToDlt(schema_name="records")
+    if route == "spark":
+        return DEFAULT_EXTENSIONS, JSONSchemaToPySpark()
+    return DEFAULT_EXTENSIONS, JSONSchemaToPyArrow()
 
 
 @pytest.mark.parametrize("route", ["dlt", "spark", "arrow"], ids=["json-dlt", "json-spark", "json-arrow"])
 def test_facades_end_to_end_pass_registered_namespace(route: str) -> None:
-    """Facade constructors retain immutable explicit contracts and reject arbitrary keys and values."""
-    contract: dict[str, Any] = {
-        "type": "object",
-        "properties": {"classification": {"enum": ["public"]}},
-        "required": ["classification"],
-        "additionalProperties": False,
-    }
-    registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-vendor", contract))
-    contract["properties"].clear()
-    if route == "dlt":
-        converter: JSONSchemaToDlt | JSONSchemaToPySpark | JSONSchemaToPyArrow = JSONSchemaToDlt(
-            schema_name="records", extension_registry=registry
-        )
-    elif route == "spark":
-        converter = JSONSchemaToPySpark(extension_registry=registry, extra_metadata_keywords=frozenset({"x-vendor"}))
-    else:
-        converter = JSONSchemaToPyArrow(extension_registry=registry, extra_metadata_keywords=frozenset({"x-vendor"}))
+    """Facade constructors retain immutable explicit extension contracts and emit valid vendor metadata."""
+    registry, converter = _build_vendor_converter(route, registered=True)
     source: dict[str, Any] = {
         "$schema": JSON_SCHEMA_DIALECT,
         "type": "object",
@@ -270,21 +312,43 @@ def test_facades_end_to_end_pass_registered_namespace(route: str) -> None:
         registry.specs = ()
     with pytest.raises(ValidationError, match="frozen"):
         converter.extension_registry = DEFAULT_EXTENSIONS
-    default = (
-        JSONSchemaToDlt(schema_name="records")
-        if route == "dlt"
-        else JSONSchemaToPySpark()
-        if route == "spark"
-        else JSONSchemaToPyArrow()
-    )
-    with pytest.raises(ConversionError, match="Unregistered extension") as caught:
-        default.convert(source)
+
+
+@pytest.mark.parametrize("route", ["dlt", "spark", "arrow"], ids=["json-dlt", "json-spark", "json-arrow"])
+@pytest.mark.parametrize(
+    ("registered", "payload", "match", "has_nested_cause"),
+    [
+        pytest.param(False, {"classification": "public"}, "Unregistered extension", False, id="unregistered-namespace"),
+        pytest.param(True, {"classification": "private"}, "Invalid x-vendor", True, id="invalid-enum-value"),
+        pytest.param(
+            True,
+            {"classification": "public", "extra": True},
+            "Invalid x-vendor",
+            True,
+            id="unexpected-additional-property",
+        ),
+    ],
+)
+def test_facades_end_to_end_fail_registered_namespace(
+    route: str,
+    registered: bool,
+    payload: dict[str, Any],
+    match: str,
+    has_nested_cause: bool,
+) -> None:
+    """Forward facades reject unregistered vendor namespaces and payloads violating registered contracts."""
+    _, converter = _build_vendor_converter(route, registered=registered)
+    source: dict[str, Any] = {
+        "$schema": JSON_SCHEMA_DIALECT,
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "x-vendor": payload},
+        },
+    }
+    with pytest.raises(ConversionError, match=match) as caught:
+        converter.convert(source)
     assert isinstance(caught.value.__cause__, ExtensionError)
-    for payload in ({"classification": "private"}, {"classification": "public", "extra": True}):
-        source["properties"]["name"]["x-vendor"] = payload
-        with pytest.raises(ConversionError, match="Invalid x-vendor") as caught:
-            converter.convert(source)
-        assert isinstance(caught.value.__cause__, ExtensionError)
+    if has_nested_cause:
         assert caught.value.__cause__.__cause__ is not None
 
 
@@ -314,38 +378,63 @@ def test_facades_end_to_end_fail_invalid_extensions(
     assert isinstance(caught.value.__cause__, ExtensionError)
 
 
-@pytest.mark.parametrize("route", ["dlt", "spark", "arrow"], ids=["dlt", "spark", "arrow"])
-def test_facades_end_to_end_fail_exact_root_guards(route: str) -> None:
-    """Public root messages and missing-dialect exception identities remain stable."""
-    if route == "dlt":
-        converter: JSONSchemaToDlt | JSONSchemaToPySpark | JSONSchemaToPyArrow = JSONSchemaToDlt(schema_name="records")
-        error_type: type[ConversionError] = JSONSchemaToDltError
-        missing_type: type[ConversionError] = InvalidDltSchemaError
-        target = "a dlt table"
-        name = "JSONSchemaToDlt"
-    elif route == "spark":
-        converter = JSONSchemaToPySpark()
-        error_type = JSONSchemaToPySparkError
-        missing_type = InvalidSparkSchemaError
-        target = "a StructType"
-        name = "JSONSchemaToPySpark"
+@pytest.mark.parametrize(
+    ("converter", "name", "target", "missing_type", "error_type"),
+    [
+        pytest.param(
+            JSONSchemaToDlt(schema_name="records"),
+            "JSONSchemaToDlt",
+            "a dlt table",
+            InvalidDltSchemaError,
+            JSONSchemaToDltError,
+            id="dlt",
+        ),
+        pytest.param(
+            JSONSchemaToPySpark(),
+            "JSONSchemaToPySpark",
+            "a StructType",
+            InvalidSparkSchemaError,
+            JSONSchemaToPySparkError,
+            id="spark",
+        ),
+        pytest.param(
+            JSONSchemaToPyArrow(),
+            "JSONSchemaToPyArrow",
+            "a struct schema",
+            InvalidArrowSchemaError,
+            JSONSchemaToPyArrowError,
+            id="arrow",
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "guard_case",
+    ["missing-dialect", "non-object-root", "invalid-json-string"],
+    ids=["missing-dialect", "non-object-root", "invalid-json-string"],
+)
+def test_facades_end_to_end_fail_exact_root_guards(
+    converter: JSONSchemaToDlt | JSONSchemaToPySpark | JSONSchemaToPyArrow,
+    name: str,
+    target: str,
+    missing_type: type[ConversionError],
+    error_type: type[ConversionError],
+    guard_case: str,
+) -> None:
+    """Public root messages, missing-dialect exception identities, and invalid JSON errors remain stable."""
+    if guard_case == "missing-dialect":
+        with pytest.raises(missing_type) as caught:
+            converter.convert({"type": "object"})
+        assert str(caught.value) == (
+            f"Input JSON Schema is missing a '$schema' keyword. {name} requires schemas "
+            "to explicitly declare their dialect via '$schema'; it will not assume a default."
+        )
+    elif guard_case == "non-object-root":
+        with pytest.raises(error_type) as caught:
+            converter.convert({"$schema": JSON_SCHEMA_DIALECT, "type": ["object", "null"], "x-unregistered": True})
+        assert str(caught.value) == f"Root schema must be of type 'object' to map to {target}, got: ['object', 'null']"
     else:
-        converter = JSONSchemaToPyArrow()
-        error_type = JSONSchemaToPyArrowError
-        missing_type = InvalidArrowSchemaError
-        target = "a struct schema"
-        name = "JSONSchemaToPyArrow"
-    with pytest.raises(missing_type) as caught:
-        converter.convert({"type": "object"})
-    assert str(caught.value) == (
-        f"Input JSON Schema is missing a '$schema' keyword. {name} requires schemas "
-        "to explicitly declare their dialect via '$schema'; it will not assume a default."
-    )
-    with pytest.raises(error_type) as caught:
-        converter.convert({"$schema": JSON_SCHEMA_DIALECT, "type": ["object", "null"], "x-unregistered": True})
-    assert str(caught.value) == (f"Root schema must be of type 'object' to map to {target}, got: ['object', 'null']")
-    with pytest.raises(json.JSONDecodeError):
-        converter.convert_from_string("type: object")
+        with pytest.raises(json.JSONDecodeError):
+            converter.convert_from_string("type: object")
 
 
 @pytest.mark.parametrize(
@@ -429,6 +518,22 @@ def test_facades_end_to_end_pass_convert_from_string_and_file(
     expected = converter.convert(schema)
     assert converter.convert_from_string(json.dumps(schema)) == expected
     assert converter.convert_from_file(str(path)) == expected
+
+
+@pytest.mark.parametrize(
+    "converter",
+    [
+        JSONSchemaToDlt(schema_name="records"),
+        JSONSchemaToPySpark(),
+        JSONSchemaToPyArrow(),
+    ],
+    ids=["dlt", "spark", "arrow"],
+)
+def test_facades_end_to_end_fail_convert_from_missing_file(
+    tmp_path: Path,
+    converter: JSONSchemaToDlt | JSONSchemaToPySpark | JSONSchemaToPyArrow,
+) -> None:
+    """convert_from_file raises FileNotFoundError when the schema file is missing."""
     with pytest.raises(FileNotFoundError):
         converter.convert_from_file(str(tmp_path / "does_not_exist.json"))
 

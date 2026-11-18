@@ -9,9 +9,14 @@ from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, Exte
 from cdm_data_loaders.converters.sources.dlt import DltReader
 
 
-def test_read_pass_forest_filtering_and_scalar_children() -> None:
-    """Roots retain order and child classification uses filtered columns."""
-    tables = {
+@pytest.mark.parametrize(
+    "include_internal",
+    [False, True],
+    ids=["filtered-columns", "include-dlt-and-variant-columns"],
+)
+def test_read_pass_forest_filtering_and_scalar_children(include_internal: bool) -> None:
+    """Roots retain order and child classification uses filtered or included internal columns."""
+    tables: dict[str, dict[str, Any]] = {
         "other": {"columns": {}},
         "root__tags": {
             "parent": "root",
@@ -25,23 +30,27 @@ def test_read_pass_forest_filtering_and_scalar_children() -> None:
         "root": {"columns": {"id": {"data_type": "bigint", "precision": 32, "nullable": False}}},
         "root__obj": {"parent": "root", "columns": {"data": {"data_type": "json", "nullable": True}}},
     }
-    documents = DltReader().read({"name": "stored", "tables": tables})
+    reader = DltReader(include_dlt_columns=True, include_variant_columns=True) if include_internal else DltReader()
+    source: dict[str, Any] = tables if include_internal else {"name": "stored", "tables": tables}
+    documents = reader.read(source)
     assert tuple(documents) == ("other", "root")
     root = documents["root"].root
     assert tuple(prop.name for prop in root.properties) == ("id", "tags", "obj")
-    assert tuple(prop.required for prop in root.properties) == (True, True, False)
-    assert (root.properties[0].node.hints.bit_width,) == (32,)
     tags = root.properties[1].node
-    assert tags.type == "array"
-    assert tags.items.type == "string"
-    assert tags.annotations == {"description": None}
-    assert root.properties[2].node.properties[0].node.type == "any"
-    assert root.properties[2].node.properties[0].node.nullable is True
-    assert documents["root"].provenance.metadata["envelope"] == {"name": "stored"}
-    tables["root"]["columns"].clear()
-    assert "id" in root.provenance.metadata["columns"]
-    included = DltReader(include_dlt_columns=True, include_variant_columns=True).read(tables)
-    assert included["root"].root.properties[0].node.type == "object"
+    if include_internal:
+        assert tags.type == "object"
+        assert tuple(prop.name for prop in tags.properties) == ("_dlt_id", "value", "value__v_int")
+    else:
+        assert tuple(prop.required for prop in root.properties) == (True, True, False)
+        assert (root.properties[0].node.hints.bit_width,) == (32,)
+        assert tags.type == "array"
+        assert tags.items.type == "string"
+        assert tags.annotations == {"description": None}
+        assert root.properties[2].node.properties[0].node.type == "any"
+        assert root.properties[2].node.properties[0].node.nullable is True
+        assert documents["root"].provenance.metadata["envelope"] == {"name": "stored"}
+        tables["root"]["columns"].clear()
+        assert "id" in root.provenance.metadata["columns"]
 
 
 @pytest.mark.parametrize("mode", ["object", "array"], ids=["object-policy", "array-policy"])
@@ -116,6 +125,11 @@ def test_read_pass_custom_hints_and_unknown_type(caplog: pytest.LogCaptureFixtur
     assert node.annotations == {"description": None}
     assert node.extensions["x-dlt"]["x-custom"] == (None,)
     assert "future" in caplog.text
+
+
+def test_read_fail_unregistered_custom_hint() -> None:
+    """Unregistered custom column hints raise ExtensionError when reading with default extensions."""
+    column = {"data_type": "future", "timezone": True, "x-custom": [None], "description": None}
     with pytest.raises(ExtensionError):
         DltReader().read({"root": {"columns": {"a": column}}})
 

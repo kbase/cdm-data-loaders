@@ -133,34 +133,71 @@ def test_xmltopyarrow_settings_schema_resolution_pass_cases(
         assert_schema_matches_expected(actual_pa_schema, case.expected_schema, run.schema_attr)
 
 
+@pytest.mark.parametrize(
+    (
+        "preset_cls",
+        "expected_xml_tag",
+        "expected_table_name",
+        "expected_xml_level",
+        "expected_pyarrow_schema",
+        "expected_pyarrow_schemas",
+        "probe_table",
+        "expected_preprocessor_count",
+    ),
+    [
+        pytest.param(
+            UniProtXmlToPyArrowSettings,
+            "entry",
+            "entry",
+            None,
+            UNIPROT_SCHEMA,
+            {"entry": UNIPROT_SCHEMA},
+            "entry",
+            0,
+            id="uniprot",
+        ),
+        pytest.param(
+            PubMedXmlToPyArrowSettings,
+            None,
+            None,
+            1,
+            None,
+            dict(PUBMED_SCHEMAS),
+            "PubmedArticle",
+            1,
+            id="pubmed",
+        ),
+    ],
+)
 def test_preset_xmltopyarrow_settings_pass_precomputed_schemas(
     tmp_path: Path,
     dlt_destination_config: str,
+    preset_cls: type[XmlToPyArrowSettings],
+    expected_xml_tag: str | None,
+    expected_table_name: str | None,
+    expected_xml_level: int | None,
+    expected_pyarrow_schema: pa.Schema | None,
+    expected_pyarrow_schemas: dict[str, pa.Schema],
+    probe_table: str,
+    expected_preprocessor_count: int,
 ) -> None:
     """Preset settings classes bind precomputed PyArrow schemas and default pre-processors."""
     input_dir = tmp_path / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
 
-    uniprot = make_cts_settings(
-        UniProtXmlToPyArrowSettings,
+    settings = make_cts_settings(
+        preset_cls,
         tmp_path,
         input_dir=str(input_dir),
         use_destination=dlt_destination_config,
     )
-    assert uniprot.xml_tag == "entry"
-    assert uniprot.table_name == "entry"
-    assert uniprot.pyarrow_schema == UNIPROT_SCHEMA
-
-    pubmed = make_cts_settings(
-        PubMedXmlToPyArrowSettings,
-        tmp_path,
-        input_dir=str(input_dir),
-        use_destination=dlt_destination_config,
-    )
-    assert pubmed.xml_level == 1
-    assert pubmed.root_tag is None
-    assert pubmed.pyarrow_schemas == dict(PUBMED_SCHEMAS)
-    assert len(pubmed.get_file_preprocessors("PubmedArticle")) == 1
+    assert settings.xml_tag == expected_xml_tag
+    assert settings.table_name == expected_table_name
+    assert settings.xml_level == expected_xml_level
+    assert settings.root_tag is None
+    assert settings.pyarrow_schema == expected_pyarrow_schema
+    assert settings.pyarrow_schemas == expected_pyarrow_schemas
+    assert len(settings.get_file_preprocessors(probe_table)) == expected_preprocessor_count
 
 
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)

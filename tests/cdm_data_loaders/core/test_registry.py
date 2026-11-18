@@ -16,6 +16,7 @@ from cdm_data_loaders.core.registry import (
     ModelRegistry,
     RejectedFreezerMixin,
     SchemaRegistry,
+    TableTransformFn,
     TransformContext,
     TransformRegistry,
     load_python_module,
@@ -498,7 +499,18 @@ def test_transform_context_for_source_derives_file_name(
     assert ctx == TransformContext(table_name="id_mapping", source_file=source_file, file_name=expected_file_name)
 
 
-def test_transform_registry_supports_callable_sequences_and_get_tuple(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("table_key", "expected"),
+    [
+        pytest.param("single", (_identity_widget_transform,), id="single-callable"),
+        pytest.param("chained", (_arrow_widget_transform, _identity_widget_transform), id="chained-sequence"),
+        pytest.param("missing", (), id="missing-table"),
+    ],
+)
+def test_transform_registry_supports_callable_sequences_and_get_tuple(
+    table_key: str,
+    expected: tuple[TableTransformFn, ...],
+) -> None:
     """TransformRegistry coerces sequences of transforms to tuples and exposes ordered callables via get_tuple."""
     reg = TransformRegistry(
         registry={
@@ -508,10 +520,11 @@ def test_transform_registry_supports_callable_sequences_and_get_tuple(monkeypatc
     )
     assert reg.registry["single"] is _identity_widget_transform
     assert reg.registry["chained"] == (_arrow_widget_transform, _identity_widget_transform)
-    assert reg.get_tuple("single") == (_identity_widget_transform,)
-    assert reg.get_tuple("chained") == (_arrow_widget_transform, _identity_widget_transform)
-    assert reg.get_tuple("missing") == ()
+    assert reg.get_tuple(table_key) == expected
 
+
+def test_load_registry_dict_pass_chained_table_transforms(monkeypatch: pytest.MonkeyPatch) -> None:
+    """load_registry_dict loads chained transform sequences from TABLE_TRANSFORMS as ordered tuples."""
     mod_name = register_temp_module(
         monkeypatch,
         "_test_chained_table_transforms_mod",

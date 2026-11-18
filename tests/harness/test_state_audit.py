@@ -193,31 +193,41 @@ def test_snapshot_module_vars_and_caches_extracts_globals_and_lru_sizes() -> Non
     assert caches_snap == {"cdm_data_loaders.fake_tracked.cached_fn": 1}
 
 
-def test_snapshot_scoped_fixtures_filters_by_scope_and_mutability() -> None:
+@pytest.mark.parametrize(
+    ("item", "expected"),
+    [
+        pytest.param(None, {}, id="none-item"),
+        pytest.param(SimpleNamespace(), {}, id="missing-fixtureinfo"),
+        pytest.param(
+            SimpleNamespace(
+                _fixtureinfo=SimpleNamespace(
+                    name2fixturedefs={
+                        "session_dict": [
+                            SimpleNamespace(scope="session", cached_result=({"k": "v"}, 0, None), baseid="tests"),
+                        ],
+                        "func_dict": [
+                            SimpleNamespace(scope="function", cached_result=({"f": 1}, 0, None), baseid="tests"),
+                        ],
+                        "uncached_list": [
+                            SimpleNamespace(scope="module", cached_result=None, baseid="tests"),
+                        ],
+                        "session_str": [
+                            SimpleNamespace(scope="session", cached_result=("immutable", 0, None), baseid="tests"),
+                        ],
+                    }
+                )
+            ),
+            {"tests::session_dict[session]": ("dict", "{'k': 'v'}")},
+            id="mixed-scopes-and-mutability",
+        ),
+    ],
+)
+def test_snapshot_scoped_fixtures_filters_by_scope_and_mutability(
+    item: SimpleNamespace | None,
+    expected: dict[str, tuple[Any, ...]],
+) -> None:
     """Verify ``snapshot_scoped_fixtures`` captures only cached non-function-scoped mutable containers."""
-    assert snapshot_scoped_fixtures(None) == {}
-    assert snapshot_scoped_fixtures(SimpleNamespace()) == {}  # type: ignore[arg-type]
-
-    fake_item = SimpleNamespace(
-        _fixtureinfo=SimpleNamespace(
-            name2fixturedefs={
-                "session_dict": [
-                    SimpleNamespace(scope="session", cached_result=({"k": "v"}, 0, None), baseid="tests"),
-                ],
-                "func_dict": [
-                    SimpleNamespace(scope="function", cached_result=({"f": 1}, 0, None), baseid="tests"),
-                ],
-                "uncached_list": [
-                    SimpleNamespace(scope="module", cached_result=None, baseid="tests"),
-                ],
-                "session_str": [
-                    SimpleNamespace(scope="session", cached_result=("immutable", 0, None), baseid="tests"),
-                ],
-            }
-        )
-    )
-    snap = snapshot_scoped_fixtures(fake_item)  # type: ignore[arg-type]
-    assert snap == {"tests::session_dict[session]": ("dict", "{'k': 'v'}")}
+    assert snapshot_scoped_fixtures(item) == expected  # type: ignore[arg-type]
 
 
 def test_take_state_snapshot_self_diff_is_empty() -> None:
@@ -305,90 +315,122 @@ def test_diff_state_snapshots_detects_each_state_category(
     assert expected_key in diffs
 
 
-def test_diff_state_snapshots_module_vars_caches_and_sys_modules_rules() -> None:
+@pytest.mark.parametrize("scenario", ["clean", "leaky"], ids=["clean-collect", "leaky-after"])
+def test_diff_state_snapshots_module_vars_caches_and_sys_modules_rules(scenario: str) -> None:
     """Verify ``diff_state_snapshots`` handles synthetic modules, collection targets, and pure memo caches."""
     before = _baseline_snapshot()
     collected_target = (SYSTEM_TEMP_ROOT / "pkg" / "test_target.py").resolve()
-    collected_mod = _make_module_with_spec("pkg.test_target", str(collected_target))
-    ancestor_init = _make_module_with_spec("pkg", str(SYSTEM_TEMP_ROOT / "pkg" / "__init__.py"))
-    synthetic_mod = ModuleType("leaked_dynamic")
-    replacement_mod = _make_module_with_spec("cdm_data_loaders.existing", str(REPO_ROOT / "src" / "existing.py"))
+    if scenario == "clean":
+        collected_mod = _make_module_with_spec("pkg.test_target", str(collected_target))
+        ancestor_init = _make_module_with_spec("pkg", str(SYSTEM_TEMP_ROOT / "pkg" / "__init__.py"))
+        after = replace(
+            before,
+            sys_path=[str(collected_target.parent), *before.sys_path],
+            sys_modules={
+                "cdm_data_loaders.existing": before.sys_modules["cdm_data_loaders.existing"],
+                "pkg": ancestor_init,
+                "pkg.test_target": collected_mod,
+            },
+            module_vars={
+                "cdm_data_loaders.mod.STATE": ("dict", "{}"),
+                "cdm_data_loaders.mod.TO_DELETE": ("int", 1),
+                "cdm_data_loaders.utils.logging.applied_key": ("tuple", "changed-dedicated-ignored-here"),
+            },
+            caches={
+                "cdm_data_loaders.mod.lookup": 0,
+                "cdm_data_loaders.converters.core.metadata.metadata_keys_for": 5,
+            },
+        )
+    else:
+        synthetic_mod = ModuleType("leaked_dynamic")
+        replacement_mod = _make_module_with_spec("cdm_data_loaders.existing", str(REPO_ROOT / "src" / "existing.py"))
+        after = replace(
+            before,
+            sys_path=["/unrelated/dir", *before.sys_path],
+            sys_modules={
+                "cdm_data_loaders.existing": replacement_mod,
+                "leaked_dynamic": synthetic_mod,
+            },
+            module_vars={"cdm_data_loaders.mod.STATE": ("dict", "{'dirty': True}")},
+            caches={"cdm_data_loaders.mod.lookup": 2},
+        )
 
-    after_clean_collect = replace(
-        before,
-        sys_path=[str(collected_target.parent), *before.sys_path],
-        sys_modules={
-            "cdm_data_loaders.existing": before.sys_modules["cdm_data_loaders.existing"],
-            "pkg": ancestor_init,
-            "pkg.test_target": collected_mod,
-        },
-        module_vars={
-            "cdm_data_loaders.mod.STATE": ("dict", "{}"),
-            "cdm_data_loaders.mod.TO_DELETE": ("int", 1),
-            "cdm_data_loaders.utils.logging.applied_key": ("tuple", "changed-dedicated-ignored-here"),
-        },
-        caches={
-            "cdm_data_loaders.mod.lookup": 0,
-            "cdm_data_loaders.converters.core.metadata.metadata_keys_for": 5,
-        },
-    )
-    assert diff_state_snapshots(before, after_clean_collect, collected_module_path=collected_target) == {}
-
-    after_leaky = replace(
-        before,
-        sys_path=["/unrelated/dir", *before.sys_path],
-        sys_modules={
-            "cdm_data_loaders.existing": replacement_mod,
-            "leaked_dynamic": synthetic_mod,
-        },
-        module_vars={"cdm_data_loaders.mod.STATE": ("dict", "{'dirty': True}")},
-        caches={"cdm_data_loaders.mod.lookup": 2},
-    )
-    diffs = diff_state_snapshots(before, after_leaky, collected_module_path=collected_target)
-    assert "sys_path" in diffs
-    assert diffs["sys_modules"] == {
-        "added_synthetic_or_fixture": ["leaked_dynamic"],
-        "replaced": ["cdm_data_loaders.existing"],
-    }
-    assert diffs["module_vars"] == [
-        "cdm_data_loaders.mod.STATE",
-        "cdm_data_loaders.mod.TO_DELETE (deleted)",
-    ]
-    assert diffs["caches"] == {"cdm_data_loaders.mod.lookup": {"before": 0, "after": 2}}
+    diffs = diff_state_snapshots(before, after, collected_module_path=collected_target)
+    if scenario == "clean":
+        assert diffs == {}
+    else:
+        assert "sys_path" in diffs
+        assert diffs["sys_modules"] == {
+            "added_synthetic_or_fixture": ["leaked_dynamic"],
+            "replaced": ["cdm_data_loaders.existing"],
+        }
+        assert diffs["module_vars"] == [
+            "cdm_data_loaders.mod.STATE",
+            "cdm_data_loaders.mod.TO_DELETE (deleted)",
+        ]
+        assert diffs["caches"] == {"cdm_data_loaders.mod.lookup": {"before": 0, "after": 2}}
 
 
-def test_format_leak_report_empty_and_populated() -> None:
+@pytest.mark.parametrize(
+    ("collection_leaks", "test_leaks", "expected_substrings"),
+    [
+        pytest.param([], [], (), id="empty"),
+        pytest.param(
+            [("tests/test_collect.py", {"cwd": {"before": "/a", "after": "/b"}})],
+            [("tests/test_run.py::test_x", {"s3_client_singleton": {"before": False, "after": True}})],
+            (
+                "(collection=1, tests=1):",
+                "Collection leak in tests/test_collect.py:",
+                "Test leak in tests/test_run.py::test_x:",
+            ),
+            id="populated",
+        ),
+    ],
+)
+def test_format_leak_report_empty_and_populated(
+    collection_leaks: list[tuple[str, dict[str, Any]]],
+    test_leaks: list[tuple[str, dict[str, Any]]],
+    expected_substrings: tuple[str, ...],
+) -> None:
     """Verify ``format_leak_report`` returns ``""`` when clean and formats collection and test leaks otherwise."""
-    assert format_leak_report([], []) == ""
-    report = format_leak_report(
-        [("tests/test_collect.py", {"cwd": {"before": "/a", "after": "/b"}})],
-        [("tests/test_run.py::test_x", {"s3_client_singleton": {"before": False, "after": True}})],
-    )
-    assert "(collection=1, tests=1):" in report
-    assert "Collection leak in tests/test_collect.py:" in report
-    assert "Test leak in tests/test_run.py::test_x:" in report
+    report = format_leak_report(collection_leaks, test_leaks)
+    if not expected_substrings:
+        assert report == ""
+    for expected in expected_substrings:
+        assert expected in report
 
 
-def test_state_audit_marker_skipped_by_default_and_runs_when_selected(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("extra_args", "expected_snippets"),
+    [
+        pytest.param(
+            ["-rs"],
+            ("1 skipped", "need -m state_audit option to run global state mutation audit"),
+            id="skipped-by-default",
+        ),
+        pytest.param(
+            ["-m", "state_audit"],
+            ("1 passed",),
+            id="runs-when-selected",
+        ),
+    ],
+)
+def test_state_audit_marker_skipped_by_default_and_runs_when_selected(
+    tmp_path: Path,
+    extra_args: list[str],
+    expected_snippets: tuple[str, ...],
+) -> None:
     """Verify ``@pytest.mark.state_audit`` tests skip unless ``-m state_audit`` is explicitly provided."""
     sample = tmp_path / "test_marker_opt_in.py"
     sample.write_text(
         "import pytest\n\n@pytest.mark.state_audit\ndef test_opt_in_only() -> None:\n    assert True\n",
         encoding="utf-8",
     )
-    default_run = run_pytest_subprocess(
-        ["-p", "tests.conftest", "-rs", "-o", "addopts=", "-p", "no:randomly", "-p", "no:cov", str(sample)]
-    )
-    assert default_run.returncode == 0
-    assert "1 skipped" in default_run.stdout
-    assert "need -m state_audit option to run global state mutation audit" in default_run.stdout
-
-    explicit_run = run_pytest_subprocess(
+    res = run_pytest_subprocess(
         [
             "-p",
             "tests.conftest",
-            "-m",
-            "state_audit",
+            *extra_args,
             "-o",
             "addopts=",
             "-p",
@@ -398,18 +440,60 @@ def test_state_audit_marker_skipped_by_default_and_runs_when_selected(tmp_path: 
             str(sample),
         ]
     )
-    assert explicit_run.returncode == 0
-    assert "1 passed" in explicit_run.stdout
+    assert res.returncode == 0
+    for snippet in expected_snippets:
+        assert snippet in res.stdout
 
 
-def test_state_audit_cli_flag_passes_clean_and_fails_on_leaks(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("filename", "source_text", "expected_returncode", "expected_snippets"),
+    [
+        pytest.param(
+            "test_clean_audit.py",
+            "def test_clean_case() -> None:\n    assert 1 + 1 == 2\n",
+            0,
+            ("[state-audit] Passed: 0 unreverted global state mutations across 1 test(s).",),
+            id="clean-passes",
+        ),
+        pytest.param(
+            "test_leaky_audit.py",
+            (
+                "import os\n"
+                "import warnings\n"
+                "import pytest\n\n"
+                "os.environ['COLLECTION_LEAK_ENV'] = '1'\n\n"
+                "@pytest.fixture(scope='module')\n"
+                "def shared_box() -> dict[str, int]:\n"
+                "    return {'seed': 1}\n\n"
+                "def test_prime_fixture(shared_box: dict[str, int]) -> None:\n"
+                "    assert shared_box == {'seed': 1}\n\n"
+                "def test_mutate_shared_fixture_and_warnings(shared_box: dict[str, int]) -> None:\n"
+                "    shared_box['leaked'] = 2\n"
+                "    warnings.filterwarnings('ignore', message='runtime_leak_marker')\n\n"
+                "def test_subsequent_consumer(shared_box: dict[str, int]) -> None:\n"
+                "    assert 'seed' in shared_box\n"
+            ),
+            int(pytest.ExitCode.TESTS_FAILED),
+            (
+                "[state-audit] Detected unreverted global state mutations (collection=1, tests=1):",
+                '"scoped_fixtures_mutated_in_place"',
+                '"warnings_filters"',
+            ),
+            id="leaky-fails",
+        ),
+    ],
+)
+def test_state_audit_cli_flag_passes_clean_and_fails_on_leaks(
+    tmp_path: Path,
+    filename: str,
+    source_text: str,
+    expected_returncode: int,
+    expected_snippets: tuple[str, ...],
+) -> None:
     """Verify ``--state-audit`` exits 0 on clean tests and exits 1 with detailed diffs on unreverted leaks."""
-    clean_file = tmp_path / "test_clean_audit.py"
-    clean_file.write_text(
-        "def test_clean_case() -> None:\n    assert 1 + 1 == 2\n",
-        encoding="utf-8",
-    )
-    clean_res = run_pytest_subprocess(
+    target_file = tmp_path / filename
+    target_file.write_text(source_text, encoding="utf-8")
+    res = run_pytest_subprocess(
         [
             "-p",
             "tests.conftest",
@@ -420,45 +504,9 @@ def test_state_audit_cli_flag_passes_clean_and_fails_on_leaks(tmp_path: Path) ->
             "no:randomly",
             "-p",
             "no:cov",
-            str(clean_file),
+            str(target_file),
         ]
     )
-    assert clean_res.returncode == 0, clean_res.stdout + clean_res.stderr
-    assert "[state-audit] Passed: 0 unreverted global state mutations across 1 test(s)." in clean_res.stdout
-
-    leaky_file = tmp_path / "test_leaky_audit.py"
-    leaky_file.write_text(
-        "import os\n"
-        "import warnings\n"
-        "import pytest\n\n"
-        "os.environ['COLLECTION_LEAK_ENV'] = '1'\n\n"
-        "@pytest.fixture(scope='module')\n"
-        "def shared_box() -> dict[str, int]:\n"
-        "    return {'seed': 1}\n\n"
-        "def test_prime_fixture(shared_box: dict[str, int]) -> None:\n"
-        "    assert shared_box == {'seed': 1}\n\n"
-        "def test_mutate_shared_fixture_and_warnings(shared_box: dict[str, int]) -> None:\n"
-        "    shared_box['leaked'] = 2\n"
-        "    warnings.filterwarnings('ignore', message='runtime_leak_marker')\n\n"
-        "def test_subsequent_consumer(shared_box: dict[str, int]) -> None:\n"
-        "    assert 'seed' in shared_box\n",
-        encoding="utf-8",
-    )
-    leaky_res = run_pytest_subprocess(
-        [
-            "-p",
-            "tests.conftest",
-            "--state-audit",
-            "-o",
-            "addopts=",
-            "-p",
-            "no:randomly",
-            "-p",
-            "no:cov",
-            str(leaky_file),
-        ]
-    )
-    assert leaky_res.returncode == int(pytest.ExitCode.TESTS_FAILED)
-    assert "[state-audit] Detected unreverted global state mutations (collection=1, tests=1):" in leaky_res.stdout
-    assert '"scoped_fixtures_mutated_in_place"' in leaky_res.stdout
-    assert '"warnings_filters"' in leaky_res.stdout
+    assert res.returncode == expected_returncode, res.stdout + res.stderr
+    for snippet in expected_snippets:
+        assert snippet in res.stdout

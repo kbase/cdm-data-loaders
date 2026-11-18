@@ -2,6 +2,8 @@
 
 from typing import Any
 
+import pytest
+
 from cdm_data_loaders.validation.jsonschema.keywords import (
     ANNOTATION_ONLY_KEYWORDS,
     ANNOTATIONS,
@@ -51,49 +53,66 @@ def test_strip_ref_target_identity_removes_all_identity_keywords() -> None:
     }
 
 
-def test_iter_child_subschemas_yields_schema_children_and_skips_literals() -> None:
+@pytest.mark.parametrize(
+    ("node", "expected"),
+    [
+        pytest.param(
+            {
+                "$defs": {"IgnoredDef": {"type": "string", "format": "date"}},
+                "definitions": {"IgnoredLegacyDef": {"type": "integer"}},
+                "default": {"format": "date", "$ref": "#/$defs/Ignored"},
+                "examples": [{"contentEncoding": "base64"}],
+                "const": {"format": "date"},
+                "enum": [{"format": "date"}],
+                "dependentRequired": {"a": ["b"]},
+                "x-custom": {"format": "date"},
+                "properties": {"p1": {"type": "string"}},
+                "patternProperties": {"^s_": {"type": "integer"}},
+                "dependentSchemas": {"p1": {"type": "object"}},
+                "allOf": [{"minimum": 0}],
+                "anyOf": [{"type": "null"}],
+                "oneOf": [{"type": "boolean"}],
+                "prefixItems": [{"type": "number"}],
+                "items": {"type": "string"},
+                "dependencies": {
+                    "schema_dep": {"required": ["p1"]},
+                    "bool_dep": True,
+                    "list_dep": ["p1"],
+                },
+                "additionalProperties": False,
+                "not": {"type": "null"},
+            },
+            [
+                {"type": "string"},
+                {"type": "integer"},
+                {"type": "object"},
+                {"minimum": 0},
+                {"type": "null"},
+                {"type": "boolean"},
+                {"type": "number"},
+                {"type": "string"},
+                {"required": ["p1"]},
+                True,
+                False,
+                {"type": "null"},
+            ],
+            id="schema-bearing-and-ignored-keywords",
+        ),
+        pytest.param(
+            {"items": [{"type": "string"}, False], "items_non_schema": 123},
+            [{"type": "string"}, False],
+            id="draft07-tuple-items",
+        ),
+        pytest.param(
+            {"items": "invalid-non-schema"},
+            [],
+            id="non-schema-items-ignored",
+        ),
+    ],
+)
+def test_iter_child_subschemas_pass_yields_schema_children_and_skips_literals(
+    node: dict[str, Any],
+    expected: list[dict[str, Any] | bool],
+) -> None:
     """Yield subschemas across schema-bearing keywords and skip literal, declaration, and extension payloads."""
-    node: dict[str, Any] = {
-        "$defs": {"IgnoredDef": {"type": "string", "format": "date"}},
-        "definitions": {"IgnoredLegacyDef": {"type": "integer"}},
-        "default": {"format": "date", "$ref": "#/$defs/Ignored"},
-        "examples": [{"contentEncoding": "base64"}],
-        "const": {"format": "date"},
-        "enum": [{"format": "date"}],
-        "dependentRequired": {"a": ["b"]},
-        "x-custom": {"format": "date"},
-        "properties": {"p1": {"type": "string"}},
-        "patternProperties": {"^s_": {"type": "integer"}},
-        "dependentSchemas": {"p1": {"type": "object"}},
-        "allOf": [{"minimum": 0}],
-        "anyOf": [{"type": "null"}],
-        "oneOf": [{"type": "boolean"}],
-        "prefixItems": [{"type": "number"}],
-        "items": {"type": "string"},
-        "dependencies": {
-            "schema_dep": {"required": ["p1"]},
-            "bool_dep": True,
-            "list_dep": ["p1"],
-        },
-        "additionalProperties": False,
-        "not": {"type": "null"},
-    }
-    yielded = list(iter_child_subschemas(node))
-    assert yielded == [
-        {"type": "string"},
-        {"type": "integer"},
-        {"type": "object"},
-        {"minimum": 0},
-        {"type": "null"},
-        {"type": "boolean"},
-        {"type": "number"},
-        {"type": "string"},
-        {"required": ["p1"]},
-        True,
-        False,
-        {"type": "null"},
-    ]
-
-    tuple_items_node: dict[str, Any] = {"items": [{"type": "string"}, False], "items_non_schema": 123}
-    assert list(iter_child_subschemas(tuple_items_node)) == [{"type": "string"}, False]
-    assert list(iter_child_subschemas({"items": "invalid-non-schema"})) == []
+    assert list(iter_child_subschemas(node)) == expected

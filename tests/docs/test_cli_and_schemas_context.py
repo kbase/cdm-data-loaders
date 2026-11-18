@@ -145,18 +145,14 @@ def test_code_fence_for_text_cases(text: str, min_backticks: int, expected: str)
     assert code_fence_for_text(text, min_backticks=min_backticks) == expected
 
 
-def test_formatting_and_schema_discovery_edge_cases(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """Verify escape_table_cell, slugify_anchor, schema discovery filtering, and check_or_write_files."""
-    assert escape_table_cell("a | b\nc") == r"a \| b c"
-    assert slugify_anchor("schema", "xsv_config/0.1.0/schema.json") == "schema-xsv-config-0-1-0-schema-json"
+def _populate_synthetic_schemas_pkg(tmp_path: Path) -> Path:
+    """Create a synthetic package tree containing valid, hidden, cache, and Python schema files.
 
-    empty_src = tmp_path / "empty_pkg"
-    empty_src.mkdir()
-    assert discover_schema_assets(empty_src, repo_root=tmp_path) == []
-
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :return: Synthetic package root directory path.
+    :rtype: Path
+    """
     pkg_root = tmp_path / "src" / "cdm_data_loaders"
     schemas_dir = pkg_root / "schemas"
     (schemas_dir / "__pycache__").mkdir(parents=True)
@@ -173,20 +169,67 @@ def test_formatting_and_schema_discovery_edge_cases(
     xsv_dir = schemas_dir / "xsv_config" / "0.1.0"
     xsv_dir.mkdir(parents=True)
     (xsv_dir / "schema.json").write_text('{"type": "object"}\n', encoding="utf-8")
+    return pkg_root
 
+
+def test_escape_table_cell_escapes_pipes_and_newlines() -> None:
+    """Verify escape_table_cell escapes pipe characters and replaces newlines with spaces."""
+    assert escape_table_cell("a | b\nc") == r"a \| b c"
+
+
+def test_slugify_anchor_normalizes_prefix_and_path() -> None:
+    """Verify slugify_anchor joins and normalizes prefix and path segments into a hyphenated anchor."""
+    assert slugify_anchor("schema", "xsv_config/0.1.0/schema.json") == "schema-xsv-config-0-1-0-schema-json"
+
+
+@pytest.mark.parametrize(
+    ("populate_schemas", "expected_rel_paths"),
+    [
+        pytest.param(False, [], id="missing-schemas-dir"),
+        pytest.param(
+            True,
+            [
+                "schemas/domain/0.1.0/spec.yaml",
+                "schemas/root_notes.txt",
+                "schemas/xsv_config/0.1.0/schema.json",
+            ],
+            id="filters-hidden-pycache-and-py",
+        ),
+    ],
+)
+def test_discover_schema_assets_edge_cases(
+    tmp_path: Path,
+    populate_schemas: bool,
+    expected_rel_paths: list[str],
+) -> None:
+    """Verify discover_schema_assets handles missing schemas directories and filters non-asset files."""
+    if populate_schemas:
+        src_root = _populate_synthetic_schemas_pkg(tmp_path)
+    else:
+        src_root = tmp_path / "empty_pkg"
+        src_root.mkdir()
+
+    discovered = discover_schema_assets(src_root, repo_root=tmp_path)
+    assert [a.rel_path.as_posix() for a in discovered] == expected_rel_paths
+    if populate_schemas:
+        assert discovered[1].code_block.fence == "`````"
+        assert discovered[2].published_rel_path == Path("schemas/xsv_config/0.1.0/schema.json")
+
+
+def test_render_bundled_schemas_expands_code_fence_and_published_url(tmp_path: Path) -> None:
+    """Verify render_bundled_schemas expands code fences for nested backticks and emits published schema URLs."""
+    pkg_root = _populate_synthetic_schemas_pkg(tmp_path)
     discovered = discover_schema_assets(pkg_root, repo_root=tmp_path)
-    assert [a.rel_path.as_posix() for a in discovered] == [
-        "schemas/domain/0.1.0/spec.yaml",
-        "schemas/root_notes.txt",
-        "schemas/xsv_config/0.1.0/schema.json",
-    ]
-    assert discovered[1].code_block.fence == "`````"
-    assert discovered[2].published_rel_path == Path("schemas/xsv_config/0.1.0/schema.json")
-
     rendered = render_bundled_schemas(discovered, src_root=pkg_root, repo_root=tmp_path)
     assert '`````text linenums="1"' in rendered
     assert f"{SITE_URL_BASE}/schemas/xsv_config/0.1.0/schema.json" in rendered
 
+
+def test_check_or_write_files_stale_write_and_clean_sequence(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify check_or_write_files reports stale files, writes updates, and passes a clean check."""
     target_file = tmp_path / "generated.py"
     assert check_or_write_files([(target_file, "x = 1\n")], check=True, repo_root=tmp_path) == 1
     assert "stale:" in capsys.readouterr().err

@@ -539,7 +539,6 @@ def test_emit_pass_dlt_nested_compatibility(
                 "value": {"data_type": "bool", "nullable": False},
             },
         },
-        "empty": {"description": "", "columns": {}},
     }
     original = deepcopy(source)
     documents = DltReader(
@@ -580,30 +579,35 @@ def test_emit_pass_dlt_nested_compatibility(
     properties["descendant"] = {"type": "array", "items": descendant} if mode == "array" else descendant
     required.append("child")
     expected = {
-        "root": {
-            "type": "object",
-            "properties": properties,
-            "required": required,
-            "additionalProperties": False,
-            "description": "root",
-            "$schema": JSON_SCHEMA_DIALECT,
-            "$id": "urn:dlt:root",
-            "title": "root",
-        },
-        "empty": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": False,
-            "description": "",
-            "$schema": JSON_SCHEMA_DIALECT,
-            "$id": "urn:dlt:empty",
-            "title": "empty",
-        },
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False,
+        "description": "root",
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:dlt:root",
+        "title": "root",
     }
-    actual = {name: JsonSchemaEmitter().emit(document) for name, document in documents.items()}
+    assert set(documents) == {"root"}
+    actual = JsonSchemaEmitter().emit(documents["root"])
     assert actual == expected
-    assert actual["root"]["required"].count("child") == len(("column", "child-table"))
+    assert actual["required"].count("child") == len(("column", "child-table"))
     assert source == original
+
+
+def test_emit_pass_dlt_empty_table() -> None:
+    """An empty dlt root table preserves an empty string description and empty properties."""
+    source: dict[str, Any] = {"empty": {"description": "", "columns": {}}}
+    document = DltReader().read(source)["empty"]
+    assert JsonSchemaEmitter().emit(document) == {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+        "description": "",
+        "$schema": JSON_SCHEMA_DIALECT,
+        "$id": "urn:dlt:empty",
+        "title": "empty",
+    }
 
 
 @pytest.mark.parametrize(
@@ -922,18 +926,39 @@ def test_emit_pass_document_and_type_metadata(document: SchemaDocument, expected
     assert JsonSchemaEmitter().emit(document) == expected
 
 
-@pytest.mark.parametrize("boolean", [True, False], ids=["true", "false"])
-def test_emit_pass_boolean_node_metadata_and_edits(boolean: bool) -> None:
+@pytest.mark.parametrize(
+    ("boolean", "annotations", "properties", "expected"),
+    [
+        pytest.param(True, {}, (), {}, id="true-plain"),
+        pytest.param(False, {}, (), {"not": {}}, id="false-plain"),
+        pytest.param(True, {"description": "value"}, (), {"description": "value"}, id="true-annotated"),
+        pytest.param(
+            False,
+            {"description": "value"},
+            (),
+            {"description": "value", "not": {}},
+            id="false-annotated",
+        ),
+        pytest.param(
+            True,
+            {},
+            (Field("flag", TypedNode("boolean")),),
+            {"properties": {"flag": {"type": "boolean"}}},
+            id="true-with-properties",
+        ),
+    ],
+)
+def test_emit_pass_boolean_node_metadata_and_edits(
+    boolean: bool,
+    annotations: dict[str, Any],
+    properties: tuple[Field, ...],
+    expected: dict[str, Any],
+) -> None:
     """Boolean nodes become object schemas when annotations or structural facts are added."""
     document = JsonSchemaReader().read({"$schema": JSON_SCHEMA_DIALECT, "properties": {"value": boolean}})
     node = document.root.properties[0].node
-    expected: dict[str, Any] = {} if boolean else {"not": {}}
-    emitter = JsonSchemaEmitter()
-    assert emitter.emit(SchemaDocument(node)) == expected
-    assert emitter.emit(SchemaDocument(replace(node, annotations={"description": "value"}))) == {
-        "description": "value",
-        **expected,
-    }
-    if boolean:
-        node = replace(node, properties=(Field("flag", TypedNode("boolean")),))
-        assert emitter.emit(SchemaDocument(node)) == {"properties": {"flag": {"type": "boolean"}}}
+    if annotations:
+        node = replace(node, annotations=annotations)
+    if properties:
+        node = replace(node, properties=properties)
+    assert JsonSchemaEmitter().emit(SchemaDocument(node)) == expected

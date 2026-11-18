@@ -93,16 +93,33 @@ def test_pipeline_fields_pass_valid_values(kwargs: dict[str, object], expected: 
     assert str(model.loader_file_format) == expected["loader_file_format"]
 
 
-def test_destination_file_format_pass_and_rejects_file_listing() -> None:
-    """DestinationFileFormat accepts destination table formats and rejects file_listing."""
-    default_model = DestinationFieldsModel.model_validate({})
-    assert default_model.loader_file_format == DestinationFileFormatEnum.PARQUET
+@pytest.mark.parametrize(
+    ("kwargs", "expected_format"),
+    [
+        pytest.param({}, DestinationFileFormatEnum.PARQUET, id="default_parquet"),
+        pytest.param({"loader_file_format": "iceberg"}, DestinationFileFormatEnum.ICEBERG, id="iceberg_string"),
+        pytest.param({"loader_file_format": "jsonl"}, DestinationFileFormatEnum.JSONL, id="jsonl_string"),
+        pytest.param({"loader_file_format": "parquet"}, DestinationFileFormatEnum.PARQUET, id="parquet_string"),
+        pytest.param(
+            {"loader_file_format": LoaderFileFormatEnum.PARQUET},
+            DestinationFileFormatEnum.PARQUET,
+            id="loader_parquet_enum_member",
+        ),
+    ],
+)
+def test_destination_file_format_pass(
+    kwargs: dict[str, object],
+    expected_format: DestinationFileFormatEnum,
+) -> None:
+    """DestinationFileFormat accepts default and explicit destination table formats."""
+    validated = DestinationFieldsModel.model_validate(kwargs)
+    assert isinstance(validated.loader_file_format, DestinationFileFormatEnum)
+    assert validated.loader_file_format == expected_format
+    assert str(validated.loader_file_format) == str(expected_format)
 
-    for fmt in ("iceberg", "jsonl", "parquet", LoaderFileFormatEnum.PARQUET):
-        validated = DestinationFieldsModel.model_validate({"loader_file_format": fmt})
-        assert isinstance(validated.loader_file_format, DestinationFileFormatEnum)
-        assert str(validated.loader_file_format) == str(fmt)
 
+def test_destination_file_format_fail_rejects_file_listing() -> None:
+    """DestinationFileFormat rejects file_listing with ValidationError."""
     with pytest.raises(ValidationError) as exc_info:
         DestinationFieldsModel.model_validate({"loader_file_format": "file_listing"})
     assert [(err["loc"], err["msg"]) for err in exc_info.value.errors()] == [
@@ -164,8 +181,8 @@ def test_file_glob_pass_default_value() -> None:
     assert FileGlobModel.model_validate({}).file_glob == "*"
 
 
-def test_cts_glob_wildcards_pass_match_cts_openapi_regex() -> None:
-    """Every CTS wildcard constant matches the CTS POST /jobs parameter regex."""
+def test_cts_glob_wildcards_pass_expected_mapping() -> None:
+    """CTS_GLOB_WILDCARDS maps every CTS wildcard token to its glob character sequence."""
     expected_wildcards = {
         CTS_GLOBSTAR: "**",
         CTS_STAR: "*",
@@ -175,8 +192,16 @@ def test_cts_glob_wildcards_pass_match_cts_openapi_regex() -> None:
         CTS_BANG: "!",
     }
     assert dict(CTS_GLOB_WILDCARDS) == expected_wildcards
-    for wildcard in CTS_GLOB_WILDCARDS:
-        assert CTS_PARAM_VALUE_PATTERN.fullmatch(wildcard) is not None
+
+
+@pytest.mark.parametrize(
+    "wildcard",
+    tuple(CTS_GLOB_WILDCARDS),
+    ids=[token.strip("_").lower() for token in CTS_GLOB_WILDCARDS],
+)
+def test_cts_glob_wildcards_pass_match_cts_openapi_regex(wildcard: str) -> None:
+    """Every CTS wildcard constant matches the CTS POST /jobs parameter regex."""
+    assert CTS_PARAM_VALUE_PATTERN.fullmatch(wildcard) is not None
 
 
 @pytest.mark.parametrize(

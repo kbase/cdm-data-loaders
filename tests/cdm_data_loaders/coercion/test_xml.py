@@ -1,5 +1,6 @@
 """Unit tests for XML-to-Arrow record coercion helpers."""
 
+import functools
 from pathlib import Path
 from typing import Final
 
@@ -30,8 +31,9 @@ def test_make_xml_level_converters_pass_struct_and_leaf_elements() -> None:
     copyright_elem = fromstring(
         b'<copyright xmlns="https://uniprot.org/uniprot">Copyrighted by the UniProt Consortium</copyright>'
     )
-    assert converters["copyright"](copyright_elem) == {"#text": "Copyrighted by the UniProt Consortium"}
-    table = pa.Table.from_pylist([converters["copyright"](copyright_elem)], schema=UNIPROT_SCHEMAS["copyright"])
+    converted_copyright = converters["copyright"](copyright_elem)
+    assert converted_copyright == {"#text": "Copyrighted by the UniProt Consortium"}
+    table = pa.Table.from_pylist([converted_copyright], schema=UNIPROT_SCHEMAS["copyright"])
     assert table.to_pylist() == [{"#text": "Copyrighted by the UniProt Consortium"}]
 
 
@@ -61,6 +63,14 @@ def test_make_xml_level_converters_fail_nested_unsupported_xsd_construct() -> No
 
 
 @pytest.mark.parametrize(
+    "entry_point",
+    [
+        pytest.param("make_xml_element_converter", id="make-xml-element-converter"),
+        pytest.param("convert_xml_element", id="convert-xml-element"),
+        pytest.param("make_xml_level_converters", id="make-xml-level-converters"),
+    ],
+)
+@pytest.mark.parametrize(
     ("bad_depth", "exc_cls"),
     [
         pytest.param(0, ValueError, id="zero"),
@@ -70,6 +80,7 @@ def test_make_xml_level_converters_fail_nested_unsupported_xsd_construct() -> No
     ],
 )
 def test_xml_coercion_entry_points_fail_invalid_max_recursion_depth(
+    entry_point: str,
     bad_depth: int,
     exc_cls: type[Exception],
 ) -> None:
@@ -85,10 +96,13 @@ def test_xml_coercion_entry_points_fail_invalid_max_recursion_depth(
         </xs:schema>
         """
     )
-    elem = fromstring(b"<root><id>1</id></root>")
+    if entry_point == "make_xml_element_converter":
+        call = functools.partial(make_xml_element_converter, simple_xsd, "root", max_recursion_depth=bad_depth)
+    elif entry_point == "convert_xml_element":
+        elem = fromstring(b"<root><id>1</id></root>")
+        call = functools.partial(convert_xml_element, elem, simple_xsd, "root", max_recursion_depth=bad_depth)
+    else:
+        call = functools.partial(make_xml_level_converters, simple_xsd, 0, max_recursion_depth=bad_depth)
+
     with pytest.raises(exc_cls, match="max_recursion_depth"):
-        make_xml_element_converter(simple_xsd, "root", max_recursion_depth=bad_depth)
-    with pytest.raises(exc_cls, match="max_recursion_depth"):
-        convert_xml_element(elem, simple_xsd, "root", max_recursion_depth=bad_depth)
-    with pytest.raises(exc_cls, match="max_recursion_depth"):
-        make_xml_level_converters(simple_xsd, 0, max_recursion_depth=bad_depth)
+        call()

@@ -807,7 +807,11 @@ def test_propagate_run_hints_to_variants_pass_noop_cases(
     assert variant_schema.get("write_disposition") != "replace"
 
 
-def test_propagate_run_hints_to_variants_pass_single_and_list_resources(tmp_path: Path) -> None:
+@pytest.mark.parametrize("as_list", [False, True], ids=["single-resource", "resource-list"])
+def test_propagate_run_hints_to_variants_pass_single_and_list_resources(
+    tmp_path: Path,
+    as_list: bool,
+) -> None:
     """propagate_run_hints_to_variants applies table_format, file_format, and write_disposition onto variants."""
     schema = pa.schema([pa.field("id", pa.string())])
 
@@ -819,19 +823,17 @@ def test_propagate_run_hints_to_variants_pass_single_and_list_resources(tmp_path
             )
 
     settings = make_cts_settings(_MultiHintSettings, tmp_path)
-    single_res = tiny_resource()
-    list_res_a = tiny_resource()
-    list_res_b = tiny_resource()
+    resources: list[DltResource] = [tiny_resource(), tiny_resource()] if as_list else [tiny_resource()]
+    target: DltResource | list[DltResource] = resources if as_list else resources[0]
     run_kwargs = {
         "table_format": "iceberg",
         "loader_file_format": "parquet",
         "write_disposition": "replace",
     }
 
-    propagate_run_hints_to_variants(settings, single_res, run_kwargs)
-    propagate_run_hints_to_variants(settings, [list_res_a, list_res_b], run_kwargs)
+    propagate_run_hints_to_variants(settings, target, run_kwargs)
 
-    for res in (single_res, list_res_a, list_res_b):
+    for res in resources:
         for tbl_name in ("tbl_one", "tbl_two"):
             marked = dlt.mark.with_table_name({"id": "1"}, tbl_name)
             variant_schema = res.compute_table_schema(marked.data, marked.meta)

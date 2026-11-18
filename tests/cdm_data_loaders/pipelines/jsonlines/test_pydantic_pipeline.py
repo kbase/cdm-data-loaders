@@ -263,14 +263,28 @@ def test_build_entity_resource_pass_emits_pyarrow_tables_with_converted_model_sc
     assert len(rejected_table) == expected_rejected_count
 
 
-def test_run_jsonlines_with_validation_pipeline_pass_mixed_dict_and_arrow_transforms_rejected_table(
+def _make_mixed_dict_and_arrow_settings(
     settings_factory: Callable[..., JsonlPydanticIngestSettings],
     entity_models_factory: Callable[[dict[str, type[BaseModel]]], str],
     widget_model: type[BaseModel],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Entities with dict transforms and Arrow schemas emit expected valid pages and share a uniform _rejected table."""
+) -> JsonlPydanticIngestSettings:
+    """Stage mixed dict-transformed and Arrow-schematized entity inputs and build settings.
+
+    :param settings_factory: Settings factory fixture.
+    :type settings_factory: Callable[..., JsonlPydanticIngestSettings]
+    :param entity_models_factory: Entity models module factory fixture.
+    :type entity_models_factory: Callable[[dict[str, type[BaseModel]]], str]
+    :param widget_model: Sample entity model class.
+    :type widget_model: type[BaseModel]
+    :param tmp_path: Per-test temporary directory.
+    :type tmp_path: Path
+    :param monkeypatch: Active pytest monkeypatch fixture.
+    :type monkeypatch: pytest.MonkeyPatch
+    :return: Configured ``JsonlPydanticIngestSettings`` instance.
+    :rtype: JsonlPydanticIngestSettings
+    """
     models_mod = entity_models_factory({"widget": widget_model, "gadget": widget_model})
     transforms_mod = register_temp_module(
         monkeypatch,
@@ -288,29 +302,71 @@ def test_run_jsonlines_with_validation_pipeline_pass_mixed_dict_and_arrow_transf
         '{"widget_id": "g_ok", "count": 2}\n{"widget_id": "g_bad", "count": -1}\n',
         encoding="utf-8",
     )
-
-    settings = settings_factory(
+    return settings_factory(
         input_dir=str(input_dir),
         output_dir=str(tmp_path / "output"),
         entity_models=models_mod,
         transforms_module=transforms_mod,
     )
+
+
+@pytest.mark.parametrize(
+    ("entity_name", "expect_arrow_valid_page", "expected_valid_row"),
+    [
+        pytest.param("widget", False, {"widget_id": "w_ok", "count": 1}, id="dict-transformed-widget"),
+        pytest.param("gadget", True, {"widget_id": "g_ok", "count": 2}, id="arrow-schematized-gadget"),
+    ],
+)
+def test_build_entity_resource_pass_mixed_dict_and_arrow_page_types(
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+    entity_models_factory: Callable[[dict[str, type[BaseModel]]], str],
+    widget_model: type[BaseModel],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entity_name: str,
+    expect_arrow_valid_page: bool,
+    expected_valid_row: dict[str, Any],
+) -> None:
+    """build_entity_resource yields dict pages for transformed tables and Arrow pages for schematized tables."""
+    settings = _make_mixed_dict_and_arrow_settings(
+        settings_factory,
+        entity_models_factory,
+        widget_model,
+        tmp_path,
+        monkeypatch,
+    )
     assert settings.schema_map is not None
     assert set(settings.schema_map.registry) == {"gadget"}
 
-    widget_items = list(build_entity_resource("widget", widget_model, settings))
-    gadget_items = list(build_entity_resource("gadget", widget_model, settings))
+    items = list(build_entity_resource(entity_name, widget_model, settings))
 
     expected_items_per_entity = 2
-    assert len(widget_items) == expected_items_per_entity
-    assert len(gadget_items) == expected_items_per_entity
-    assert widget_items[0] == {"widget_id": "w_ok", "count": 1}
-    assert isinstance(widget_items[1], pa.Table)
-    assert widget_items[1].schema == REJECTED_PYARROW_SCHEMA
-    assert isinstance(gadget_items[0], pa.Table)
-    assert gadget_items[0].schema == PydanticToPyArrow().convert(widget_model)
-    assert isinstance(gadget_items[1], pa.Table)
-    assert gadget_items[1].schema == REJECTED_PYARROW_SCHEMA
+    assert len(items) == expected_items_per_entity
+    if expect_arrow_valid_page:
+        assert isinstance(items[0], pa.Table)
+        assert items[0].schema == PydanticToPyArrow().convert(widget_model)
+        assert items[0].to_pylist() == [expected_valid_row]
+    else:
+        assert items[0] == expected_valid_row
+    assert isinstance(items[1], pa.Table)
+    assert items[1].schema == REJECTED_PYARROW_SCHEMA
+
+
+def test_run_jsonlines_with_validation_pipeline_pass_mixed_dict_and_arrow_transforms_rejected_table(
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+    entity_models_factory: Callable[[dict[str, type[BaseModel]]], str],
+    widget_model: type[BaseModel],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Entities with dict transforms and Arrow schemas emit expected valid pages and share a uniform _rejected table."""
+    settings = _make_mixed_dict_and_arrow_settings(
+        settings_factory,
+        entity_models_factory,
+        widget_model,
+        tmp_path,
+        monkeypatch,
+    )
 
     load_info = assert_run_ok(run_jsonlines_with_validation_pipeline(settings))
     dataset = load_info.pipeline.dataset()

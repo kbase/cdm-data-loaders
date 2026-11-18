@@ -52,8 +52,10 @@ jobs:
             args: tests/cdm_data_loaders/pipelines/
           - name: e2e
             args: tests/e2e/
+          - name: io
+            args: tests/cdm_data_loaders/io/
           - name: everything else
-            args: --ignore=tests/e2e --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs
+            args: --ignore=tests/e2e --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs --ignore=tests/cdm_data_loaders/io
 
     steps:
       - name: Checkout
@@ -100,9 +102,12 @@ jobs:
           - name: e2e
             markers: "not requires_spark and not requires_ceph and not docs and not state_audit"
             args: --cov tests/e2e/
+          - name: io
+            markers: "not requires_spark and not requires_ceph and not docs and not state_audit"
+            args: --cov tests/cdm_data_loaders/io/
           - name: everything else
             markers: "not requires_spark and not requires_ceph and not docs and not state_audit"
-            args: --cov --ignore=tests/e2e --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs
+            args: --cov --ignore=tests/e2e --ignore=tests/cdm_data_loaders/pipelines --ignore=tests/docs --ignore=tests/cdm_data_loaders/io
         include:
           - python-version: "3.13"
             os: "ubuntu-latest"

@@ -261,10 +261,9 @@ def test_emit_pass_legacy_property_cases(
     }
 
 
-@pytest.mark.parametrize("mode", ["object", "array"], ids=["object-children", "array-children"])
-def test_emit_pass_native_forest_round_trip(mode: Literal["object", "array"]) -> None:
-    """Each native root retains scoped hints and explicit non-prefix child names."""
-    source = {
+def _native_forest_source() -> dict[str, Any]:
+    """Build a multi-root native dlt stored schema fixture."""
+    return {
         "name": "source",
         "version": 4,
         "previous_hashes": ["previous"],
@@ -296,20 +295,65 @@ def test_emit_pass_native_forest_round_trip(mode: Literal["object", "array"]) ->
             "other": {"columns": {}},
         },
     }
+
+
+@pytest.mark.parametrize("mode", ["object", "array"], ids=["object-children", "array-children"])
+@pytest.mark.parametrize(
+    ("doc_key", "schema_name", "write_disposition"),
+    [
+        pytest.param("root", "source", None, id="root-round-trip"),
+        pytest.param("other", "source", None, id="other-root-round-trip"),
+        pytest.param("root", "renamed", "merge", id="renamed-merge-override"),
+    ],
+)
+def test_emit_pass_native_forest_round_trip(
+    mode: Literal["object", "array"],
+    doc_key: str,
+    schema_name: str,
+    write_disposition: str | None,
+) -> None:
+    """Each native root retains scoped hints and explicit non-prefix child names."""
+    source = _native_forest_source()
     documents = DltReader(child_table_mode=mode).read(source)
-    emitter = DltEmitter(schema_name="source")
-    assert emitter.emit(documents["root"]) == {
-        **source,
-        "tables": {key: value for key, value in source["tables"].items() if key != "other"},
-    }
-    assert emitter.emit(documents["other"]) == {**source, "tables": {"other": source["tables"]["other"]}}
-    overridden = DltEmitter(schema_name="renamed", write_disposition="merge").emit(documents["root"])
-    assert overridden["name"] == "renamed"
-    assert overridden["tables"]["root"]["write_disposition"] == "merge"
-    assert set(overridden["tables"]) == {"root", "rows", "root__tags"}
+    emitted = DltEmitter(schema_name=schema_name, write_disposition=write_disposition).emit(documents[doc_key])
+    if doc_key == "other":
+        expected_tables = {"other": source["tables"]["other"]}
+    else:
+        expected_tables = {key: value for key, value in source["tables"].items() if key != "other"}
+        if write_disposition is not None:
+            expected_tables["root"] = {**expected_tables["root"], "write_disposition": write_disposition}
+    assert emitted == {**source, "name": schema_name, "tables": expected_tables}
 
 
-def test_emit_pass_native_edits_use_nodes_not_raw_tables() -> None:
+@pytest.mark.parametrize(
+    ("schema_name", "wrap_embedded", "expected_tables"),
+    [
+        pytest.param(
+            "source",
+            False,
+            {"root": {"columns": {"new": {"data_type": "bigint", "nullable": False}}}},
+            id="edited-root",
+        ),
+        pytest.param(
+            "fresh",
+            True,
+            {
+                "fresh": {"name": "fresh", "columns": {}, "resource": "fresh", "write_disposition": "append"},
+                "fresh__nested": {
+                    "name": "fresh__nested",
+                    "parent": "fresh",
+                    "columns": {"new": {"name": "new", "data_type": "bigint", "nullable": False}},
+                },
+            },
+            id="embedded-under-fresh-root",
+        ),
+    ],
+)
+def test_emit_pass_native_edits_use_nodes_not_raw_tables(
+    schema_name: str,
+    wrap_embedded: bool,
+    expected_tables: dict[str, Any],
+) -> None:
     """Removed fields and changed types cannot be resurrected from provenance."""
     document = DltReader().read({"root": {"columns": {"old": {"data_type": "text"}, "drop": {"data_type": "bool"}}}})[
         "root"
@@ -318,19 +362,13 @@ def test_emit_pass_native_edits_use_nodes_not_raw_tables() -> None:
     changed = replace(
         original, name="new", node=replace(original.node, type="integer", hints=NodeHints(), nullable=False)
     )
-    document = replace(document, root=replace(document.root, properties=(changed,)))
-    assert DltEmitter(schema_name="source").emit(document)["tables"] == {
-        "root": {"columns": {"new": {"data_type": "bigint", "nullable": False}}},
-    }
-    embedded = SchemaDocument(root=TypedNode("object", properties=(Field("nested", document.root),)))
-    assert DltEmitter(schema_name="fresh").emit(embedded)["tables"] == {
-        "fresh": {"name": "fresh", "columns": {}, "resource": "fresh", "write_disposition": "append"},
-        "fresh__nested": {
-            "name": "fresh__nested",
-            "parent": "fresh",
-            "columns": {"new": {"name": "new", "data_type": "bigint", "nullable": False}},
-        },
-    }
+    edited = replace(document, root=replace(document.root, properties=(changed,)))
+    target = (
+        SchemaDocument(root=TypedNode("object", properties=(Field("nested", edited.root),)))
+        if wrap_embedded
+        else edited
+    )
+    assert DltEmitter(schema_name=schema_name).emit(target)["tables"] == expected_tables
 
 
 def test_emit_pass_iceberg_logical_types() -> None:
@@ -473,18 +511,31 @@ def test_to_schema_pass_native_incomplete_metadata(include: bool) -> None:
     assert live.tables["root__child"]["columns"] == {"value": {"name": "value", "data_type": "text"}}
 
 
-def test_emit_pass_native_empty_table_and_new_child() -> None:
+@pytest.mark.parametrize(
+    ("add_child", "expected_tables"),
+    [
+        pytest.param(False, {"root": {"parent": None}}, id="empty-root"),
+        pytest.param(
+            True,
+            {
+                "root": {"parent": None},
+                "root__new": {
+                    "name": "root__new",
+                    "parent": "root",
+                    "columns": {"value": {"name": "value", "data_type": "text", "nullable": True}},
+                },
+            },
+            id="added-child",
+        ),
+    ],
+)
+def test_emit_pass_native_empty_table_and_new_child(
+    add_child: bool,
+    expected_tables: dict[str, Any],
+) -> None:
     """Missing column mappings stay absent unless actual nodes introduce columns."""
     document = DltReader().read({"root": {"parent": None}})["root"]
-    emitter = DltEmitter(schema_name="source")
-    assert emitter.emit(document)["tables"] == {"root": {"parent": None}}
-    new_child = Field("new", TypedNode("object", properties=(Field("value", TypedNode("string")),)))
-    changed = replace(document, root=replace(document.root, properties=(new_child,)))
-    assert emitter.emit(changed)["tables"] == {
-        "root": {"parent": None},
-        "root__new": {
-            "name": "root__new",
-            "parent": "root",
-            "columns": {"value": {"name": "value", "data_type": "text", "nullable": True}},
-        },
-    }
+    if add_child:
+        new_child = Field("new", TypedNode("object", properties=(Field("value", TypedNode("string")),)))
+        document = replace(document, root=replace(document.root, properties=(new_child,)))
+    assert DltEmitter(schema_name="source").emit(document)["tables"] == expected_tables

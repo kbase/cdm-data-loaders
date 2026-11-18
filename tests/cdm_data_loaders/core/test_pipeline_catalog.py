@@ -72,28 +72,57 @@ def test_load_project_scripts_falls_back_to_entry_points(
     assert scripts == {"xsv": "cdm_data_loaders.pipelines.xsv.pipeline:cli"}
 
 
-def test_resolve_pipeline_short_name_and_unregistered_runner(tmp_path: Path) -> None:
-    """Resolve short pipeline names and unregistered CliRunner instances."""
-    spec = resolve_pipeline("jsonlines.extract")
-    assert spec == PipelineSpec(
-        cli_command="jsonlines_extract",
-        module_path="cdm_data_loaders.pipelines.jsonlines.extract",
-        settings_cls=JsonlExtractSettings,
-        pipeline_fn=run_jsonlines_pipeline,
-        cli_callable=jsonl_extract_cli,
-    )
+@pytest.mark.parametrize(
+    "target_shape",
+    ["short_name", "unregistered_cli_runner", "module_target"],
+    ids=["short_name", "unregistered_cli_runner", "module_target"],
+)
+def test_resolve_pipeline_short_name_and_unregistered_runner(
+    tmp_path: Path,
+    target_shape: str,
+) -> None:
+    """Resolve short pipeline names, unregistered CliRunner instances, and plain pipeline modules."""
+    if target_shape == "short_name":
+        target: str | CliRunner[JsonlExtractSettings, object] | ModuleType = "jsonlines.extract"
+        pyproject_path: Path | None = None
+        expected_spec = PipelineSpec(
+            cli_command="jsonlines_extract",
+            module_path="cdm_data_loaders.pipelines.jsonlines.extract",
+            settings_cls=JsonlExtractSettings,
+            pipeline_fn=run_jsonlines_pipeline,
+            cli_callable=jsonl_extract_cli,
+        )
+    elif target_shape == "unregistered_cli_runner":
+        pyproject_path = tmp_path / "pyproject.toml"
+        pyproject_path.write_text(
+            '[project.scripts]\nalpha = "cdm_data_loaders.pipelines.xsv.pipeline:cli"\n',
+            encoding="utf-8",
+        )
+        custom_runner = CliRunner(JsonlExtractSettings, run_jsonlines_pipeline)
+        target = custom_runner
+        expected_spec = PipelineSpec(
+            cli_command="jsonlines_extract",
+            module_path="cdm_data_loaders.pipelines.jsonlines.extract",
+            settings_cls=JsonlExtractSettings,
+            pipeline_fn=run_jsonlines_pipeline,
+            cli_callable=custom_runner,
+        )
+    else:
+        pyproject_path = tmp_path / "pyproject.toml"
+        pyproject_path.write_text(
+            '[project.scripts]\nalpha = "cdm_data_loaders.pipelines.xsv.pipeline:cli"\n',
+            encoding="utf-8",
+        )
+        plain_mod = ModuleType("cdm_data_loaders.pipelines.plain_custom")
+        plain_mod.Settings = JsonlExtractSettings  # type: ignore[attr-defined]
+        plain_mod.run_pipeline = run_jsonlines_pipeline  # type: ignore[attr-defined]
+        target = plain_mod
+        expected_spec = PipelineSpec(
+            cli_command="plain_custom",
+            module_path="cdm_data_loaders.pipelines.plain_custom",
+            settings_cls=JsonlExtractSettings,
+            pipeline_fn=run_jsonlines_pipeline,
+            cli_callable=None,
+        )
 
-    pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text('[project.scripts]\nalpha = "cdm_data_loaders.pipelines.xsv.pipeline:cli"\n', encoding="utf-8")
-    custom_runner = CliRunner(JsonlExtractSettings, run_jsonlines_pipeline)
-    unregistered_spec = resolve_pipeline(custom_runner, pyproject_path=pyproject)
-    assert unregistered_spec.cli_command == "jsonlines_extract"
-    assert unregistered_spec.settings_cls is JsonlExtractSettings
-    assert unregistered_spec.pipeline_fn is run_jsonlines_pipeline
-
-    plain_mod = ModuleType("cdm_data_loaders.pipelines.plain_custom")
-    plain_mod.Settings = JsonlExtractSettings  # type: ignore[attr-defined]
-    plain_mod.run_pipeline = run_jsonlines_pipeline  # type: ignore[attr-defined]
-    plain_spec = resolve_pipeline(plain_mod, pyproject_path=pyproject)
-    assert plain_spec.cli_command == "plain_custom"
-    assert plain_spec.cli_callable is None
+    assert resolve_pipeline(target, pyproject_path=pyproject_path) == expected_spec

@@ -62,6 +62,21 @@ def test_validate_positive_int_param_fail_invalid_values(
 
 
 @pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        pytest.param({}, DEFAULT_MAX_RECURSION_DEPTH, id="default-depth"),
+        pytest.param({"depth": CUSTOM_DEPTH}, CUSTOM_DEPTH, id="custom-depth"),
+    ],
+)
+def test_strict_positive_recursion_depth_pydantic_field_pass_valid_inputs(
+    kwargs: dict[str, int],
+    expected: int,
+) -> None:
+    """Accept default and positive integer recursion depths in Pydantic models."""
+    assert _DepthModel(**kwargs).depth == expected
+
+
+@pytest.mark.parametrize(
     "bad_depth",
     [
         pytest.param(0, id="zero"),
@@ -72,9 +87,7 @@ def test_validate_positive_int_param_fail_invalid_values(
         pytest.param(2.0, id="float"),
     ],
 )
-def test_strict_positive_recursion_depth_pydantic_field_rejects_invalid_inputs(bad_depth: object) -> None:
+def test_strict_positive_recursion_depth_pydantic_field_fail_invalid_inputs(bad_depth: object) -> None:
     """Reject booleans, strings, floats, zero, and negative values in Pydantic models."""
-    assert _DepthModel().depth == DEFAULT_MAX_RECURSION_DEPTH
-    assert _DepthModel(depth=CUSTOM_DEPTH).depth == CUSTOM_DEPTH
     with pytest.raises(ValidationError):
         _DepthModel(depth=bad_depth)  # type: ignore[arg-type]

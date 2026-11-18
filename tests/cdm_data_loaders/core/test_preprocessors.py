@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from cdm_data_loaders.core.md5_preprocessor import FILE_PREPROCESSORS, validate_md5_sidecar
 from cdm_data_loaders.core.preprocessors import validate_file_preprocessors
 from cdm_data_loaders.core.registry import (
+    FilePreprocessFn,
     PreprocessorRegistry,
     load_file_preprocessors,
 )
@@ -247,33 +248,43 @@ def test_validate_file_preprocessors_fail_unknown_tables() -> None:
         validate_file_preprocessors(bad_settings, {"items"})
 
 
+@pytest.mark.parametrize(
+    ("mode", "lookup_table", "expected"),
+    [
+        pytest.param("sequence", "items", (validate_md5_sidecar,), id="sequence-mode-items"),
+        pytest.param(
+            "dict",
+            "items",
+            (_noop_preprocessor, _filter_preprocessor),
+            id="dict-mode-configured-table",
+        ),
+        pytest.param("dict", "other", (), id="dict-mode-unlisted-table"),
+    ],
+)
 def test_transform_settings_mixin_pass_preprocessors_module(
     monkeypatch: pytest.MonkeyPatch,
     test_cts_settings: frozendict[str, Any],
+    mode: str,
+    lookup_table: str,
+    expected: tuple[FilePreprocessFn, ...],
 ) -> None:
     """TransformSettingsMixin loads preprocessors_module in both sequence and dict modes."""
-    assert list(FILE_PREPROCESSORS) == [validate_md5_sidecar]
-    seq_settings = JsonlExtractSettings(
+    if mode == "sequence":
+        assert list(FILE_PREPROCESSORS) == [validate_md5_sidecar]
+        mod_name = "cdm_data_loaders.core.md5_preprocessor"
+    else:
+        mod_name = register_temp_module(
+            monkeypatch,
+            "_test_dict_preprocessors_mod",
+            FILE_PREPROCESSORS={"items": [_noop_preprocessor, _filter_preprocessor]},
+        )
+    settings = JsonlExtractSettings(
         **test_cts_settings,
         dataset_name="ds",
         table_name="items",
-        preprocessors_module="cdm_data_loaders.core.md5_preprocessor",
+        preprocessors_module=mod_name,
     )
-    assert seq_settings.get_file_preprocessors("items") == (validate_md5_sidecar,)
-
-    dict_mod = register_temp_module(
-        monkeypatch,
-        "_test_dict_preprocessors_mod",
-        FILE_PREPROCESSORS={"items": [_noop_preprocessor, _filter_preprocessor]},
-    )
-    dict_settings = JsonlExtractSettings(
-        **test_cts_settings,
-        dataset_name="ds",
-        table_name="items",
-        preprocessors_module=dict_mod,
-    )
-    assert dict_settings.get_file_preprocessors("items") == (_noop_preprocessor, _filter_preprocessor)
-    assert dict_settings.get_file_preprocessors("other") == ()
+    assert settings.get_file_preprocessors(lookup_table) == expected
 
 
 def test_transform_settings_mixin_fail_unknown_preprocessor_table(

@@ -254,62 +254,80 @@ def test_resolve_scalar_type_fail_invalid_annotations(
         resolve_scalar_type(annotation)
 
 
-def test_generate_pyarrow_schema_pass_edge_cases() -> None:
-    """Verify schema generation for parameterized type aliases, TypedDict Required/NotRequired, and tuple unpack."""
-    type BoxedList[T] = list[T]
-    type PairTuple = tuple[int, str]
-    type KeyA = Literal["a"]
-    type KeyB = Literal["b"]
+type _BoxedList[T] = list[T]
+type _PairTuple = tuple[int, str]
+type _KeyA = Literal["a"]
+type _KeyB = Literal["b"]
 
-    class DetailedDict(TypedDict, total=False):
-        req_field: Required[str]
-        opt_field: NotRequired[int]
 
-    @dataclass
-    class DefaultedDataclass:
-        count: int = 5
-        items: list[str] = field(default_factory=list)
+class _DetailedDict(TypedDict, total=False):
+    req_field: Required[str]
+    opt_field: NotRequired[int]
 
-    class ChildA(BaseModel):
-        shared: int
 
-    class ChildB(BaseModel):
-        shared: int
+@dataclass
+class _DefaultedDataclass:
+    count: int = 5
+    items: list[str] = field(default_factory=list)
 
-    class RootUnionModel(RootModel[ChildA | ChildB]):
-        pass
 
-    class EdgeCaseModel(BaseModel):
-        boxed: BoxedList[int]
-        aliased_tuple: PairTuple
-        td: DetailedDict
-        dc: DefaultedDataclass
-        same_list_union: list[int] | set[int]
-        literal_key_map: dict[Literal["a", "b"], int]
-        union_key_map: dict[KeyA | KeyB, int]
-        excluded_field: str = Field(default="skip", exclude=True)
+class _ChildA(BaseModel):
+    shared: int
 
-        @computed_field
-        @property
-        def computed_val(self) -> int:
-            return 1
 
-    pa_schema = generate_pyarrow_schema(EdgeCaseModel)
-    assert pa_schema.field("boxed").type == pa.list_(pa.field("item", pa.int64(), nullable=False))
-    assert pa_schema.field("aliased_tuple").type == pa.struct(
-        [
-            pa.field("item_0", pa.int64(), nullable=False, metadata={"pydantic_type": "integer"}),
-            pa.field("item_1", pa.string(), nullable=False, metadata={"pydantic_type": "string"}),
-        ]
-    )
-    td_struct = pa_schema.field("td").type
-    assert td_struct.field("req_field").nullable is False
-    assert td_struct.field("opt_field").nullable is True
-    assert "excluded_field" not in pa_schema.names
-    assert "computed_val" in pa_schema.names
+class _ChildB(BaseModel):
+    shared: int
 
-    root_union_schema = generate_pyarrow_schema(RootUnionModel)
-    assert root_union_schema.field("shared").type == pa.int64()
+
+class _RootUnionModel(RootModel[_ChildA | _ChildB]):
+    pass
+
+
+class _EdgeCaseModel(BaseModel):
+    boxed: _BoxedList[int]
+    aliased_tuple: _PairTuple
+    td: _DetailedDict
+    dc: _DefaultedDataclass
+    same_list_union: list[int] | set[int]
+    literal_key_map: dict[Literal["a", "b"], int]
+    union_key_map: dict[_KeyA | _KeyB, int]
+    excluded_field: str = Field(default="skip", exclude=True)
+
+    @computed_field
+    @property
+    def computed_val(self) -> int:
+        """Return a constant computed integer field."""
+        return 1
+
+
+@pytest.mark.parametrize(
+    ("model_cls", "case_id"),
+    [
+        pytest.param(_EdgeCaseModel, "edge-case-model", id="edge-case-model"),
+        pytest.param(_RootUnionModel, "root-union-model", id="root-union-model"),
+    ],
+)
+def test_generate_pyarrow_schema_pass_edge_cases(
+    model_cls: type[BaseModel],
+    case_id: str,
+) -> None:
+    """Verify schema generation for parameterized type aliases, TypedDict Required or NotRequired, and root unions."""
+    pa_schema = generate_pyarrow_schema(model_cls)
+    if case_id == "edge-case-model":
+        assert pa_schema.field("boxed").type == pa.list_(pa.field("item", pa.int64(), nullable=False))
+        assert pa_schema.field("aliased_tuple").type == pa.struct(
+            [
+                pa.field("item_0", pa.int64(), nullable=False, metadata={"pydantic_type": "integer"}),
+                pa.field("item_1", pa.string(), nullable=False, metadata={"pydantic_type": "string"}),
+            ]
+        )
+        td_struct = pa_schema.field("td").type
+        assert td_struct.field("req_field").nullable is False
+        assert td_struct.field("opt_field").nullable is True
+        assert "excluded_field" not in pa_schema.names
+        assert "computed_val" in pa_schema.names
+    else:
+        assert pa_schema.field("shared").type == pa.int64()
 
 
 type _CyclicAlias = str | list[_CyclicAlias]
