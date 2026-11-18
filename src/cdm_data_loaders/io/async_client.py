@@ -1,36 +1,18 @@
-"""Asynchronous file download client.
-
-Usage:
-
-# initialise a download client that downloads files in chunks of 1024 bytes and retries the downlooad
-# three times in case of connection/timeout errors
-async_client = AsyncFileDownloader(max_attempts=3, chunk_size=1024)
-
-# output_path will be the path to the saved file
-output_path = await async_client.download(
-    "https://example.com/file.txt",
-    Path("/path") / "to" / "save" / "file.txt"),
-    expected_checksum="some_checksum",
-    checksum_fn="sha512",
-    extra_headers={
-        "If-None-Match": "abc",
-        "If-Modified-Since": "Wed, 21 Oct 2015 07:28:00 GMT"
-    })
-
-"""
+"""Asynchronous HTTP file download client."""
 
 import asyncio
 import contextlib
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any
+from typing import Any, Unpack
 
 import httpx
 from tenacity import AsyncRetrying
 
 from cdm_data_loaders.io.core import (
+    DEFAULT_CHUNK_SIZE,
     HTTP_CLIENT_DEFAULTS,
-    RETRY_DEFAULTS,
+    AsyncDownloaderOptions,
     BaseFileDownloader,
     DownloadCore,
 )
@@ -39,85 +21,100 @@ logger: Logger = getLogger(__name__)
 
 
 def get_async_httpx_client() -> httpx.AsyncClient:
-    """Get a basic client for executing http requests."""
+    """Build an asynchronous :class:`httpx.AsyncClient` configured with ``HTTP_CLIENT_DEFAULTS``.
+
+    :return: configured async HTTP client
+    :rtype: httpx.AsyncClient
+    """
     return httpx.AsyncClient(**HTTP_CLIENT_DEFAULTS)
 
 
-class AsyncFileDownloader(BaseFileDownloader):
-    """Asynchronous downloader interface."""
+class AsyncFileDownloader(BaseFileDownloader[httpx.AsyncClient]):
+    """Asynchronous HTTP downloader with retries, concurrency limits, and checksum verification."""
 
-    def __init__(  # noqa: PLR0913
+    def __init__(
         self,
         client: httpx.AsyncClient | None = None,
-        max_attempts: int = RETRY_DEFAULTS["max_attempts"],
-        min_backoff: int = RETRY_DEFAULTS["min_backoff"],
-        max_backoff: int = RETRY_DEFAULTS["max_backoff"],
-        chunk_size: int = 8192,
-        max_concurrency: int | None = None,
+        **options: Unpack[AsyncDownloaderOptions],
     ) -> None:
-        """Initialise an async download client.
+        """Initialize an asynchronous download client.
 
-        :param client: an httpx.Client object, defaults to None
-        :type client: httpx.Client | None, optional
-        :param max_attempts: how many times to retry the request defaults to 5
-        :type max_attempts: int, optional
-        :param min_backoff: minimum backoff for retries, defaults to 1
-        :type min_backoff: int, optional
-        :param max_backoff: maximum backoff for retries, defaults to 30
-        :type max_backoff: int, optional
-        :param chunk_size: chunk size for the downloader, defaults to 8192
-        :type chunk_size: int, optional
-        :param max_concurrency: maximum concurrency for the downloader, defaults to None
-        :type max_concurrency: int, optional
+        :param client: optional pre-configured :class:`httpx.AsyncClient`
+        :type client: httpx.AsyncClient | None
+        :param options: optional ``max_attempts``, ``min_backoff``, ``max_backoff``, ``chunk_size``, and ``max_concurrency``
+        :type options: Unpack[AsyncDownloaderOptions]
         """
-        super().__init__(client or get_async_httpx_client(), chunk_size=chunk_size)
+        super().__init__(
+            client or get_async_httpx_client(),
+            chunk_size=options.get("chunk_size", DEFAULT_CHUNK_SIZE),
+        )
+        max_concurrency = options.get("max_concurrency")
         self.semaphore = asyncio.Semaphore(max_concurrency) if max_concurrency else None
-
-        self._retry = AsyncRetrying(**DownloadCore.retry_kwargs(max_attempts, min_backoff, max_backoff))
+        self._retry = AsyncRetrying(**self._build_retry_kwargs(options, logger))
 
     async def download(
         self,
         url: str,
         destination: str | Path,
         expected_checksum: str | None = None,
-        checksum_fn: str | None = "sha256",
+        checksum_fn: str | None = None,
         extra_headers: dict[str, Any] | None = None,
     ) -> Path | None:
         """Download a file from ``url`` to ``destination`` on disk.
 
-        Returns the file path if successful; None otherwise.
-        304 / Not Modified responses return None.
+        Returns the saved file path on 2xx responses, or ``None`` on HTTP 304 Not Modified.
 
         :param url: URL to download from
         :type url: str
-        :param destination: where to save the file to
+        :param destination: local destination path
         :type destination: str | Path
-        :param expected_checksum: expected checksum (if known), defaults to None
-        :type expected_checksum: str | None, optional
-        :param checksum_fn: function used for calculating the checksum, defaults to "sha256"
-        :type checksum_fn: str, optional
-        :param extra_headers: allow extra headers to be passed, defaults to None
-        :type extra_headers: dict[str, Any] | None, optional
-        :return: either the path to the downloaded file or None if no file was downloaded
+        :param expected_checksum: expected checksum if known
+        :type expected_checksum: str | None
+        :param checksum_fn: checksum algorithm name (defaults to ``"sha256"`` when omitted)
+        :type checksum_fn: str | None
+        :param extra_headers: optional extra request headers
+        :type extra_headers: dict[str, Any] | None
+        :return: saved file path, or ``None`` on HTTP 304
         :rtype: Path | None
         """
-        destination, checksum_fn, extra_headers = DownloadCore.validate_args(destination, checksum_fn, extra_headers)
+        dest_path, validated_fn, headers = DownloadCore.validate_args(destination, checksum_fn, extra_headers)
 
         async with self.semaphore or contextlib.nullcontext():
             return await self._download_with_retry(
                 url,
-                destination,
+                dest_path,
                 expected_checksum,
-                checksum_fn,
-                extra_headers,
+                validated_fn,
+                headers,
             )
 
-    async def _download_with_retry(self, *args) -> Path | None:
+    async def _download_with_retry(
+        self,
+        url: str,
+        destination: Path,
+        expected_checksum: str | None,
+        checksum_fn: str,
+        extra_headers: dict[str, Any],
+    ) -> Path | None:
+        """Run :meth:`_download_once` inside the configured ``AsyncRetrying`` loop.
+
+        :param url: URL to download from
+        :type url: str
+        :param destination: local destination path
+        :type destination: Path
+        :param expected_checksum: expected checksum if known
+        :type expected_checksum: str | None
+        :param checksum_fn: validated checksum algorithm name
+        :type checksum_fn: str
+        :param extra_headers: request headers
+        :type extra_headers: dict[str, Any]
+        :return: saved file path, or ``None`` on HTTP 304
+        :rtype: Path | None
+        :raises RuntimeError: if the retry iterator yields zero attempts
+        """
         async for attempt in self._retry:
             with attempt:
-                return await self._download_once(*args)
-        # this should never be raised under normal circumstances
-        # tenacity should never exhaust silently
+                return await self._download_once(url, destination, expected_checksum, checksum_fn, extra_headers)
         msg = "Iterator exhausted, unreachable code reached!"
         raise RuntimeError(msg)
 
@@ -129,30 +126,27 @@ class AsyncFileDownloader(BaseFileDownloader):
         checksum_fn: str,
         extra_headers: dict[str, Any],
     ) -> Path | None:
-        """Core download function.
+        """Execute a single asynchronous download attempt.
 
         :param url: URL to download from
         :type url: str
-        :param destination: where to save the file to
+        :param destination: local destination path
         :type destination: Path
-        :param expected_checksum: expected checksum (if known), defaults to None
-        :type expected_checksum: str | None, optional
-        :param checksum_fn: function used for calculating the checksum
+        :param expected_checksum: expected checksum if known
+        :type expected_checksum: str | None
+        :param checksum_fn: validated checksum algorithm name
         :type checksum_fn: str
-        :param extra_headers: any extra headers to pass to the request
+        :param extra_headers: request headers
         :type extra_headers: dict[str, Any]
-        :raises DownloadError: for unrecoverable download errors
-        :raises ChecksumMismatchError: if the checksum does not match expected_checksum
-        :return: either the path to the downloaded file or None if no file was downloaded
+        :return: saved file path, or ``None`` on HTTP 304
         :rtype: Path | None
         """
-        try:
+        with DownloadCore.capture_download_errors(url, logger):
             async with self.client.stream("GET", url, headers=extra_headers) as response:
                 if not DownloadCore.check_should_download(response, url, logger):
                     return None
 
                 chunks = response.aiter_bytes(chunk_size=self.chunk_size)
-
                 await DownloadCore.write_and_hash_async(
                     url,
                     destination,
@@ -160,8 +154,5 @@ class AsyncFileDownloader(BaseFileDownloader):
                     expected_checksum=expected_checksum,
                     checksum_fn=checksum_fn,
                 )
-
-        except Exception as exc:  # noqa: BLE001
-            DownloadCore.handle_download_exception(exc, url, logger)
 
         return DownloadCore.log_download_success(url, destination, logger)

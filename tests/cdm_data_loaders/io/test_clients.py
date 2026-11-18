@@ -13,6 +13,7 @@ from cdm_data_loaders.io.core import (
     DownloadError,
     NonRetryableDownloadError,
 )
+from cdm_data_loaders.io.sync_client import FileDownloader, fetch_json
 from tests.cdm_data_loaders.io._helpers import DownloaderAdapter
 
 DOWNLOAD_URL = "https://example.com/file.txt"
@@ -285,10 +286,15 @@ async def test_timeout_and_server_error_retries(
 
     # check the logs: we should have messages for each error/timeout until the successful download
     retry_possible_msgs = [r for r in caplog.records if r.getMessage().endswith("retry possible")]
+    before_sleep_msgs = [
+        r for r in caplog.records if r.levelno == logging.WARNING and r.getMessage().startswith("Retrying ")
+    ]
     if max_attempts < successful_attempt:
         assert len(retry_possible_msgs) == max_attempts
+        assert len(before_sleep_msgs) == max_attempts - 1
     else:
         assert len(retry_possible_msgs) == successful_attempt - 1
+        assert len(before_sleep_msgs) == successful_attempt - 1
 
 
 @patch("tenacity.nap.time.sleep", MagicMock())
@@ -319,3 +325,70 @@ async def test_client_error_retries(
         )
     # there will only ever be one retry
     assert calls["n"] == 1
+
+
+@patch("tenacity.nap.time.sleep", MagicMock())
+@pytest.mark.parametrize(
+    "failure_kind",
+    [
+        pytest.param("503", id="server-503"),
+        pytest.param("timeout", id="connect-timeout"),
+    ],
+)
+def test_file_downloader_fetch_json_retries_transient_errors(failure_kind: str) -> None:
+    """Retry transient 5xx and timeout failures in FileDownloader.fetch_json and return decoded JSON."""
+    attempts = 0
+    expected_calls = 2
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        assert request.headers["accept"] == "application/json"
+        if attempts == 1:
+            if failure_kind == "503":
+                return httpx.Response(503)
+            err = "timeout"
+            raise httpx.ConnectTimeout(err)
+        return httpx.Response(200, json={"data": {"id": "r6gcp"}})
+
+    downloader = FileDownloader(httpx.Client(transport=httpx.MockTransport(handler)), max_attempts=3)
+    payload = downloader.fetch_json(DOWNLOAD_URL, extra_headers={"accept": "application/json"})
+    assert payload == {"data": {"id": "r6gcp"}}
+    assert attempts == expected_calls
+
+
+def test_file_downloader_fetch_json_fails_fast_on_404() -> None:
+    """Raise NonRetryableDownloadError on 404 without retrying."""
+    attempts = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(404)
+
+    downloader = FileDownloader(httpx.Client(transport=httpx.MockTransport(handler)), max_attempts=3)
+    with pytest.raises(NonRetryableDownloadError, match="Client error: 404 Not Found"):
+        downloader.fetch_json(DOWNLOAD_URL)
+    assert attempts == 1
+
+
+def test_module_fetch_json_applies_timeout_and_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Construct a managed httpx.Client with custom timeout and return the JSON payload."""
+    captured_timeout: list[httpx.Timeout] = []
+
+    class FakeClient(httpx.Client):
+        def __init__(self, **kwargs: object) -> None:
+            timeout = kwargs.get("timeout")
+            if isinstance(timeout, httpx.Timeout):
+                captured_timeout.append(timeout)
+            super().__init__(
+                transport=httpx.MockTransport(
+                    lambda req: httpx.Response(200, json={"accept": req.headers.get("accept")})
+                )
+            )
+
+    monkeypatch.setattr("cdm_data_loaders.io.sync_client.httpx.Client", FakeClient)
+    custom_timeout = 12.5
+    result = fetch_json(DOWNLOAD_URL, timeout=custom_timeout, extra_headers={"accept": "application/json"})
+    assert result == {"accept": "application/json"}
+    assert captured_timeout == [httpx.Timeout(custom_timeout)]

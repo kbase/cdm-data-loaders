@@ -1,11 +1,19 @@
-"""Unit tests for ``load_patterns`` in ``cdm_data_loaders.datasets.all_the_bacteria.osf``."""
+"""Unit tests for ``cdm_data_loaders.datasets.all_the_bacteria.osf``."""
 
+import logging
 import re
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cdm_data_loaders.datasets.all_the_bacteria.osf import load_patterns
+from cdm_data_loaders.datasets.all_the_bacteria.osf import (
+    ALL_ATB_FILE_NAME,
+    download_osf_files,
+    download_osf_index_tsv,
+    iter_atb_download_links,
+    load_patterns,
+)
 
 
 @pytest.fixture
@@ -107,3 +115,108 @@ def test_load_patterns_empty_file_returns_none(tmp_path: Path) -> None:
     path = tmp_path / "patterns.txt"
     path.write_text("\n\n   \t\n  \n   \n\t\t\n", encoding="utf-8")
     assert load_patterns(path) is None
+
+
+@patch("cdm_data_loaders.datasets.all_the_bacteria.osf.FileDownloader")
+@patch("cdm_data_loaders.datasets.all_the_bacteria.osf.fetch_json")
+def test_download_osf_index_tsv_fetches_link_and_downloads(
+    mock_fetch_json: MagicMock,
+    mock_downloader_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Fetch OSF metadata JSON and download all_atb_files.tsv into raw_data_dir."""
+    mock_fetch_json.return_value = {"data": {"links": {"download": "https://osf.io/download/r6gcp/"}}}
+    raw_dir = tmp_path / "raw"
+    result = download_osf_index_tsv(raw_dir)
+
+    expected_dest = raw_dir / ALL_ATB_FILE_NAME
+    assert result == expected_dest
+    mock_downloader_cls.return_value.download.assert_called_once_with(
+        url="https://osf.io/download/r6gcp/",
+        destination=expected_dest,
+    )
+
+
+def test_download_osf_index_tsv_missing_link_raises(tmp_path: Path) -> None:
+    """Raise RuntimeError when the OSF metadata JSON lacks data.links.download."""
+    with (
+        patch("cdm_data_loaders.datasets.all_the_bacteria.osf.fetch_json", return_value={"data": {"links": {}}}),
+        pytest.raises(RuntimeError, match="Could not find download URL"),
+    ):
+        download_osf_index_tsv(tmp_path / "raw")
+
+
+def test_iter_atb_download_links_filters_and_warns_on_extra_column(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Yield matching rows and log WARNING when non-required headers change."""
+    tsv = tmp_path / "index.tsv"
+    tsv.write_text(
+        "project\tfilename\turl\tmd5\textra_col\n"
+        "AllTheBacteria/Metadata\tspecies.tsv.gz\thttps://osf.io/1\taaa\tx\n"
+        "AllTheBacteria/Other\tskip.tsv.gz\thttps://osf.io/2\tbbb\ty\n",
+        encoding="utf-8",
+    )
+    with caplog.at_level(logging.WARNING):
+        batches = list(iter_atb_download_links(tsv, re.compile(r"^AllTheBacteria/Metadata$")))
+
+    assert batches == [
+        [
+            {
+                "project": "AllTheBacteria/Metadata",
+                "filename": "species.tsv.gz",
+                "url": "https://osf.io/1",
+                "md5": "aaa",
+                "extra_col": "x",
+            }
+        ]
+    ]
+    assert "ATB file index TSV headers have changed" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("tsv_text", "match"),
+    [
+        pytest.param("project\tproject_id\tfilename\turl\tmd5\tsize(MB)\n", "No valid TSV data found", id="empty-rows"),
+        pytest.param("project\tfilename\turl\nA\tf.tsv\thttps://osf.io/1\n", "Missing required", id="missing-md5-col"),
+    ],
+)
+def test_iter_atb_download_links_invalid_tsv(tmp_path: Path, tsv_text: str, match: str) -> None:
+    """Raise RuntimeError on empty TSV bodies or missing required headers."""
+    tsv = tmp_path / "bad.tsv"
+    tsv.write_text(tsv_text, encoding="utf-8")
+    with pytest.raises(RuntimeError, match=match):
+        list(iter_atb_download_links(tsv, re.compile(r".*")))
+
+
+@patch("cdm_data_loaders.datasets.all_the_bacteria.osf.FileDownloader")
+def test_download_osf_files_records_successes_and_skips_failures(
+    mock_downloader_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Populate 'path' on downloaded file records and continue past single-file download errors."""
+    mock_client = mock_downloader_cls.return_value
+
+    def side_effect(*, url: str, destination: Path, expected_checksum: str, checksum_fn: str) -> Path:
+        assert checksum_fn == "md5"
+        if url.endswith("/bad"):
+            raise OSError
+        assert expected_checksum == "abc"
+        return destination
+
+    mock_client.download.side_effect = side_effect
+    files = [
+        {"project": "AllTheBacteria/Metadata/", "filename": "ok.tsv.gz", "url": "https://osf.io/ok", "md5": "abc"},
+        {"project": "AllTheBacteria/Assembly/", "filename": "bad.tar.xz", "url": "https://osf.io/bad", "md5": "def"},
+    ]
+    succeeded = download_osf_files(tmp_path, files)
+    assert succeeded == [
+        {
+            "project": "AllTheBacteria/Metadata/",
+            "filename": "ok.tsv.gz",
+            "url": "https://osf.io/ok",
+            "md5": "abc",
+            "path": str(tmp_path / "Metadata" / "ok.tsv.gz"),
+        }
+    ]

@@ -13,7 +13,6 @@ import dlt
 import pytest
 from frozendict import frozendict
 from pydantic import ValidationError
-from requests.exceptions import HTTPError
 
 import cdm_data_loaders.datasets.all_the_bacteria.osf as atb_osf
 from cdm_data_loaders.core.cli import CliRunner
@@ -66,7 +65,7 @@ def test_download_atb_index_tsv_vcr_destination_s3(test_s3_settings: AtbSettings
 @pytest.mark.vcr
 def test_download_atb_index_tsv_error_404(test_settings: AtbSettings) -> None:
     """Ensure that a 404 response causes an error and the function to die."""
-    with pytest.raises(HTTPError, match="404 Client Error"):
+    with pytest.raises(NonRetryableDownloadError, match="Client error: 404 Not Found"):
         download_atb_index_tsv(test_settings)
 
 

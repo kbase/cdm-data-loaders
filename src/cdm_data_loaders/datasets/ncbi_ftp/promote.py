@@ -6,15 +6,21 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from http import HTTPStatus
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any, Final, TypedDict, Unpack
 
-import botocore.exceptions
 import tqdm
 
-from cdm_data_loaders.datasets.ncbi_ftp.assembly import build_accession_path, parse_assembly_path
+from cdm_data_loaders.datasets.ncbi_ftp.assembly import (
+    build_accession_path,
+    extract_accession,
+    parse_assembly_path,
+)
+from cdm_data_loaders.datasets.ncbi_ftp.manifest import (
+    filter_unpromoted_manifest_lines,
+    read_manifest_lines,
+)
 from cdm_data_loaders.datasets.ncbi_ftp.metadata import (
     DescriptorResource,
     archive_descriptor,
@@ -23,11 +29,11 @@ from cdm_data_loaders.datasets.ncbi_ftp.metadata import (
     upload_descriptor,
 )
 from cdm_data_loaders.io.s3.object_utils import (
-    NOT_FOUND_ERROR_CODES,
     copy_object,
     delete_objects,
     download_file,
     get_object_bytes,
+    get_object_bytes_if_exists,
     list_objects,
     object_exists,
     put_object_bytes,
@@ -36,6 +42,7 @@ from cdm_data_loaders.io.s3.object_utils import (
 
 logger: Logger = getLogger(__name__)
 
+ASSEMBLY_DIR_SEGMENT_INDEX: Final[int] = 5
 MAX_DRY_RUN_LOGS: Final[int] = 10
 MAX_TRANSFER_WORKERS: Final[int] = 32
 
@@ -369,22 +376,27 @@ def _get_source_dest_pairs_for_accession(
     release_tag: str,
     archive_reason: str,
 ) -> list[tuple[PurePosixPath, PurePosixPath]]:
-    """Build ``(source_key, archive_key)`` pairs for all S3 objects matching ``accession``."""
+    """Build ``(source_key, archive_key)`` pairs for all S3 objects belonging to ``accession``."""
     source_prefix = _get_accession_path_prefix(accession, lakehouse_key_prefix)
     if not source_prefix:
         return []
+    target_accession = extract_accession(accession)
     matching_objs: list[dict[str, Any]] = list_objects(f"{lakehouse_bucket / source_prefix}")
-    return [
-        (
-            PurePosixPath(obj["Key"]),
-            lakehouse_key_prefix
-            / "archive"
-            / release_tag
-            / archive_reason
-            / PurePosixPath(obj["Key"]).relative_to(lakehouse_key_prefix),
+    pairs: list[tuple[PurePosixPath, PurePosixPath]] = []
+    for obj in matching_objs:
+        src_key = PurePosixPath(obj["Key"])
+        rel_key = src_key.relative_to(lakehouse_key_prefix)
+        if len(rel_key.parts) > ASSEMBLY_DIR_SEGMENT_INDEX:
+            with contextlib.suppress(ValueError):
+                if extract_accession(rel_key.parts[ASSEMBLY_DIR_SEGMENT_INDEX]) != target_accession:
+                    continue
+        pairs.append(
+            (
+                src_key,
+                lakehouse_key_prefix / "archive" / release_tag / archive_reason / rel_key,
+            )
         )
-        for obj in matching_objs
-    ]
+    return pairs
 
 
 def _archive_objects(
@@ -438,8 +450,7 @@ def _archive_assemblies(
     dry_run = options.get("dry_run", False)
     archived = 0
 
-    with Path(manifest_local_path).open(encoding="utf-8") as fh:
-        accessions = [line.strip() for line in fh if line.strip()]
+    accessions = read_manifest_lines(Path(manifest_local_path))
 
     dry_run_log_count = 0
     for accession in tqdm.tqdm(accessions, unit="accession", desc="Archiving"):
@@ -492,22 +503,17 @@ def _trim_manifest(
 ) -> None:
     """Remove promoted accessions from ``manifest_s3_key`` in ``staging_bucket``."""
     s3_path = str(staging_bucket / manifest_s3_key)
-    try:
-        raw_bytes = get_object_bytes(s3_path)
-    except botocore.exceptions.ClientError as exc:
-        error_code = exc.response.get("Error", {}).get("Code")
-        status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-        if error_code in NOT_FOUND_ERROR_CODES or status_code == HTTPStatus.NOT_FOUND:
-            logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", staging_bucket, manifest_s3_key)
-            return
-        raise
+    raw_bytes = get_object_bytes_if_exists(s3_path)
+    if raw_bytes is None:
+        logger.warning("Manifest not found in S3 (s3://%s/%s) — skipping trim", staging_bucket, manifest_s3_key)
+        return
 
-    lines = raw_bytes.decode("utf-8").splitlines(keepends=True)
-    remaining = [line for line in lines if line.strip() and not any(acc in line for acc in promoted_accessions)]
-    put_object_bytes("".join(remaining).encode("utf-8"), s3_path, content_type="text/plain")
+    remaining, total_entries = filter_unpromoted_manifest_lines(raw_bytes.decode("utf-8"), promoted_accessions)
+    payload = "".join(f"{entry}\n" for entry in remaining).encode("utf-8")
+    put_object_bytes(payload, s3_path, content_type="text/plain")
     logger.info(
         "Trimmed manifest: %d -> %d entries (%d promoted)",
-        len(lines),
+        total_entries,
         len(remaining),
-        len(lines) - len(remaining),
+        total_entries - len(remaining),
     )

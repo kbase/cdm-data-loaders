@@ -7,7 +7,6 @@ import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
-from ftplib import error_temp
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any, TypedDict, Unpack
@@ -21,7 +20,8 @@ from cdm_data_loaders.datasets.ncbi_ftp.assembly import (
     parse_assembly_path,
 )
 from cdm_data_loaders.datasets.ncbi_ftp.constants import FTP_HOST
-from cdm_data_loaders.io.ftp_client import ThreadLocalFTP
+from cdm_data_loaders.datasets.ncbi_ftp.manifest import read_manifest_lines
+from cdm_data_loaders.io.ftp_client import TRANSIENT_FTP_EXCEPTIONS, ThreadLocalFTP
 from cdm_data_loaders.io.s3.object_utils import get_object_bytes, upload_dir_files, upload_file
 
 logger: Logger = getLogger(__name__)
@@ -102,8 +102,7 @@ def download_batch(
     on_assembly_downloaded = options.get("on_assembly_downloaded")
     progress_desc = options.get("progress_desc", "Downloading from NCBI FTP")
 
-    with manifest_path.open(encoding="utf-8") as fh:
-        assembly_paths = [PurePosixPath(line.strip()) for line in fh if line.strip() and not line.startswith("#")]
+    assembly_paths = [PurePosixPath(line) for line in read_manifest_lines(manifest_path)]
 
     if limit:
         assembly_paths = assembly_paths[:limit]
@@ -120,7 +119,7 @@ def download_batch(
         nonlocal success_count
 
         @retry(
-            retry=retry_if_exception_type((error_temp, BrokenPipeError, ConnectionResetError, EOFError)),
+            retry=retry_if_exception_type(TRANSIENT_FTP_EXCEPTIONS),
             stop=stop_after_attempt(5),
             wait=wait_exponential(multiplier=1, min=5, max=60),
             reraise=True,
