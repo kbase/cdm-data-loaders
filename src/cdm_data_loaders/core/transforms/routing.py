@@ -8,8 +8,7 @@ import pyarrow as pa
 from pydantic import BaseModel
 
 from cdm_data_loaders.coercion.json_to_arrow import coerce_json_record_for_pyarrow
-from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
-from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.buffer import resolve_destination_schema
 from cdm_data_loaders.core.registry import (
     ArrowSchemaRegistry,
     TableTransformFn,
@@ -362,7 +361,7 @@ def make_record_router(
 
         result: dict[str, list[dict[str, Any]]] = {}
         for out_table, out_val in routed.items():
-            target_schema = schema_map.registry.get(out_table) if schema_map is not None else None
+            target_schema = resolve_destination_schema(out_table, schema_map) if schema_map is not None else None
             if isinstance(out_val, pa.Table):
                 cast_tbl = align_and_cast_table(out_val, target_schema) if target_schema is not None else out_val
                 rows = cast_tbl.to_pylist()
@@ -449,11 +448,7 @@ def route_and_coerce_table(
                 result[out_table] = rows
             continue
 
-        target_schema = (
-            REJECTED_PYARROW_SCHEMA
-            if out_table == REJECTED_TABLE_NAME
-            else (schema_map.registry.get(out_table) if schema_map is not None else None)
-        )
+        target_schema = resolve_destination_schema(out_table, schema_map)
         if isinstance(out_val, pa.Table):
             result[out_table] = align_and_cast_table(out_val, target_schema) if target_schema is not None else out_val
         elif target_schema is not None:

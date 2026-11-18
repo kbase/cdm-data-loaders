@@ -10,9 +10,9 @@ from pydantic_settings import CliImplicitFlag, SettingsConfigDict
 
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.settings import LoggerSettings, default_settings_with_shortcuts
+from cdm_data_loaders.datasets.ncbi_ftp.constants import Source
 from cdm_data_loaders.datasets.ncbi_ftp.updates import (
     BATCH_SIZE,
-    Source,
     Splits,
     build_splits,
     compute_batch_width,

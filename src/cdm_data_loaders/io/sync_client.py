@@ -1,79 +1,108 @@
-"""Synchronous file download client.
+"""Synchronous HTTP file and JSON download client."""
 
-Usage:
-
-# initialise a download client that downloads files in chunks of 1024 bytes and retries the downlooad
-# three times in case of connection/timeout errors
-sync_client = FileDownloader(max_attempts=3, chunk_size=1024)
-
-# output_path will be the path to the saved file
-output_path = sync_client.download(
-    "https://example.com/file.txt",
-    Path("/path") / "to" / "save" / "file.txt"),
-    expected_checksum="some_checksum",
-    checksum_fn="sha512",
-    extra_headers={
-        "If-None-Match": "abc",
-        "If-Modified-Since": "Wed, 21 Oct 2015 07:28:00 GMT"
-    })
-
-"""
-
-from logging import WARNING, Logger, getLogger
+from logging import Logger, getLogger
 from pathlib import Path
-from typing import Any
+from typing import Any, Unpack
 
 import httpx
-from tenacity import (
-    before_sleep_log,
-    retry,
-)
+from tenacity import retry
 
 from cdm_data_loaders.io.core import (
+    DEFAULT_CHUNK_SIZE,
     HTTP_CLIENT_DEFAULTS,
-    RETRY_DEFAULTS,
     BaseFileDownloader,
     DownloadCore,
+    DownloaderOptions,
 )
 
 logger: Logger = getLogger(__name__)
 
 
 def get_httpx_client() -> httpx.Client:
-    """Get a basic client for executing http requests."""
+    """Build a synchronous :class:`httpx.Client` configured with ``HTTP_CLIENT_DEFAULTS``.
+
+    :return: configured HTTP client
+    :rtype: httpx.Client
+    """
     return httpx.Client(**HTTP_CLIENT_DEFAULTS)
 
 
-class FileDownloader(BaseFileDownloader):
-    """Synchronous downloader interface."""
+def fetch_json(
+    url: str,
+    *,
+    timeout: float | None = None,
+    extra_headers: dict[str, str] | None = None,
+    **options: Unpack[DownloaderOptions],
+) -> dict[str, Any]:
+    """Fetch and decode a JSON object from ``url`` using a managed :class:`httpx.Client` with retries.
+
+    :param url: URL to request
+    :type url: str
+    :param timeout: optional request timeout in seconds overriding ``HTTP_CLIENT_DEFAULTS``
+    :type timeout: float | None
+    :param extra_headers: optional HTTP request headers
+    :type extra_headers: dict[str, str] | None
+    :param options: optional retry settings forwarded to :class:`FileDownloader`
+    :type options: Unpack[DownloaderOptions]
+    :return: decoded JSON dictionary
+    :rtype: dict[str, Any]
+    """
+    client_kwargs: dict[str, Any] = dict(HTTP_CLIENT_DEFAULTS)
+    if timeout is not None:
+        client_kwargs["timeout"] = httpx.Timeout(timeout)
+    with httpx.Client(**client_kwargs) as http_client:
+        return FileDownloader(client=http_client, **options).fetch_json(url, extra_headers=extra_headers)
+
+
+class FileDownloader(BaseFileDownloader[httpx.Client]):
+    """Synchronous HTTP downloader with retries and streaming checksum verification."""
 
     def __init__(
         self,
         client: httpx.Client | None = None,
-        max_attempts: int = RETRY_DEFAULTS["max_attempts"],
-        min_backoff: int = RETRY_DEFAULTS["min_backoff"],
-        max_backoff: int = RETRY_DEFAULTS["max_backoff"],
-        chunk_size: int = 8192,
+        **options: Unpack[DownloaderOptions],
     ) -> None:
-        """Initialise a synchronous download client.
+        """Initialize a synchronous download client.
 
-        :param client: an httpx.Client object, defaults to None
-        :type client: httpx.Client | None, optional
-        :param max_attempts: how many times to retry the request defaults to 5
-        :type max_attempts: int, optional
-        :param min_backoff: minimum backoff for retries, defaults to 1
-        :type min_backoff: int, optional
-        :param max_backoff: maximum backoff for retries, defaults to 30
-        :type max_backoff: int, optional
-        :param chunk_size: chunk size for the downloader, defaults to 8192
-        :type chunk_size: int, optional
+        :param client: optional pre-configured :class:`httpx.Client`
+        :type client: httpx.Client | None
+        :param options: optional ``max_attempts``, ``min_backoff``, ``max_backoff``, and ``chunk_size``
+        :type options: Unpack[DownloaderOptions]
         """
-        super().__init__(client or get_httpx_client(), chunk_size=chunk_size)
-
-        self._retry = retry(
-            **DownloadCore.retry_kwargs(max_attempts, min_backoff, max_backoff),
-            before_sleep=before_sleep_log(logger, WARNING),
+        super().__init__(
+            client or get_httpx_client(),
+            chunk_size=options.get("chunk_size", DEFAULT_CHUNK_SIZE),
         )
+        self._retry = retry(**self._build_retry_kwargs(options, logger))
+
+    def fetch_json(
+        self,
+        url: str,
+        *,
+        extra_headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Fetch and decode a JSON object from ``url`` with retry on transient errors.
+
+        :param url: URL to request
+        :type url: str
+        :param extra_headers: optional request headers
+        :type extra_headers: dict[str, str] | None
+        :return: decoded JSON payload
+        :rtype: dict[str, Any]
+        :raises DownloadError: after exhausting retries on transport, timeout, or 5xx errors
+        :raises NonRetryableDownloadError: on 4xx client errors
+        """
+        headers = extra_headers or {}
+
+        @self._retry
+        def _once() -> dict[str, Any]:
+            with DownloadCore.capture_download_errors(url, logger):
+                response = self.client.get(url, headers=headers)
+                DownloadCore.validate_response(response)
+                payload: dict[str, Any] = response.json()
+            return payload
+
+        return _once()
 
     def download(
         self,
@@ -85,27 +114,26 @@ class FileDownloader(BaseFileDownloader):
     ) -> Path | None:
         """Download a file from ``url`` to ``destination`` on disk.
 
-        Returns the file path if successful; None otherwise.
-        304 / Not Modified responses return None.
+        Returns the saved file path on 2xx responses, or ``None`` on HTTP 304 Not Modified.
 
         :param url: URL to download from
         :type url: str
-        :param destination: where to save the file to
+        :param destination: local destination path
         :type destination: str | Path
-        :param expected_checksum: expected checksum (if known), defaults to None
-        :type expected_checksum: str | None, optional
-        :param checksum_fn: function used for calculating the checksum. Set to "sha256" if not supplied.
-        :type checksum_fn: str, optional
-        :param extra_headers: allow extra headers to be passed, defaults to None
-        :type extra_headers: dict[str, Any] | None, optional
-        :return: either the path to the downloaded file or None if no file was downloaded
+        :param expected_checksum: expected checksum if known
+        :type expected_checksum: str | None
+        :param checksum_fn: checksum algorithm name (defaults to ``"sha256"`` when omitted)
+        :type checksum_fn: str | None
+        :param extra_headers: optional extra request headers
+        :type extra_headers: dict[str, Any] | None
+        :return: saved file path, or ``None`` on HTTP 304
         :rtype: Path | None
         """
-        destination, checksum_fn, extra_headers = DownloadCore.validate_args(destination, checksum_fn, extra_headers)
+        dest_path, validated_fn, headers = DownloadCore.validate_args(destination, checksum_fn, extra_headers)
 
         @self._retry
         def _once() -> Path | None:
-            return self._download_once(url, destination, expected_checksum, checksum_fn, extra_headers)
+            return self._download_once(url, dest_path, expected_checksum, validated_fn, headers)
 
         return _once()
 
@@ -117,39 +145,35 @@ class FileDownloader(BaseFileDownloader):
         checksum_fn: str,
         extra_headers: dict[str, Any],
     ) -> Path | None:
-        """Core synchronous download function.
+        """Execute a single synchronous download attempt.
 
         :param url: URL to download from
         :type url: str
-        :param destination: where to save the file to
+        :param destination: local destination path
         :type destination: Path
-        :param expected_checksum: expected checksum (if known), defaults to None
-        :type expected_checksum: str | None, optional
-        :param checksum_fn: function used for calculating the checksum, defaults to "sha256"
-        :type checksum_fn: str, optional
-        :param extra_headers: any extra headers to pass to the request, defaults to None
-        :type extra_headers: dict[str, Any] | None, optional
-        :raises DownloadError: for unrecoverable download errors
-        :raises ChecksumMismatchError: if the checksum does not match expected_checksum
-        :return: either the path to the downloaded file or None if no file was downloaded
+        :param expected_checksum: expected checksum if known
+        :type expected_checksum: str | None
+        :param checksum_fn: validated checksum algorithm name
+        :type checksum_fn: str
+        :param extra_headers: request headers
+        :type extra_headers: dict[str, Any]
+        :return: saved file path, or ``None`` on HTTP 304
         :rtype: Path | None
         """
-        try:
-            with self.client.stream("GET", url, headers=extra_headers) as response:
-                if not DownloadCore.check_should_download(response, url, logger):
-                    return None
+        with (
+            DownloadCore.capture_download_errors(url, logger),
+            self.client.stream("GET", url, headers=extra_headers) as response,
+        ):
+            if not DownloadCore.check_should_download(response, url, logger):
+                return None
 
-                chunks = response.iter_bytes(chunk_size=self.chunk_size)
-
-                DownloadCore.write_and_hash(
-                    url,
-                    destination,
-                    chunks,
-                    expected_checksum=expected_checksum,
-                    checksum_fn=checksum_fn,
-                )
-
-        except Exception as exc:  # noqa: BLE001
-            DownloadCore.handle_download_exception(exc, url, logger)
+            chunks = response.iter_bytes(chunk_size=self.chunk_size)
+            DownloadCore.write_and_hash(
+                url,
+                destination,
+                chunks,
+                expected_checksum=expected_checksum,
+                checksum_fn=checksum_fn,
+            )
 
         return DownloadCore.log_download_success(url, destination, logger)

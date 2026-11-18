@@ -21,7 +21,9 @@ from cdm_data_loaders.io.s3.object_utils import (
     download_file,
     get_existing_object_info,
     get_object_bytes,
+    get_object_bytes_if_exists,
     head_object,
+    is_not_found_client_error,
     list_objects,
     object_exists,
     put_object_bytes,
@@ -186,9 +188,13 @@ def test_get_existing_object_info_pass_returns_info_for_existing_object(
 
 @pytest.mark.s3
 @pytest.mark.usefixtures("mock_s3_client")
-def test_get_existing_object_info_pass_returns_none_for_missing_object() -> None:
-    """Verify None is returned (not an exception) for a missing object."""
-    assert get_existing_object_info(f"{TEST_BUCKET}does/not/exist.txt") is None
+def test_get_existing_object_info_pass_returns_none_for_missing_object(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify None is returned without logging ERROR records for a missing object."""
+    with caplog.at_level(logging.ERROR):
+        assert get_existing_object_info(f"{TEST_BUCKET}does/not/exist.txt") is None
+    assert caplog.records == []
 
 
 @pytest.mark.s3
@@ -1347,3 +1353,53 @@ def test_put_object_bytes_defaults_without_optional_headers() -> None:
     s3_path = f"{TEST_BUCKET}/bytes/raw.bin"
     put_object_bytes(b"raw-bytes", s3_path)
     assert get_object_bytes(s3_path) == b"raw-bytes"
+
+
+@pytest.mark.parametrize(
+    ("code", "status", "expected"),
+    [
+        pytest.param("NoSuchKey", 404, True, id="no-such-key"),
+        pytest.param("NoSuchBucket", 400, True, id="no-such-bucket"),
+        pytest.param("CustomCode", 404, True, id="404-with-custom-code"),
+        pytest.param("AccessDenied", 403, False, id="access-denied"),
+        pytest.param("InternalError", 500, False, id="internal-error"),
+    ],
+)
+def test_is_not_found_client_error(code: str, status: int, expected: bool) -> None:
+    """Classify S3 ClientError instances into not-found vs other errors."""
+    exc = ClientError({"Error": {"Code": code}, "ResponseMetadata": {"HTTPStatusCode": status}}, "GetObject")
+    assert is_not_found_client_error(exc) is expected
+
+
+@pytest.mark.s3
+def test_get_object_bytes_if_exists_existing_and_missing(
+    mock_s3_client: S3Client,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Return payload bytes when present and None without ERROR logs when absent."""
+    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="present/data.bin", Body=b"present-bytes")
+    assert get_object_bytes_if_exists(f"{TEST_BUCKET}/present/data.bin") == b"present-bytes"
+
+    with caplog.at_level(logging.ERROR):
+        assert get_object_bytes_if_exists(f"{TEST_BUCKET}/missing/data.bin") is None
+    assert caplog.records == []
+
+
+@pytest.mark.s3
+def test_get_object_bytes_if_exists_non_404_logs_and_reraises(
+    mock_s3_client: S3Client,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Log an ERROR record and re-raise when S3 returns a non-not-found ClientError."""
+
+    def raise_access_denied(**_kwargs: object) -> None:
+        raise ClientError(
+            {"Error": {"Code": "AccessDenied"}, "ResponseMetadata": {"HTTPStatusCode": 403}},
+            "GetObject",
+        )
+
+    monkeypatch.setattr(mock_s3_client, "get_object", raise_access_denied)
+    with caplog.at_level(logging.ERROR), pytest.raises(ClientError, match="AccessDenied"):
+        get_object_bytes_if_exists(f"{TEST_BUCKET}/denied/data.bin")
+    assert any("Error reading object" in r.getMessage() for r in caplog.records)

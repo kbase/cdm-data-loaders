@@ -6,7 +6,6 @@ rules:
   - R-XSV-GZIP
   - R-UNIPROT-IDMAPPING-PRESET
   - R-UNIPROT-IDMAPPING-TABLES
-  - R-UNIPROT-IDMAPPING-PARTITION
 notes: |
   A gzip-compressed headerless UniProt ID mapping file (`HUMAN_9606_idmapping.dat.gz`) ingested via the
   `uniprot_idmapping` preset CLI. Validates gzip streaming decompression, two-pass `qsv` validation against

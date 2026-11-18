@@ -17,7 +17,9 @@ from cdm_data_loaders.io.ftp_client import (
     ftp_list_dir,
     ftp_noop_keepalive,
     ftp_retrieve_text,
+    ftp_session,
 )
+from cdm_data_loaders.utils.checksums import compute_file_checksum
 
 IDLE_SECONDS = 30
 KEEPIDLE_VALUE = 60
@@ -90,8 +92,18 @@ def test_returns_file_list() -> None:
     mock_ftp.cwd.assert_called_once_with("/some/path")
 
 
-def test_retries_on_error_temp() -> None:
-    """Verify retry logic on FTP temporary errors."""
+@pytest.mark.parametrize(
+    "exc_cls",
+    [
+        pytest.param(error_temp, id="error_temp"),
+        pytest.param(BrokenPipeError, id="broken_pipe"),
+        pytest.param(ConnectionResetError, id="connection_reset"),
+        pytest.param(EOFError, id="eof"),
+    ],
+)
+@patch("tenacity.nap.time.sleep", MagicMock())
+def test_retries_on_error_temp(exc_cls: type[BaseException]) -> None:
+    """Verify retry logic on transient FTP and socket errors."""
     mock_ftp = MagicMock(spec=FTP)
     call_count = 0
 
@@ -99,7 +111,7 @@ def test_retries_on_error_temp() -> None:
         nonlocal call_count
         call_count += 1
         if call_count < EXPECTED_RETRY_COUNT:
-            raise error_temp(ERR_421)  # noqa: S321
+            raise exc_cls(ERR_421)
         callback("file.txt")
 
     mock_ftp.retrlines.side_effect = fake_retrlines
@@ -161,6 +173,27 @@ def test_retrieve_text_returns_content() -> None:
     assert result == "line1\nline2"
 
 
+@patch("tenacity.nap.time.sleep", MagicMock())
+def test_retrieve_text_retries_and_discards_partial_lines() -> None:
+    """Verify ftp_retrieve_text retries transient errors and discards partial lines."""
+    mock_ftp = MagicMock(spec=FTP)
+    call_count = 0
+
+    def fake_retrlines(_cmd: str, callback: Callable[[str], None]) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count < EXPECTED_RETRY_COUNT:
+            callback("stale_partial_line")
+            raise ConnectionResetError
+        for line in ["fresh1", "fresh2"]:
+            callback(line)
+
+    mock_ftp.retrlines.side_effect = fake_retrlines
+    result = ftp_retrieve_text(mock_ftp, PurePosixPath("remote.txt"))
+    assert result == "fresh1\nfresh2"
+    assert call_count == EXPECTED_RETRY_COUNT
+
+
 @patch("cdm_data_loaders.io.ftp_client.connect_ftp")
 def test_get_returns_same_connection(mock_connect: MagicMock) -> None:
     """Verify get() returns the same FTP connection on repeated calls."""
@@ -182,3 +215,60 @@ def test_close_all(mock_connect: MagicMock) -> None:
     pool.get()
     pool.close_all()
     mock_ftp.quit.assert_called_once()
+
+
+@patch("cdm_data_loaders.io.ftp_client.connect_ftp")
+def test_ftp_session_owned_vs_borrowed_lifecycle(mock_connect: MagicMock) -> None:
+    """Close FTP connection on exit when owned, and leave caller-supplied FTP open."""
+    owned_ftp = MagicMock(spec=FTP)
+    mock_connect.return_value = owned_ftp
+    with ftp_session("ftp.example.com", timeout=FTP_TIMEOUT) as active:
+        assert active is owned_ftp
+    mock_connect.assert_called_once_with("ftp.example.com", timeout=FTP_TIMEOUT)
+    owned_ftp.quit.assert_called_once()
+
+    borrowed_ftp = MagicMock(spec=FTP)
+    with ftp_session("ftp.example.com", ftp=borrowed_ftp) as active:
+        assert active is borrowed_ftp
+    borrowed_ftp.quit.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "checksum_fn",
+    [
+        pytest.param("md5", id="md5"),
+        pytest.param("crc64nvme", id="crc64nvme"),
+    ],
+)
+@patch("tenacity.nap.time.sleep", MagicMock())
+def test_ftp_download_file_in_stream_checksum_resets_on_retry(
+    tmp_path: Path,
+    checksum_fn: str,
+) -> None:
+    """Compute in-stream digest matching only the final successful transfer after a partial-write failure."""
+    mock_ftp = MagicMock(spec=FTP)
+    call_count = 0
+
+    def fake_retrbinary(_cmd: str, callback: Callable[[bytes], None]) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            callback(b"aborted-partial-bytes-")
+            raise BrokenPipeError
+        callback(b"final-")
+        callback(b"payload")
+
+    mock_ftp.retrbinary.side_effect = fake_retrbinary
+    local = tmp_path / "streamed.bin"
+    digest = ftp_download_file(mock_ftp, PurePosixPath("remote.bin"), local, retries=3, checksum_fn=checksum_fn)
+
+    assert local.read_bytes() == b"final-payload"
+    assert digest == compute_file_checksum(local, checksum_fn)
+
+
+def test_ftp_download_file_invalid_checksum_fn_raises_before_transfer(tmp_path: Path) -> None:
+    """Reject unsupported checksum algorithm names before issuing FTP RETR."""
+    mock_ftp = MagicMock(spec=FTP)
+    with pytest.raises(ValueError, match="not supported"):
+        ftp_download_file(mock_ftp, PurePosixPath("remote.bin"), tmp_path / "out.bin", checksum_fn="not_an_algo")
+    mock_ftp.retrbinary.assert_not_called()

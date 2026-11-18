@@ -12,5 +12,8 @@
   <measurement id="s3" status="ok">
     <value>3.5</value>
   </measurement>
+  <measurement id="s4" status="invalid">
+    <value>-1.0</value>
+  </measurement>
 </report>
 

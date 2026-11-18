@@ -6,16 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any, Final
 
-import dlt
 import pyarrow as pa
 import pytest
-from dlt.destinations.impl.filesystem.iceberg_adapter import (
-    PARTITION_HINT,
-    TABLE_PROPERTIES_HINT,
-    iceberg_partition,
-)
 from frozendict import frozendict
 from pydantic import BaseModel, SecretStr, ValidationError
+from pydantic_settings import CliApp, SettingsError
 
 from cdm_data_loaders.coercion.pydantic_to_arrow import coerce_pydantic_record_for_pyarrow
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA, make_rejected_row
@@ -26,10 +21,6 @@ from cdm_data_loaders.core.registry import (
     TableTransformFn,
     TransformContext,
     TransformRegistry,
-)
-from cdm_data_loaders.core.transforms.hints import (
-    OutputTableHints,
-    extract_schema_descriptions,
 )
 from cdm_data_loaders.core.transforms.introspection import (
     accepts_pyarrow_table,
@@ -45,12 +36,16 @@ from cdm_data_loaders.core.transforms.routing import (
     route_and_coerce_table,
     validate_routed_output,
 )
-from cdm_data_loaders.core.transforms.settings_mixin import validate_table_transforms
+from cdm_data_loaders.core.transforms.settings_mixin import (
+    LockedTransformHooksMixin,
+    reconcile_multi_table_schema_map,
+    validate_table_transforms,
+)
 from cdm_data_loaders.pipelines.jsonlines.routing import route_jsonl_lines
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
 from cdm_data_loaders.pipelines.xmltodict.processors import process_xml_file_to_dict
 from cdm_data_loaders.pipelines.xmltodict.settings import XmlToDictSettings
-from tests.helpers.cli_assertions import make_cts_settings, register_temp_module
+from tests.helpers.cli_assertions import make_cts_settings, register_temp_module, settings_to_argv
 
 
 def _identity_items_transform(record: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -880,60 +875,6 @@ def test_align_and_cast_table_casts_reorders_fills_missing_and_attaches_metadata
     assert align_and_cast_table(aligned, target_schema) is aligned
 
 
-COMMENTED_HINTS_SCHEMA: Final[pa.Schema] = pa.schema(
-    [
-        pa.field("uniprot_id", pa.string(), nullable=False, metadata={"comment": "Protein ID"}),
-        pa.field("uncommented", pa.string(), nullable=True),
-    ],
-    metadata={"comment": "Schema-level table comment"},
-)
-
-
-@pytest.mark.parametrize(
-    ("schema", "expected"),
-    [
-        pytest.param(
-            COMMENTED_HINTS_SCHEMA,
-            ("Schema-level table comment", {"uniprot_id": "Protein ID"}),
-            id="commented_schema",
-        ),
-        pytest.param(
-            pa.schema([pa.field("x", pa.int64())]),
-            (None, {}),
-            id="uncommented_schema",
-        ),
-    ],
-)
-def test_extract_schema_descriptions_pass_commented_and_uncommented(
-    schema: pa.Schema,
-    expected: tuple[str | None, dict[str, str]],
-) -> None:
-    """extract_schema_descriptions extracts schema and field comments or returns empty defaults when absent."""
-    assert extract_schema_descriptions(schema) == expected
-
-
-def test_output_table_hints_pass_apply_to_resource() -> None:
-    """OutputTableHints registers isolated table descriptions, column descriptions, and Iceberg partitions on DltResource."""
-    resource = dlt.resource([{"uniprot_id": "P12345"}], name="src")
-    bucket_count = 32
-    hint = OutputTableHints(
-        table_name="id_mapping",
-        pyarrow_schema=COMMENTED_HINTS_SCHEMA,
-        description="Explicit override description",
-        iceberg_partitions=(iceberg_partition.bucket(bucket_count, "uniprot_id"),),
-    )
-    hint.apply_to_resource(resource)
-    marked = dlt.mark.with_table_name({"uniprot_id": "P12345"}, "id_mapping")
-    computed = resource.compute_table_schema(marked.data, marked.meta)
-    assert computed["name"] == "id_mapping"
-    assert computed["description"] == "Explicit override description"
-    assert computed["columns"]["uniprot_id"]["description"] == "Protein ID"
-    assert computed[TABLE_PROPERTIES_HINT] == {"comment": "Explicit override description"}
-    assert computed[PARTITION_HINT] == [
-        {"transform": "bucket", "source_column": "uniprot_id", "param_value": bucket_count}
-    ]
-
-
 def test_compose_transforms_fails_with_no_transforms() -> None:
     """compose_transforms throws an error without any transforms."""
     with pytest.raises(ValueError, match="transforms must contain at least one callable"):
@@ -1264,3 +1205,109 @@ def test_make_record_router_fail_rejects_base_model_when_transform_configured() 
     router = make_record_router("items", transform=_identity_items_transform)
     with pytest.raises(TypeError, match="TableTransformFn requires a dict"):
         router(SimpleItem(id="a"), None)
+
+
+def test_make_record_router_coerces_rejected_rows_when_schema_map_omits_rejected() -> None:
+    """make_record_router coerces _rejected rows against REJECTED_PYARROW_SCHEMA when schema_map omits _rejected."""
+
+    def _reject_item(row: dict[str, Any], ctx: TransformContext) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "_rejected": [
+                {
+                    "table_name": ctx.table_name,
+                    "source_file": ctx.source_file,
+                    "line_no": "7",
+                    "raw_record": str(row.get("id")),
+                    "error_detail": "invalid item",
+                    "undeclared_extra": "dropped",
+                }
+            ]
+        }
+
+    router = make_record_router("items", transform=_reject_item, schema_map=ITEMS_SCHEMA_REGISTRY)
+    assert router({"id": 42}, "batch/items.jsonl") == {
+        "_rejected": [
+            {
+                "table_name": "items",
+                "source_file": "batch/items.jsonl",
+                "line_no": 7,
+                "raw_record": "42",
+                "error_detail": "invalid item",
+            }
+        ]
+    }
+
+
+def test_locked_transform_hooks_mixin_locks_transforms_and_output_schemas_off_cli(
+    test_defaults: dict[str, Any],
+) -> None:
+    """LockedTransformHooksMixin removes transforms_module and output_schemas_module from CLI while keeping preprocessors_module."""
+
+    class LockedExtractSettings(LockedTransformHooksMixin, JsonlExtractSettings, cli_prog_name="locked_extract"):
+        pass
+
+    assert "transforms_module" not in LockedExtractSettings.model_fields
+    assert "output_schemas_module" not in LockedExtractSettings.model_fields
+    assert "preprocessors_module" in LockedExtractSettings.model_fields
+
+    settings = LockedExtractSettings(**test_defaults, dataset_name="ds", table_name="items")
+    assert settings.transforms_module is None
+    assert settings.output_schemas_module is None
+
+    argv = [*settings_to_argv(settings), "--transforms-module", "some.mod"]
+    with pytest.raises(SettingsError, match="--transforms-module"):
+        CliApp.run(LockedExtractSettings, cli_args=argv)
+
+
+@pytest.mark.parametrize(
+    ("use_pyarrow", "transformed_tables", "explicit_schemas", "expected_built", "expected_tables"),
+    [
+        pytest.param(False, (), {}, [], None, id="use-pyarrow-false"),
+        pytest.param(True, (), {}, ["alpha", "beta"], {"alpha", "beta"}, id="all-defaults"),
+        pytest.param(True, ("alpha",), {}, ["beta"], {"beta"}, id="skips-transformed-without-explicit-schema"),
+        pytest.param(
+            True,
+            ("alpha",),
+            {"alpha_out": SOURCED_ITEMS_SCHEMA},
+            ["beta"],
+            {"alpha_out", "beta"},
+            id="merges-explicit-fanout-and-untransformed-default",
+        ),
+        pytest.param(True, ("alpha", "beta"), {}, [], None, id="all-transformed-unschematized"),
+    ],
+)
+def test_reconcile_multi_table_schema_map_reconciles_defaults_and_overrides(
+    use_pyarrow: bool,
+    transformed_tables: tuple[str, ...],
+    explicit_schemas: dict[str, pa.Schema],
+    expected_built: list[str],
+    expected_tables: set[str] | None,
+) -> None:
+    """reconcile_multi_table_schema_map builds defaults only for untransformed unmapped tables and merges explicit schemas."""
+    built: list[str] = []
+
+    def _build_default(table_name: str) -> pa.Schema | None:
+        built.append(table_name)
+        return ITEMS_SCHEMA
+
+    transforms = (
+        TransformRegistry(registry=dict.fromkeys(transformed_tables, _identity_items_transform))
+        if transformed_tables
+        else None
+    )
+    out_schemas = ArrowSchemaRegistry(registry=explicit_schemas) if explicit_schemas else None
+
+    result = reconcile_multi_table_schema_map(
+        ["alpha", "beta"],
+        _build_default,
+        use_pyarrow=use_pyarrow,
+        table_transforms=transforms,
+        output_schemas=out_schemas,
+    )
+
+    assert built == expected_built
+    if expected_tables is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert set(result.registry) == expected_tables

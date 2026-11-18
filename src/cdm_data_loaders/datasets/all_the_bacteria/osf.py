@@ -7,9 +7,7 @@ from logging import Logger, getLogger
 from pathlib import Path
 from typing import Any, Final
 
-import requests
-
-from cdm_data_loaders.io.sync_client import FileDownloader
+from cdm_data_loaders.io.sync_client import FileDownloader, fetch_json
 
 logger: Logger = getLogger(__name__)
 
@@ -64,10 +62,11 @@ def download_osf_index_tsv(raw_data_dir: Path) -> Path:
     raw_data_dir.mkdir(parents=True, exist_ok=True)
 
     api_url = f"https://api.osf.io/v2/files/{ALL_FILES_TSV_FILE_ID}/"
-    resp = requests.get(api_url, headers={"accept": "application/json"}, timeout=OSF_TIMEOUT_SECONDS)
-    resp.raise_for_status()
-
-    resp_json = resp.json()
+    resp_json = fetch_json(
+        api_url,
+        timeout=OSF_TIMEOUT_SECONDS,
+        extra_headers={"accept": "application/json"},
+    )
     all_files_tsv_download = resp_json.get("data", {}).get("links", {}).get("download")
     if all_files_tsv_download is None:
         logger.error("Could not find download URL in OSF API response:")

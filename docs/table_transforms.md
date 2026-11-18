@@ -9,7 +9,7 @@ All six file-format ingestion pipelines support pluggable file pre-processing, r
 | [`jsonlines/pydantic.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/jsonlines/pydantic.py)       | `jsonlines_pydantic`   | `pyarrow.Table`                                  | Keys of `ENTITY_MODELS`                                                                         |
 | [`xsv/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xsv/pipeline.py)                                                           | `xsv`                  | `pyarrow.Table`                                  | `--table-name` (or preset entrypoint `uniprot_idmapping`)                                       |
 | [`xmltodict/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltodict/pipeline.py)                                               | `xmltodict`            | `list[dict]` (`pyarrow.Table` if schema map set) | `--table-name` (`settings.table_name`)                                                          |
-| [`xmltopyarrow/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                         | `xmltopyarrow`         | `pyarrow.Table`                                  | `--table-name` (or preset entrypoints `pubmed`, `uniprot`, `uniref50`, `uniref90`, `uniref100`) |
+| [`xmltopyarrow/pipeline.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/xmltopyarrow/pipeline.py)                                         | `xmltopyarrow`         | `pyarrow.Table`                                  | `--table-name` (or preset entrypoints `pubmed`, `uniprot`, `uniref50`, `uniref90`, `uniref100`, `uniprot_cdm`, `uniref50_cdm`, `uniref90_cdm`, `uniref100_cdm`) |
 
 ---
 
@@ -65,7 +65,7 @@ Create an importable Python module exporting `FILE_PREPROCESSORS`, `TABLE_TRANSF
 
 **`OUTPUT_SCHEMAS`** (`--output-schemas-module` / `CDL_OUTPUT_SCHEMAS_MODULE`): `dict[str, pa.Schema]`
 
-  - Optional mapping of `{destination_table_name: pyarrow.Schema}` overriding or supplying `pyarrow.Schema` definitions for transformed or split destination tables. Preset settings subclasses can also return `OutputTableHints` from `get_output_table_hints()` ([`src/cdm_data_loaders/core/transforms/hints.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/hints.py)) to register table/column descriptions and Iceberg partition specs on `DltResource` variants.
+  - Optional mapping of `{destination_table_name: pyarrow.Schema}` overriding or supplying `pyarrow.Schema` definitions for transformed or split destination tables. Preset settings subclasses can lock built-in transforms and output schemas off the CLI with `LockedTransformHooksMixin` ([`src/cdm_data_loaders/core/transforms/settings_mixin.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/core/transforms/settings_mixin.py)) and attach table descriptions via `with_schema_description` ([`src/cdm_data_loaders/utils/arrow_schema.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/utils/arrow_schema.py)).
 
 ---
 
@@ -488,23 +488,28 @@ import pyarrow.compute as pc
 
 from cdm_data_loaders.core.registry import TableTransformFn, TransformContext
 from cdm_data_loaders.core.transforms.routing import emit_raw_table
+from cdm_data_loaders.utils.arrow_schema import with_schema_description
 
-RAW_ID_MAPPING_SCHEMA = pa.schema(
-    [
-        pa.field("uniprot_id", pa.string(), nullable=False),
-        pa.field("db_reference_type", pa.string(), nullable=False),
-        pa.field("db_reference_id", pa.string(), nullable=False),
-    ],
-    metadata={"comment": "raw ID mapping data from UniProt"},
+RAW_ID_MAPPING_SCHEMA = with_schema_description(
+    pa.schema(
+        [
+            pa.field("uniprot_id", pa.string(), nullable=False),
+            pa.field("db_reference_type", pa.string(), nullable=False),
+            pa.field("db_reference_id", pa.string(), nullable=False),
+        ]
+    ),
+    "raw ID mapping data from UniProt",
 )
 
-ID_MAPPING_SCHEMA = pa.schema(
-    [
-        pa.field("uniprot_id", pa.string(), nullable=False),
-        pa.field("db_reference", pa.string(), nullable=False),
-        pa.field("source", pa.string(), nullable=False),
-    ],
-    metadata={"comment": "Standardised mapping data from UniProt"},
+ID_MAPPING_SCHEMA = with_schema_description(
+    pa.schema(
+        [
+            pa.field("uniprot_id", pa.string(), nullable=False),
+            pa.field("db_reference", pa.string(), nullable=False),
+            pa.field("source", pa.string(), nullable=False),
+        ]
+    ),
+    "Standardised mapping data from UniProt",
 )
 
 

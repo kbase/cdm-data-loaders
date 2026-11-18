@@ -3,6 +3,7 @@
 import itertools
 import shutil
 from collections.abc import Callable
+from http import HTTPStatus
 from logging import Logger, getLogger
 from pathlib import Path
 from typing import IO, Any, Final
@@ -72,27 +73,36 @@ def head_object(s3_path: str) -> dict[str, Any]:
     return s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")  # type: ignore[call-arg]
 
 
-def get_existing_object_info(s3_path: str) -> dict[str, Any] | None:
-    """Fetch metadata for an object already in S3, if it exists.
+def is_not_found_client_error(exc: ClientError) -> bool:
+    """Return ``True`` when ``exc`` represents an S3 object-or-bucket not-found error.
 
-    :param s3_path: path to the object on s3, including the bucket name
+    :param exc: botocore ``ClientError`` raised by an S3 operation
+    :type exc: ClientError
+    :return: ``True`` if the error code is in ``NOT_FOUND_ERROR_CODES`` or HTTP status is 404
+    :rtype: bool
+    """
+    error_code = exc.response.get("Error", {}).get("Code")
+    status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return error_code in NOT_FOUND_ERROR_CODES or status_code == HTTPStatus.NOT_FOUND
+
+
+def get_existing_object_info(s3_path: str) -> dict[str, Any] | None:
+    """Fetch metadata for an object in S3 if it exists.
+
+    :param s3_path: path to the object on S3, including the bucket name
     :type s3_path: str
-    :raises ClientError: for any S3 error other than "object not found"
-    :return: metadata for the existing object, or None if no object exists at `bucket`/`key`
+    :raises ClientError: for any S3 error other than object/bucket not found
+    :return: metadata for the object, or ``None`` if no object exists at ``s3_path``
     :rtype: dict[str, Any] | None
     """
     try:
         response = head_object(s3_path)
     except ClientError as exc:
-        # AWS service errors, client-side issues
-        logger.exception("Error checking for existing object: %s", s3_path)
-        error_code = exc.response.get("Error", {}).get("Code")
-        status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-        if error_code in NOT_FOUND_ERROR_CODES or status_code == 404:  # noqa: PLR2004
+        if is_not_found_client_error(exc):
             return None
+        logger.exception("Error checking for existing object: %s", s3_path)
         raise
     except Exception:
-        # any other errors - e.g. invalid/missing args
         logger.exception("Error checking for existing object: %s", s3_path)
         raise
 
@@ -122,6 +132,24 @@ def get_object_bytes(s3_path: str) -> bytes:
     bucket, key = split_s3_path(s3_path)
     resp = s3.get_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")  # type: ignore[call-arg]
     return resp["Body"].read()
+
+
+def get_object_bytes_if_exists(s3_path: str) -> bytes | None:
+    """Fetch an S3 object's byte payload, returning ``None`` when the object is absent.
+
+    :param s3_path: path to the object on S3, including the bucket name
+    :type s3_path: str
+    :raises ClientError: for any S3 error other than object/bucket not found
+    :return: object payload bytes, or ``None`` if not found
+    :rtype: bytes | None
+    """
+    try:
+        return get_object_bytes(s3_path)
+    except ClientError as exc:
+        if is_not_found_client_error(exc):
+            return None
+        logger.exception("Error reading object: %s", s3_path)
+        raise
 
 
 def put_object_bytes(

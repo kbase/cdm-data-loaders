@@ -230,13 +230,12 @@ def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
     :return: load information for the pipeline
     :rtype: LoadInfo | None
     """
-    pipeline_name = str(settings.model_config.get("cli_prog_name") or PIPELINE_NAME)
     if settings.loader_file_format == LoaderFileFormatEnum.FILE_LISTING:
         fs_resource = filesystem(bucket_url=str(settings.input_dir), file_glob=settings.file_glob)
         return run_pipeline(
             settings=settings,
             resource=fs_resource,
-            **build_file_ingest_kwargs(settings, pipeline_name),
+            **build_file_ingest_kwargs(settings, PIPELINE_NAME),
         )
 
     qsv_cmd = qsv_check()
@@ -271,7 +270,7 @@ def run_xsv_pipeline(settings: XsvIngestSettings) -> LoadInfo | None:
         return run_pipeline(
             settings=settings,
             resource=xsv_resource,
-            **build_file_ingest_kwargs(settings, pipeline_name),
+            **build_file_ingest_kwargs(settings, PIPELINE_NAME),
         )
 
 

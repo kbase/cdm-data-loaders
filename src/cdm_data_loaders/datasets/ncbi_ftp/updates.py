@@ -1,9 +1,8 @@
 """Filter NCBI FTP assembly modification times by date, RefSeq/GenBank source, and assemblies of interest."""
 
+import itertools
 import math
 import operator
-import re
-from collections.abc import Iterable
 from datetime import date
 from enum import StrEnum
 from logging import Logger, getLogger
@@ -12,17 +11,11 @@ from typing import Final
 
 import pandas as pd
 
+from cdm_data_loaders.datasets.ncbi_ftp.constants import ASSEMBLY_DIR_REGEX, DATABASE_ACC_PREFIX, Source
+
 logger: Logger = getLogger(__name__)
 
-ASSEMBLY_DIR_RE: Final[re.Pattern[str]] = re.compile(r"^(GC[AF]_\d{9}\.\d+)_(.+)$")
 BATCH_SIZE: Final[int] = 1000
-
-
-class Source(StrEnum):
-    """NCBI assembly database source."""
-
-    REFSEQ = "refseq"
-    GENBANK = "genbank"
 
 
 class Period(StrEnum):
@@ -42,13 +35,13 @@ def parse_assembly_dir(assembly_dir: str) -> tuple[str, str]:
     :type assembly_dir: str
     :return: tuple of ``(accession_id, assembly_name)``
     :rtype: tuple[str, str]
-    :raises ValueError: if ``assembly_dir`` does not match the expected NCBI directory pattern
+    :raises ValueError: if ``assembly_dir`` does not match the NCBI directory pattern
     """
-    match = ASSEMBLY_DIR_RE.match(assembly_dir)
+    match = ASSEMBLY_DIR_REGEX.match(assembly_dir)
     if not match:
         msg = f"assembly_dir '{assembly_dir}' does not match expected pattern"
         raise ValueError(msg)
-    return match.group(1), match.group(2)
+    return match.group("accession"), match.group("name")
 
 
 def infer_source(assembly_id: str) -> Source:
@@ -60,10 +53,9 @@ def infer_source(assembly_id: str) -> Source:
     :rtype: Source
     :raises ValueError: if ``assembly_id`` lacks a ``GCF_`` or ``GCA_`` prefix
     """
-    if assembly_id.startswith("GCF_"):
-        return Source.REFSEQ
-    if assembly_id.startswith("GCA_"):
-        return Source.GENBANK
+    for source_name, prefix in DATABASE_ACC_PREFIX.items():
+        if assembly_id.startswith(prefix):
+            return Source(source_name)
     msg = f"Unrecognized assembly_id prefix: {assembly_id}"
     raise ValueError(msg)
 
@@ -212,20 +204,6 @@ def save_tsv(df: pd.DataFrame, path: Path) -> None:
     logger.info("Wrote %d rows -> %s", len(df), path)
 
 
-def batch(items: list[str], size: int) -> Iterable[list[str]]:
-    """Yield contiguous chunks of ``items`` of length up to ``size``.
-
-    :param items: list of strings to batch
-    :type items: list[str]
-    :param size: maximum batch size
-    :type size: int
-    :return: iterable of string batches
-    :rtype: Iterable[list[str]]
-    """
-    for i in range(0, len(items), size):
-        yield items[i : i + size]
-
-
 def batch_count(n_items: int, batch_size: int) -> int:
     """Compute the number of batches needed for ``n_items`` at ``batch_size``.
 
@@ -254,7 +232,7 @@ def compute_batch_width(splits: Splits, batch_size: int) -> int:
 
 
 def write_id_batches(ids: list[str], out_dir: Path, prefix: str, batch_size: int, width: int) -> int:
-    """Write sequentially numbered batch text files of assembly IDs under ``out_dir``.
+    """Write numbered batch text files of assembly IDs under ``out_dir``.
 
     :param ids: ordered assembly IDs
     :type ids: list[str]
@@ -270,7 +248,7 @@ def write_id_batches(ids: list[str], out_dir: Path, prefix: str, batch_size: int
     :rtype: int
     """
     n_written = 0
-    for i, chunk in enumerate(batch(ids, batch_size), start=1):
+    for i, chunk in enumerate(itertools.batched(ids, batch_size, strict=False), start=1):
         file_num = str(i).zfill(width)
         out_path = out_dir / f"{prefix}-{file_num}.txt"
         out_path.write_text("\n".join(chunk) + "\n", encoding="utf-8")

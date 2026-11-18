@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterator
 from ftplib import FTP, error_temp
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Final
 
 from tenacity import (
     before_sleep_log,
@@ -24,9 +24,19 @@ from tenacity import (
     wait_fixed,
 )
 
+from cdm_data_loaders.utils.checksums import finalize_digest, new_hasher, validate_checksum_fn
+
 logger: Logger = getLogger(__name__)
 
-DEFAULT_TIMEOUT = 60
+DEFAULT_TIMEOUT: Final[int] = 60
+DEFAULT_RETRIES: Final[int] = 3
+RETRY_WAIT_SECONDS: Final[int] = 2
+TRANSIENT_FTP_EXCEPTIONS: Final[tuple[type[BaseException], ...]] = (
+    error_temp,
+    BrokenPipeError,
+    ConnectionResetError,
+    EOFError,
+)
 
 
 def connect_ftp(host: str, timeout: int = DEFAULT_TIMEOUT) -> FTP:
@@ -103,17 +113,23 @@ def ftp_noop_keepalive(ftp: FTP, last_activity: float, interval: int = 25) -> fl
 
 
 def _ftp_retry(retries: int) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Build a tenacity retry decorator for transient FTP errors."""
+    """Build a tenacity retry decorator for transient FTP and socket errors.
+
+    :param retries: total attempt count before re-raising
+    :type retries: int
+    :return: tenacity retry decorator
+    :rtype: Callable[[Callable[..., Any]], Callable[..., Any]]
+    """
     return retry(
-        retry=retry_if_exception_type(error_temp),
+        retry=retry_if_exception_type(TRANSIENT_FTP_EXCEPTIONS),
         stop=stop_after_attempt(retries),
-        wait=wait_fixed(2),
+        wait=wait_fixed(RETRY_WAIT_SECONDS),
         reraise=True,
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
 
 
-def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = 3) -> list[PurePosixPath]:
+def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = DEFAULT_RETRIES) -> list[PurePosixPath]:
     """List files in an FTP directory with retry on transient errors.
 
     :param ftp: active FTP connection
@@ -123,6 +139,7 @@ def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = 3) -> list[PurePo
     :param retries: number of retry attempts
     :type retries: int
     :return: list of filenames
+    :rtype: list[PurePosixPath]
     """
     ftp.cwd(str(path))
 
@@ -135,39 +152,67 @@ def ftp_list_dir(ftp: FTP, path: PurePosixPath, retries: int = 3) -> list[PurePo
     return _list()
 
 
-def ftp_download_file(ftp: FTP, remote_path: PurePosixPath, local_path: Path, retries: int = 3) -> None:
-    """Download a single file from FTP with retry on transient errors.
+def ftp_download_file(
+    ftp: FTP,
+    remote_path: PurePosixPath,
+    local_path: Path,
+    retries: int = DEFAULT_RETRIES,
+    *,
+    checksum_fn: str | None = None,
+) -> str | None:
+    """Download a single file from FTP with retry on transient errors and optional in-stream hashing.
 
     :param ftp: active FTP connection
     :type ftp: FTP
-    :param remote_path: full remote file path
+    :param remote_path: remote file path
     :type remote_path: PurePosixPath
     :param local_path: local destination path
     :type local_path: Path
     :param retries: number of retry attempts
     :type retries: int
+    :param checksum_fn: optional checksum algorithm name (for example, ``"md5"``)
+    :type checksum_fn: str | None
+    :return: computed checksum digest when ``checksum_fn`` is set, otherwise ``None``
+    :rtype: str | None
     """
+    validated_algo = validate_checksum_fn(checksum_fn) if checksum_fn is not None else None
 
     @_ftp_retry(retries)
-    def _download() -> None:
+    def _download() -> str | None:
+        hasher = new_hasher(validated_algo) if validated_algo is not None else None
         with local_path.open("wb") as f:
-            ftp.retrbinary(f"RETR {remote_path}", f.write)
 
-    _download()
+            def _write_chunk(chunk: bytes) -> None:
+                f.write(chunk)
+                if hasher is not None:
+                    hasher.update(chunk)
+
+            ftp.retrbinary(f"RETR {remote_path}", _write_chunk)
+        return finalize_digest(hasher) if hasher is not None else None
+
+    return _download()
 
 
-def ftp_retrieve_text(ftp: FTP, remote_path: PurePosixPath) -> str:
-    """Retrieve a text file from FTP, returning its content as a string.
+def ftp_retrieve_text(ftp: FTP, remote_path: PurePosixPath, retries: int = DEFAULT_RETRIES) -> str:
+    """Retrieve a text file from FTP with retry on transient errors.
 
     :param ftp: active FTP connection
     :type ftp: FTP
-    :param remote_path: full remote file path
+    :param remote_path: remote file path
     :type remote_path: PurePosixPath
-    :return: file content
+    :param retries: number of retry attempts
+    :type retries: int
+    :return: file content joined with newlines
+    :rtype: str
     """
-    lines: list[str] = []
-    ftp.retrlines(f"RETR {remote_path}", lines.append)
-    return "\n".join(lines)
+
+    @_ftp_retry(retries)
+    def _retrieve() -> str:
+        lines: list[str] = []
+        ftp.retrlines(f"RETR {remote_path}", lines.append)
+        return "\n".join(lines)
+
+    return _retrieve()
 
 
 class ThreadLocalFTP:

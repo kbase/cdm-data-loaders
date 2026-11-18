@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UniRef50 xmlns="http://uniprot.org/uniref">
+  <entry id="UniRef50_A0AB34IYJ6" updated="2025-02-05">
+    <name>Cluster: PKZILLA-1 giant polyketide synthase</name>
+    <property type="member count" value="2"/>
+    <representativeMember>
+      <dbReference type="UniProtKB ID" id="A0AB34IYJ6_PRYPA">
+        <property type="UniProtKB accession" value="A0AB34IYJ6"/>
+        <property type="isSeed" value="true"/>
+      </dbReference>
+      <sequence length="4" checksum="385E596EB33D030E">ACGT</sequence>
+    </representativeMember>
+    <member>
+      <dbReference type="UniParc ID" id="UPI0001"/>
+    </member>
+  </entry>
+  <entry updated="2025-02-05">
+    <name>Cluster: Missing ID</name>
+    <representativeMember>
+      <dbReference type="UniParc ID" id="UPI0002"/>
+    </representativeMember>
+  </entry>
+</UniRef50>

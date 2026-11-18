@@ -286,3 +286,18 @@ def test_run_jsonlines_pipeline_pass_file_listing_skips_preprocessors_parser_and
         "input_dir_files": ["nested/notes.txt", "nested/part.jsonl.gz", "top.jsonl"],
         "matched_files": ["nested/part.jsonl.gz", "top.jsonl"],
     }
+
+
+def test_run_jsonlines_pipeline_uses_subclass_cli_prog_name(
+    extract_settings_factory: Callable[..., JsonlExtractSettings],
+) -> None:
+    """run_jsonlines_pipeline forwards a preset subclass cli_prog_name as pipeline_name."""
+
+    class PresetExtractSettings(JsonlExtractSettings, cli_prog_name="preset_extract"):
+        pass
+
+    base_settings = extract_settings_factory()
+    preset_settings = PresetExtractSettings.model_validate(
+        base_settings.model_dump(exclude=set(JsonlExtractSettings.model_computed_fields))
+    )
+    assert_core_run_pipeline_args(extract_pipeline_module, run_jsonlines_pipeline, preset_settings, "preset_extract")

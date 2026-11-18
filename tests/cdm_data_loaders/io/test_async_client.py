@@ -87,4 +87,4 @@ async def test_async_client_unreachable_code(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(downloader, "_retry", EmptyAsyncRetry())
 
     with pytest.raises(RuntimeError, match="Iterator exhausted, unreachable code reached!"):
-        await downloader._download_with_retry(DOWNLOAD_URL, "file.txt")  # noqa: SLF001
+        await downloader._download_with_retry(DOWNLOAD_URL, Path("file.txt"), None, "sha256", {})  # noqa: SLF001

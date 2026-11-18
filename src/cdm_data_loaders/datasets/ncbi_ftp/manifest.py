@@ -1,9 +1,9 @@
-"""S3 store scanning, FTP checksum verification, and manifest file writers for NCBI FTP."""
+"""S3 store scanning, FTP checksum verification, and manifest readers and writers for NCBI FTP."""
 
 import contextlib
 import json
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, datetime
 from ftplib import FTP
 from logging import Logger, getLogger
@@ -12,12 +12,12 @@ from typing import Any, TypedDict, Unpack
 
 from cdm_data_loaders.datasets.ncbi_ftp.assembly import (
     build_accession_path,
+    extract_accession,
     filter_assembly_checksums,
     parse_assembly_path,
 )
-from cdm_data_loaders.datasets.ncbi_ftp.constants import FTP_HOST
+from cdm_data_loaders.datasets.ncbi_ftp.constants import DATABASE_ACC_PREFIX, FTP_HOST, Source
 from cdm_data_loaders.datasets.ncbi_ftp.summary import (
-    DATABASE_ACC_PREFIX,
     AssemblyRecord,
     DiffResult,
     ftp_dir_from_url,
@@ -36,17 +36,57 @@ class VerifyCandidatesOptions(TypedDict, total=False):
     progress_callback: Callable[[int, int, str], None] | None
 
 
-def _extract_accession_dir_and_id_from_s3_key(key: PurePosixPath) -> tuple[str, str]:
+def read_manifest_lines(source: Path | Iterable[str]) -> list[str]:
+    """Read non-empty, non-comment manifest entries from a file path or line iterable.
+
+    :param source: manifest file path or iterable of raw lines
+    :type source: Path | Iterable[str]
+    :return: stripped manifest lines excluding blank lines and ``#`` comments
+    :rtype: list[str]
+    """
+    if isinstance(source, Path):
+        with source.open(encoding="utf-8") as fh:
+            return [stripped for line in fh if (stripped := line.strip()) and not stripped.startswith("#")]
+    return [stripped for line in source if (stripped := line.strip()) and not stripped.startswith("#")]
+
+
+def filter_unpromoted_manifest_lines(
+    text: str,
+    promoted_accessions: set[str],
+) -> tuple[list[str], int]:
+    """Filter raw manifest text, removing entries whose exact accession is in ``promoted_accessions``.
+
+    :param text: raw UTF-8 manifest text
+    :type text: str
+    :param promoted_accessions: set of promoted accession IDs (for example, ``{"GCF_000001215.4"}``)
+    :type promoted_accessions: set[str]
+    :return: tuple of ``(remaining_entries, total_entries)`` after skipping blank and comment lines
+    :rtype: tuple[list[str], int]
+    """
+    entries = read_manifest_lines(text.splitlines())
+    remaining: list[str] = []
+    for entry in entries:
+        try:
+            entry_acc = extract_accession(entry)
+        except ValueError:
+            remaining.append(entry)
+            continue
+        if entry_acc not in promoted_accessions:
+            remaining.append(entry)
+    return remaining, len(entries)
+
+
+def _extract_accession_dir_and_id_from_s3_key(key: str | PurePosixPath) -> tuple[str, str]:
     """Extract ``(assembly_dir, accession)`` from an S3 object key.
 
     :param key: S3 object key containing an assembly directory segment
-    :type key: PurePosixPath
+    :type key: str | PurePosixPath
     :return: tuple of ``(assembly_dir_name, accession)``
     :rtype: tuple[str, str]
     :raises ValueError: if ``key`` does not contain a valid assembly directory
     """
     try:
-        _db, assembly_dir, accession = parse_assembly_path(key)
+        _db, assembly_dir, accession = parse_assembly_path(PurePosixPath(key))
     except ValueError as exc:
         msg = f"Could not parse S3 key for accession info: {key}"
         raise ValueError(msg) from exc
@@ -57,10 +97,10 @@ def scan_store_to_synthetic_summary(
     bucket: PurePosixPath,
     key_prefix: PurePosixPath,
     release_date: str,
-    database: str = "refseq",
+    database: str = Source.REFSEQ,
     progress_callback: Callable[[int, str], None] | None = None,
 ) -> dict[str, AssemblyRecord]:
-    """Scan an S3 store and build a synthetic assembly summary from existing objects.
+    """Scan an S3 store and build a synthetic assembly summary from present objects.
 
     :param bucket: S3 bucket name
     :type bucket: PurePosixPath
@@ -129,7 +169,7 @@ def _fetch_accession_checksums_from_ftp(
 ) -> tuple[dict[PurePosixPath, str], float, FTP]:
     """Fetch and filter ``md5checksums.txt`` for an assembly URL from NCBI FTP.
 
-    :param ftp: active FTP client or ``None`` to connect lazily
+    :param ftp: active FTP client or ``None`` to connect on demand
     :type ftp: FTP | None
     :param ftp_host: NCBI FTP hostname
     :type ftp_host: str
@@ -196,7 +236,7 @@ def verify_transfer_candidates(
 
     :param accessions: candidate accessions (new + updated from diff)
     :type accessions: list[str]
-    :param current_assemblies: parsed current assembly summary
+    :param current_assemblies: parsed assembly summary
     :type current_assemblies: dict[str, AssemblyRecord]
     :param bucket: S3 bucket name
     :type bucket: PurePosixPath
@@ -281,11 +321,11 @@ def write_transfer_manifest(
 
     :param diff: computed diff result
     :type diff: DiffResult
-    :param current_assemblies: parsed current assembly summary
+    :param current_assemblies: parsed assembly summary
     :type current_assemblies: dict[str, AssemblyRecord]
     :param output_path: destination manifest file path
     :type output_path: Path
-    :param ftp_host: FTP hostname for URL validation
+    :param ftp_host: FTP hostname for URL checks
     :type ftp_host: str
     :return: list of FTP paths written
     :rtype: list[PurePosixPath]

@@ -1,6 +1,8 @@
 """Unit and integration tests for the unified pipeline test execution framework."""
 
+import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -8,6 +10,7 @@ import dlt
 import pytest
 from pydantic import BaseModel
 
+import specs.pipelines.jsonlines_pydantic.transforms as jsonl_pydantic_spec_transforms
 from cdm_data_loaders.core.pipeline_catalog import (
     PipelineSpec,
     discover_pipeline_targets,
@@ -33,6 +36,7 @@ from tests.e2e.framework import (
     ExecutionMode,
     PipelineTestRunner,
     ensure_docker_image,
+    materialize_dynamic_module,
     reconstruct_load_info,
 )
 from tests.e2e.reference import pipeline as reference_pipeline_mod
@@ -41,7 +45,8 @@ from tests.e2e.reference.pipeline import (
     run_reference_pipeline,
 )
 from tests.helpers.cli_assertions import make_cts_settings, register_temp_module, settings_to_argv
-from tests.helpers.paths_and_constants import DEFAULT_DLT_TABLES
+from tests.helpers.paths_and_constants import DEFAULT_DLT_TABLES, SCHEMA_CONVERTER_SPECS_DIR
+from tests.helpers.pyarrow_spec import load_fixture_attr
 from tests.helpers.table_readers import (
     assert_pipeline_report_written,
     assert_run_ok,
@@ -441,6 +446,88 @@ def test_pipeline_test_runner_pass_docker_mode_command_and_staging(
     assert f"PYTHONPATH={CONTAINER_PYMODULES_DIR}:/app/src:/app" in docker_cmd
 
 
+def test_pipeline_test_runner_pass_docker_mode_stages_fixture_model_deps_and_module_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Docker mode stages file-backed fixture model dependencies in pymodules and .py module specs in aux_dir."""
+    settings = make_cts_settings(
+        XmlToDictSettings,
+        tmp_path,
+        use_output_dir_for_pipeline_metadata=True,
+        dlt_dev_mode=False,
+        dataset_name="xml_docker_deps_ds",
+        table_name="entries",
+        xml_tag="entry",
+        loader_file_format="parquet",
+    )
+    output_dir = settings.output_dir
+    fixture_schema = (
+        SCHEMA_CONVERTER_SPECS_DIR / "pydantic_to_pyarrow" / "examples" / "ncbi_assembly_report" / "schema.py"
+    )
+    fixture_model_cls: type[BaseModel] = load_fixture_attr(fixture_schema, "MODEL", type)
+    dyn_model_mod = register_temp_module(
+        monkeypatch,
+        name="_test_fixture_backed_entity_models",
+        ENTITY_MODELS={"items": fixture_model_cls, "sample": _SampleEntityModel},
+    )
+
+    hooks_file = tmp_path / "custom_transforms.py"
+    hooks_file.write_text("CUSTOM_TRANSFORMS = {}\n", encoding="utf-8")
+    preproc_file = tmp_path / "custom_preprocessors.py"
+    preproc_file.write_text("TABLE_PREPROCESSORS = {}\n", encoding="utf-8")
+
+    monkeypatch.setattr(framework, "_built_docker_images", {"test-image:latest"})
+    captured_cmds: list[list[str]] = []
+
+    def fake_docker_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured_cmds.append(cmd)
+        (output_dir / "report.txt").write_text(
+            "pipeline: xmltodict\n"
+            "dataset: xml_docker_deps_ds\n"
+            "started: 2026-02-01 00:00:00+00:00\n"
+            "finished: 2026-02-01 00:00:05+00:00\n"
+            "status: completed\n"
+            "load_ids:\n"
+            "  - '999'\n"
+            "pipeline_load_info_errs: null\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_docker_run)
+
+    runner = PipelineTestRunner(mode=ExecutionMode.DOCKER, docker_image="test-image:latest")
+    cli_args = [
+        *settings_to_argv(settings),
+        "--entity-models",
+        dyn_model_mod,
+        "--transforms-module",
+        f"{hooks_file}:CUSTOM_TRANSFORMS",
+        "--preprocessors-module",
+        str(preproc_file),
+    ]
+    load_info = runner.run("xmltodict", cli_args=cli_args)
+    assert load_info is not None
+
+    docker_cmd = captured_cmds[0]
+    idx_transforms = docker_cmd.index("--transforms-module")
+    staged_transforms_arg = docker_cmd[idx_transforms + 1]
+    assert staged_transforms_arg.startswith(f"{CONTAINER_AUX_DIR}/")
+    assert staged_transforms_arg.endswith("_custom_transforms.py:CUSTOM_TRANSFORMS")
+
+    idx_preproc = docker_cmd.index("--preprocessors-module")
+    staged_preproc_arg = docker_cmd[idx_preproc + 1]
+    assert staged_preproc_arg.startswith(f"{CONTAINER_AUX_DIR}/")
+    assert staged_preproc_arg.endswith("_custom_preprocessors.py")
+
+    stage_dir = max(output_dir.parent.glob(".docker_stage_*"))
+    pymodules_dir = stage_dir / "pymodules"
+    assert (pymodules_dir / f"{dyn_model_mod}.py").is_file()
+    assert (pymodules_dir / f"{fixture_model_cls.__module__}.py").is_file()
+    assert not (pymodules_dir / "tests").exists()
+
+
 def test_pipeline_test_runner_pass_docker_mode_test_pipeline_and_workers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -608,6 +695,114 @@ def test_resolve_pipeline_pass_legacy_module_without_cli_runner() -> None:
     assert spec.settings_cls is JsonlExtractSettings
     assert spec.pipeline_fn is run_jsonlines_pipeline
     assert spec.cli_callable is legacy_mod.cli
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        pytest.param("_missing_module_xyz", id="missing-module"),
+        pytest.param("", id="empty-name"),
+        pytest.param("01_bad.module", id="invalid-identifier"),
+        pytest.param("datetime", id="stdlib-module"),
+        pytest.param("pydantic.main", id="site-packages-module"),
+        pytest.param("cdm_data_loaders", id="src-package-init"),
+        pytest.param("cdm_data_loaders.core.fields", id="src-module"),
+        pytest.param("tests.helpers.fixtures_jsonlines", id="tests-module"),
+        pytest.param(jsonl_pydantic_spec_transforms.__name__, id="specs-module"),
+        pytest.param("_test_unrecognized_in_memory", id="unrecognized-in-memory"),
+        pytest.param("_test_ghost_file_mod", id="missing-backing-file"),
+        pytest.param("_test_already_visited", id="already-visited"),
+    ],
+)
+def test_materialize_dynamic_module_pass_skips_missing_invalid_and_container_importable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    module_name: str,
+) -> None:
+    """materialize_dynamic_module returns False without creating pymodules_dir for skipped, invalid, or importable modules."""
+    visited: set[str] | None = None
+    if module_name == "01_bad.module":
+        monkeypatch.setitem(sys.modules, module_name, ModuleType(module_name))
+    elif module_name == "_test_unrecognized_in_memory":
+        register_temp_module(monkeypatch, name=module_name, OTHER_ATTR=123)
+    elif module_name == "_test_ghost_file_mod":
+        ghost_mod = ModuleType(module_name)
+        ghost_mod.__file__ = str(tmp_path / "does_not_exist.py")
+        monkeypatch.setitem(sys.modules, module_name, ghost_mod)
+    elif module_name == "_test_already_visited":
+        register_temp_module(monkeypatch, name=module_name, ENTITY_SCHEMAS={"a": {}})
+        visited = {module_name}
+
+    pymodules_dir = tmp_path / "pymodules"
+    assert materialize_dynamic_module(module_name, pymodules_dir, visited=visited) is False
+    assert not pymodules_dir.exists()
+
+
+def _register_file_fixture_module(
+    monkeypatch: pytest.MonkeyPatch,
+    module_name: str,
+    file_path: Path,
+    source: str,
+) -> ModuleType:
+    """Write ``source`` to ``file_path`` and execute it in ``sys.modules`` under ``module_name``.
+
+    :param monkeypatch: Pytest monkeypatch fixture for automatic ``sys.modules`` cleanup.
+    :type monkeypatch: pytest.MonkeyPatch
+    :param module_name: Synthetic dotted module name.
+    :type module_name: str
+    :param file_path: Temporary ``.py`` file path to write and load.
+    :type file_path: Path
+    :param source: Python module source code.
+    :type source: str
+    :return: Loaded module object.
+    :rtype: ModuleType
+    """
+    file_path.write_text(source, encoding="utf-8")
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, module_name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_materialize_dynamic_module_pass_stages_dotted_file_module_and_transitive_deps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """materialize_dynamic_module copies dotted file-backed synthetic modules and transitive module/object dependencies."""
+    pkg_mod = ModuleType("_fixture_pkg")
+    monkeypatch.setitem(sys.modules, "_fixture_pkg", pkg_mod)
+
+    leaf_mod = _register_file_fixture_module(
+        monkeypatch,
+        "_fixture_pkg.leaf_mod",
+        tmp_path / "leaf.py",
+        "LEAF_CONST = 7\n",
+    )
+    pkg_mod.leaf_mod = leaf_mod  # type: ignore[attr-defined]
+
+    _register_file_fixture_module(
+        monkeypatch,
+        "_fixture_helper_mod",
+        tmp_path / "helper.py",
+        "def helper_fn() -> int:\n    return 1\n",
+    )
+    _register_file_fixture_module(
+        monkeypatch,
+        "_fixture_pkg.sub.root_mod",
+        tmp_path / "root.py",
+        "import _fixture_pkg.leaf_mod as leaf_alias\nfrom _fixture_helper_mod import helper_fn\n",
+    )
+
+    pymodules_dir = tmp_path / "pymodules"
+    assert materialize_dynamic_module("_fixture_pkg.sub.root_mod", pymodules_dir) is True
+    assert (pymodules_dir / "_fixture_pkg" / "__init__.py").is_file()
+    assert (pymodules_dir / "_fixture_pkg" / "sub" / "__init__.py").is_file()
+    assert (pymodules_dir / "_fixture_pkg" / "sub" / "root_mod.py").is_file()
+    assert (pymodules_dir / "_fixture_pkg" / "leaf_mod.py").is_file()
+    assert (pymodules_dir / "_fixture_helper_mod.py").is_file()
 
 
 @pytest.mark.docker

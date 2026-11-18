@@ -2,6 +2,7 @@
 
 import datetime as dt
 import json
+import logging
 from typing import Any
 
 import pytest
@@ -10,6 +11,8 @@ from lxml.etree import XMLParser, fromstring
 import cdm_data_loaders.datasets.uniprot.kb as uniprot_kb_module
 from cdm_data_loaders.coercion.xml import make_xml_element_converter
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.transforms.introspection import inspect_transform_signature
+from cdm_data_loaders.core.transforms.routing import route_and_coerce_record
 from cdm_data_loaders.datasets.uniprot.kb import (
     DB,
     DESCRIPTION,
@@ -18,6 +21,7 @@ from cdm_data_loaders.datasets.uniprot.kb import (
     HTTPS_NS,
     NAME,
     NCBI_TAXON,
+    UNIPROT_CDM_SCHEMA_MAP,
     XREF,
     make_uniprot_cdm_transform,
     parse_cross_references,
@@ -1066,6 +1070,40 @@ def test_make_uniprot_cdm_transform() -> None:
             ENTITY_ID: "uniprot:P12345",
             NAME: "TEST_HUMAN",
             DESCRIPTION: "UniProt entry name",
+        }
+    ]
+
+
+def test_make_uniprot_cdm_transform_propagates_source_file_to_rejected_and_logs_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """make_uniprot_cdm_transform resolves a default UTC timestamp and preserves source_file on _rejected."""
+    transform_fn = make_uniprot_cdm_transform()
+    assert inspect_transform_signature(transform_fn) == (False, True, True)
+
+    valid_routed = transform_fn({"_dataset": "Swiss-Prot", "accession": ["P12345"], "name": ["TEST_HUMAN"]})
+    updated = valid_routed["entity"][0]["updated"]
+    assert isinstance(updated, dt.datetime)
+    assert updated.tzinfo == dt.UTC
+
+    with caplog.at_level(logging.ERROR, logger="cdm_data_loaders.datasets.uniprot.kb"):
+        routed = route_and_coerce_record(
+            {"_dataset": "Swiss-Prot", "accession": []},
+            "entry",
+            transform=transform_fn,
+            schema_map=UNIPROT_CDM_SCHEMA_MAP,
+            source_file="chunks/uniprot_01.xml.gz",
+        )
+
+    assert "No accession found for entry" in caplog.text
+    assert list(routed.keys()) == [REJECTED_TABLE_NAME]
+    assert routed[REJECTED_TABLE_NAME] == [
+        {
+            "table_name": "entry",
+            "source_file": "chunks/uniprot_01.xml.gz",
+            "line_no": None,
+            "raw_record": json.dumps({"_dataset": "Swiss-Prot", "accession": []}),
+            "error_detail": "No accession found",
         }
     ]
 

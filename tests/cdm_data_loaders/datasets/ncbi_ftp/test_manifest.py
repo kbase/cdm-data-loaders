@@ -9,9 +9,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cdm_data_loaders.datasets.ncbi_ftp.constants import DEFAULT_DESTINATION_PREFIX
+from cdm_data_loaders.datasets.ncbi_ftp.constants import DEFAULT_DESTINATION_PREFIX, Source
 from cdm_data_loaders.datasets.ncbi_ftp.manifest import (
     _extract_accession_dir_and_id_from_s3_key,
+    filter_unpromoted_manifest_lines,
+    read_manifest_lines,
     scan_store_to_synthetic_summary,
     verify_transfer_candidates,
     write_diff_summary,
@@ -20,10 +22,12 @@ from cdm_data_loaders.datasets.ncbi_ftp.manifest import (
     write_updated_manifest,
 )
 from cdm_data_loaders.datasets.ncbi_ftp.summary import (
+    SUMMARY_FTP_PATHS,
     AssemblyRecord,
     DiffResult,
     accession_prefix,
     compute_diff,
+    download_assembly_summary,
     filter_by_prefix_range,
     ftp_dir_from_url,
     get_latest_assembly_paths,
@@ -481,11 +485,19 @@ def test_verify_transfer_candidates_skips_ftp_when_folder_missing(
             ("GCA_999999999.1_assembly_name", "GCA_999999999.1"),
             id="subdir",
         ),
+        pytest.param(
+            "cdm-lake/ncbi-refseq/raw_data/GCF/000/005/845/GCF_000005845.20_ASM584v20/file.gz",
+            ("GCF_000005845.20_ASM584v20", "GCF_000005845.20"),
+            id="str_key",
+        ),
         pytest.param(PurePosixPath("some") / "random" / "path", None, id="no_accession"),
         pytest.param(PurePosixPath(""), None, id="empty"),
     ],
 )
-def test_extract_accession_dir_and_id_from_s3_key(key: PurePosixPath, expected: tuple[str, str] | None) -> None:
+def test_extract_accession_dir_and_id_from_s3_key(
+    key: str | PurePosixPath,
+    expected: tuple[str, str] | None,
+) -> None:
     """Accession is extracted from S3 key paths; invalid/empty paths return None."""
     if expected is None:
         with pytest.raises(ValueError, match="Could not parse S3 key for accession info"):
@@ -637,3 +649,86 @@ def test_scan_store_assembly_dir_survives_round_trip(mock_list_objects: MagicMoc
     assert reparsed_rec.assembly_dir == original_rec.assembly_dir
     assert reparsed_rec.seq_rel_date == original_rec.seq_rel_date
     assert reparsed_rec.status == original_rec.status
+
+
+@pytest.mark.parametrize("use_path", [True, False], ids=["from-path", "from-iterable"])
+def test_read_manifest_lines_strips_blanks_and_comments(tmp_path: Path, use_path: bool) -> None:
+    """Skip blank lines and '#' comments when reading from a Path or iterable of lines."""
+    raw = "# header comment\n\n  GCF_000001215.4  \n   # indented comment\nGCA_012345678.1\n\n"
+    if use_path:
+        manifest_path = tmp_path / "manifest.txt"
+        manifest_path.write_text(raw, encoding="utf-8")
+        result = read_manifest_lines(manifest_path)
+    else:
+        result = read_manifest_lines(raw.splitlines(keepends=True))
+    assert result == ["GCF_000001215.4", "GCA_012345678.1"]
+
+
+def test_filter_unpromoted_manifest_lines_exact_version_and_unparseable() -> None:
+    """Remove promoted accessions without version-prefix collisions and preserve unparseable entries."""
+    text = (
+        "# comment\n"
+        "/genomes/all/GCF/000/005/845/GCF_000005845.1_ASM584v1/\n"
+        "/genomes/all/GCF/000/005/845/GCF_000005845.10_ASM584v10/\n"
+        "unparseable_entry\n"
+    )
+    remaining, total = filter_unpromoted_manifest_lines(text, {"GCF_000005845.1"})
+    expected_total = 3
+    assert total == expected_total
+    assert remaining == [
+        "/genomes/all/GCF/000/005/845/GCF_000005845.10_ASM584v10/",
+        "unparseable_entry",
+    ]
+
+
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
+def test_scan_store_filters_by_database_and_rejects_unknown_database(mock_list_objects: MagicMock) -> None:
+    """Scan store filters by GCA_ prefix for genbank and raises ValueError on unknown database."""
+    mock_list_objects.return_value = [
+        {"Key": "prefix/GCF_000001215.4_Release_6/file.gz", "LastModified": datetime(2024, 1, 1, tzinfo=UTC)},
+        {"Key": "prefix/GCA_012345678.1_ASM123v1/file.gz", "LastModified": datetime(2024, 1, 2, tzinfo=UTC)},
+    ]
+    genbank_records = scan_store_to_synthetic_summary(
+        PurePosixPath("test-bucket"),
+        PurePosixPath("prefix"),
+        "2024/01/31",
+        database=Source.GENBANK,
+    )
+    assert list(genbank_records) == ["GCA_012345678.1"]
+
+    with pytest.raises(ValueError, match="Unknown database"):
+        scan_store_to_synthetic_summary(
+            PurePosixPath("test-bucket"),
+            PurePosixPath("prefix"),
+            "2024/01/31",
+            database="invalid_db",
+        )
+
+
+@pytest.mark.parametrize(
+    "database",
+    [
+        pytest.param(Source.REFSEQ, id="refseq"),
+        pytest.param(Source.GENBANK, id="genbank"),
+    ],
+)
+@patch("cdm_data_loaders.datasets.ncbi_ftp.summary.ftp_retrieve_text", return_value="# summary\n")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.summary.ftp_session")
+def test_download_assembly_summary_supported_databases(
+    mock_session: MagicMock,
+    mock_retrieve: MagicMock,
+    database: Source,
+) -> None:
+    """Fetch the expected FTP summary file path for refseq and genbank."""
+    mock_ftp = MagicMock()
+    mock_session.return_value.__enter__.return_value = mock_ftp
+    content = download_assembly_summary(database=database, ftp_host="ftp.example.com")
+    assert content == "# summary\n"
+    mock_session.assert_called_once_with("ftp.example.com")
+    mock_retrieve.assert_called_once_with(mock_ftp, SUMMARY_FTP_PATHS[database])
+
+
+def test_download_assembly_summary_unknown_database() -> None:
+    """Raise ValueError when database is neither refseq nor genbank."""
+    with pytest.raises(ValueError, match="Unknown database: bogus"):
+        download_assembly_summary(database="bogus")

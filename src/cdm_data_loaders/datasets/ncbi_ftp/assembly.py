@@ -1,5 +1,6 @@
 """NCBI FTP assembly path helpers, file filters, and single-assembly FTP download."""
 
+import contextlib
 import time
 from dataclasses import dataclass
 from ftplib import FTP
@@ -15,7 +16,7 @@ from cdm_data_loaders.io.ftp_client import (
     ftp_retrieve_text,
     ftp_session,
 )
-from cdm_data_loaders.utils.checksums import compute_file_checksum, parse_md5_checksums_file
+from cdm_data_loaders.utils.checksums import parse_md5_checksums_file
 
 logger: Logger = getLogger(__name__)
 
@@ -44,6 +45,17 @@ class _AssemblyDownloadContext:
     stats: dict[str, Any]
 
 
+def matches_assembly_file_filter(path: PurePosixPath) -> bool:
+    """Return ``True`` when ``path`` ends with one of the suffixes in ``FILE_FILTERS``.
+
+    :param path: relative or remote file path
+    :type path: PurePosixPath
+    :return: ``True`` if ``path`` matches ``FILE_FILTERS``
+    :rtype: bool
+    """
+    return any(path.match(f"**{suffix}") for suffix in FILE_FILTERS)
+
+
 def filter_assembly_checksums(checksums: dict[PurePosixPath, str]) -> dict[PurePosixPath, str]:
     """Filter a parsed ``md5checksums.txt`` mapping to files matching ``FILE_FILTERS``.
 
@@ -52,7 +64,7 @@ def filter_assembly_checksums(checksums: dict[PurePosixPath, str]) -> dict[PureP
     :return: filtered mapping retaining entries whose suffixes match ``FILE_FILTERS``
     :rtype: dict[PurePosixPath, str]
     """
-    return {fname: md5 for fname, md5 in checksums.items() if any(fname.match(f"**{s}") for s in FILE_FILTERS)}
+    return {fname: md5 for fname, md5 in checksums.items() if matches_assembly_file_filter(fname)}
 
 
 def build_accession_path(assembly_dir: PurePosixPath) -> PurePosixPath:
@@ -64,8 +76,8 @@ def build_accession_path(assembly_dir: PurePosixPath) -> PurePosixPath:
     :rtype: PurePosixPath
     :raises ValueError: if ``assembly_dir`` does not start with a valid RefSeq or GenBank accession
     """
-    if m := ACCESSION_PARTS_REGEX.match(f"{assembly_dir}"):
-        return PurePosixPath("raw_data", *m.groups(), assembly_dir)
+    if m := ACCESSION_PARTS_REGEX.match(str(assembly_dir)):
+        return PurePosixPath("raw_data", m.group("db"), m.group("p1"), m.group("p2"), m.group("p3"), assembly_dir)
     msg = f"Cannot parse accession: {assembly_dir}"
     raise ValueError(msg)
 
@@ -80,8 +92,30 @@ def parse_assembly_path(assembly_path: PurePosixPath) -> tuple[str, PurePosixPat
     :raises ValueError: if ``assembly_path`` cannot be parsed
     """
     if m := ASSEMBLY_PATH_REGEX.search(str(assembly_path)):
-        return m.group(3), PurePosixPath(m.group(1)), m.group(2)
+        return m.group("db"), PurePosixPath(m.group("assembly_dir")), m.group("accession")
     msg = f"Cannot parse assembly path: {assembly_path}"
+    raise ValueError(msg)
+
+
+def extract_accession(entry: str | PurePosixPath) -> str:
+    """Extract the exact versioned accession ID from an FTP path, S3 key, directory name, or bare accession.
+
+    :param entry: path or accession token (for example, ``"/genomes/all/.../GCF_000001215.4_Release_6/"`` or ``"GCF_000001215.4"``)
+    :type entry: str | PurePosixPath
+    :return: exact accession string (for example, ``"GCF_000001215.4"``)
+    :rtype: str
+    :raises ValueError: if ``entry`` does not contain a valid RefSeq or GenBank accession
+    """
+    raw = str(entry).strip()
+    if not raw:
+        msg = f"Cannot parse accession: {entry}"
+        raise ValueError(msg)
+    with contextlib.suppress(ValueError):
+        _db, _assembly_dir, accession = parse_assembly_path(PurePosixPath(raw))
+        return accession
+    if m := ACCESSION_PARTS_REGEX.match(raw.strip("/")):
+        return m.group("accession")
+    msg = f"Cannot parse accession: {entry}"
     raise ValueError(msg)
 
 
@@ -91,15 +125,15 @@ def _download_and_verify(
     ctx: _AssemblyDownloadContext,
     last_activity: float,
 ) -> float:
-    """Download one assembly file, verify its MD5 checksum, and write an ``.md5`` sidecar if valid.
+    """Download one assembly file, verify its MD5 checksum in-stream, and write an ``.md5`` sidecar if valid.
 
     :param ftp: active FTP connection
     :type ftp: FTP
-    :param filename: remote file name within the current FTP working directory
+    :param filename: remote file name within the active FTP working directory
     :type filename: PurePosixPath
     :param ctx: local destination directory, MD5 table, and download stats
     :type ctx: _AssemblyDownloadContext
-    :param last_activity: monotonic timestamp of the previous FTP operation
+    :param last_activity: monotonic timestamp of the prior FTP operation
     :type last_activity: float
     :return: updated monotonic last-activity timestamp
     :rtype: float
@@ -108,30 +142,33 @@ def _download_and_verify(
     local_file = ctx.dest_dir / filename
     expected_md5 = ctx.md5_checksums.get(filename)
 
-    def _validate_file(candidate_file: Path) -> bool:
-        if expected_md5:
-            if compute_file_checksum(candidate_file, "md5") == expected_md5:
-                (ctx.dest_dir / f"{filename}.md5").write_text(expected_md5, encoding="utf-8")
-            else:
-                logger.warning(
-                    "  MD5 mismatch for %s: expected %s",
-                    filename,
-                    expected_md5,
-                )
-                return False
-            logger.debug("  MD5 verified: %s", filename)
-        else:
-            ctx.stats["files_without_checksum"] += 1
-        return True
-
     for attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
         logger.debug("  Downloading %s (attempt %d/%d)", filename, attempt, MAX_DOWNLOAD_ATTEMPTS)
-        ftp_download_file(ftp, filename, local_file, retries=1)
+        actual_md5 = ftp_download_file(
+            ftp,
+            filename,
+            local_file,
+            retries=1,
+            checksum_fn="md5" if expected_md5 else None,
+        )
         last_activity = time.monotonic()
 
-        if _validate_file(local_file):
+        if not expected_md5:
+            ctx.stats["files_without_checksum"] += 1
             ctx.stats["files_downloaded"] += 1
             return last_activity
+
+        if actual_md5 == expected_md5:
+            (ctx.dest_dir / f"{filename}.md5").write_text(expected_md5, encoding="utf-8")
+            logger.debug("  MD5 verified: %s", filename)
+            ctx.stats["files_downloaded"] += 1
+            return last_activity
+
+        logger.warning(
+            "  MD5 mismatch for %s: expected %s",
+            filename,
+            expected_md5,
+        )
 
     ctx.stats["files_skipped_checksum_mismatch"] += 1
     local_file.unlink(missing_ok=True)
@@ -155,7 +192,7 @@ def download_assembly_to_local(
     :type output_dir: Path
     :param ftp_host: FTP hostname
     :type ftp_host: str
-    :param ftp: optional existing FTP connection managed by the caller
+    :param ftp: optional caller-managed FTP connection
     :type ftp: FTP | None
     :return: JSON-serializable dictionary of download statistics
     :rtype: dict[str, Any]
@@ -185,7 +222,7 @@ def download_assembly_to_local(
             (dest_dir / "md5checksums.txt").write_text(md5_text, encoding="utf-8")
             stats["files_downloaded"] += 1
 
-        target_files = [f for f in files if any(f.match(f"**{s}") for s in FILE_FILTERS)]
+        target_files = [f for f in files if matches_assembly_file_filter(f)]
         last_activity = time.monotonic()
         ctx = _AssemblyDownloadContext(dest_dir=dest_dir, md5_checksums=md5_checksums, stats=stats)
 

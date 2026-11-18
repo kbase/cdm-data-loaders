@@ -120,6 +120,15 @@ def test_promote_with_metadata(mock_s3_client: botocore.client.BaseClient) -> No
             ["GCF_000001215.4"],
             id="all",
         ),
+        pytest.param(
+            "# header comment\n\n"
+            "/genomes/all/GCF/000/001/215/GCF_000001215.1_ASM1/\n"
+            "/genomes/all/GCF/000/001/215/GCF_000001215.10_ASM10/\n",
+            {"GCF_000001215.1"},
+            ["GCF_000001215.10_ASM10"],
+            ["GCF_000001215.1_ASM1", "# header comment"],
+            id="version-prefix-no-collision",
+        ),
     ],
 )
 def test_trim_manifest(
@@ -129,7 +138,7 @@ def test_trim_manifest(
     expected_present: list[str],
     expected_absent: list[str],
 ) -> None:
-    """Promoted accessions are removed; others remain (partial) or the manifest empties (all)."""
+    """Promoted accessions are removed; others remain without version-prefix collisions."""
     manifest_key = PurePosixPath("manifests/transfer_manifest.txt")
     mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(manifest_key), Body=manifest_body.encode())
     _trim_manifest(manifest_key, TEST_BUCKET, promoted_set)
@@ -138,6 +147,18 @@ def test_trim_manifest(
         assert acc in remaining
     for acc in expected_absent:
         assert acc not in remaining
+
+
+@pytest.mark.s3
+def test_trim_manifest_missing_key_warns_without_raising(
+    mock_s3_client: botocore.client.BaseClient,  # noqa: ARG001
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Missing transfer manifest in S3 logs a warning and returns without error."""
+    with caplog.at_level(logging.WARNING):
+        _trim_manifest(PurePosixPath("manifests/missing.txt"), TEST_BUCKET, {"GCF_000001215.4"})
+    assert "Manifest not found in S3" in caplog.text
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
 
 
 # Helpers for _archive_assemblies tests
@@ -901,6 +922,39 @@ def test_archive_assemblies_invalid_accession_skipped(
         archive_reason="updated",
     )
     assert archived == 1
+
+
+@pytest.mark.s3
+def test_archive_assemblies_version_prefix_and_comments(
+    mock_s3_client: botocore.client.BaseClient,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Archiving GCF_000005845.2 skips '#' comments and does not touch GCF_000005845.20."""
+    key_v2 = DEFAULT_DESTINATION_PREFIX / "raw_data" / ACC_PATH_845 / "GCF_000005845.2_genomic.fna.gz"
+    acc_path_v20 = PurePosixPath("GCF") / "000" / "005" / "845" / "GCF_000005845.20_ASM584v20"
+    key_v20 = DEFAULT_DESTINATION_PREFIX / "raw_data" / acc_path_v20 / "GCF_000005845.20_genomic.fna.gz"
+    mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key_v2), Body=b"v2")
+    mock_s3_client.put_object(Bucket=str(TEST_BUCKET), Key=str(key_v20), Body=b"v20")
+
+    manifest = tmp_path / "removed.txt"
+    manifest.write_text("# comment header\n\nGCF_000005845.2\n", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        archived = _archive_assemblies(
+            manifest,
+            lakehouse_bucket=TEST_BUCKET,
+            lakehouse_key_prefix=DEFAULT_DESTINATION_PREFIX,
+            ncbi_release="2024-01",
+            archive_reason="replaced_or_suppressed",
+            delete_source=True,
+        )
+
+    assert archived == 1
+    assert "Invalid accession format" not in caplog.text
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+    assert mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(key_v2)).get("KeyCount", 0) == 0
+    assert mock_s3_client.list_objects_v2(Bucket=str(TEST_BUCKET), Prefix=str(key_v20)).get("KeyCount", 0) == 1
 
 
 # Concurrent / multi-file promotion (new behaviour)

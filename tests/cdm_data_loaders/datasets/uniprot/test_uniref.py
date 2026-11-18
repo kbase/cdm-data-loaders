@@ -10,8 +10,12 @@ from lxml.etree import XMLParser, fromstring
 
 from cdm_data_loaders.coercion.xml import make_xml_element_converter
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
+from cdm_data_loaders.core.registry import TransformContext
+from cdm_data_loaders.core.transforms.introspection import inspect_transform_signature
+from cdm_data_loaders.core.transforms.routing import route_and_coerce_record
 from cdm_data_loaders.datasets.uniprot.uniref import (
     ENTRY_XML_TAG,
+    UNIREF_CDM_SCHEMA_MAP,
     UNIREF_URL,
     extract_cluster,
     extract_cross_refs,
@@ -663,16 +667,18 @@ def test_extract_cluster_no_id() -> None:
     assert extract_cluster(CONVERT_ENTRY(fromstring(xml))) == ({}, {})
 
 
-def test_parse_uniref_entry_no_cluster_id() -> None:
-    """An entry with no id attribute is routed to _rejected rather than parsed."""
+def test_parse_uniref_entry_no_cluster_id(caplog: pytest.LogCaptureFixture) -> None:
+    """An entry with no id attribute logs an error and routes to _rejected."""
     xml = f"<entry xmlns='{UNIREF_URL}'><name>Cluster: no id</name></entry>"
     entry_dict = CONVERT_ENTRY(fromstring(xml, parser=XMLParser(remove_blank_text=True)))
-    result = parse_uniref_entry(
-        entry_dict,
-        NOW,
-        PROTOCOL,
-    )
+    with caplog.at_level(logging.ERROR, logger="cdm_data_loaders.datasets.uniprot.uniref"):
+        result = parse_uniref_entry(
+            entry_dict,
+            NOW,
+            PROTOCOL,
+        )
 
+    assert "No cluster ID found in entry" in caplog.text
     assert list(result.keys()) == [REJECTED_TABLE_NAME]
     error = result[REJECTED_TABLE_NAME][0]
     assert error["table_name"] == "entry"
@@ -680,6 +686,26 @@ def test_parse_uniref_entry_no_cluster_id() -> None:
     assert error["line_no"] is None
     assert error["error_detail"] == "No cluster ID found in entry"
     assert json.loads(error["raw_record"]) == {"name": "Cluster: no id"}
+
+
+def test_parse_uniref_entry_unexpected_error(caplog: pytest.LogCaptureFixture) -> None:
+    """Unexpected parse exceptions log at ERROR and route to _rejected with TransformContext provenance."""
+    malformed_entry: dict[str, Any] = {
+        "_id": "UniRef50_BAD",
+        "representativeMember": {"dbReference": {"_type": ["unhashable"], "_id": "UPI0001"}},
+    }
+    ctx = TransformContext(table_name="entry", source_file="chunks/uniref_01.xml.gz")
+    with caplog.at_level(logging.ERROR, logger="cdm_data_loaders.datasets.uniprot.uniref"):
+        result = parse_uniref_entry(malformed_entry, NOW, PROTOCOL, ctx=ctx)
+
+    assert "Parse error while processing UniRef entry" in caplog.text
+    assert list(result.keys()) == [REJECTED_TABLE_NAME]
+    error = result[REJECTED_TABLE_NAME][0]
+    assert error["table_name"] == "entry"
+    assert error["source_file"] == "chunks/uniref_01.xml.gz"
+    assert error["line_no"] is None
+    assert "unhashable" in error["error_detail"]
+    assert json.loads(error["raw_record"]) == malformed_entry
 
 
 def test_make_uniref_cdm_transform() -> None:
@@ -725,6 +751,40 @@ def test_make_uniref_cdm_transform() -> None:
             "cluster_id": "uniref:UniRef50_TEST",
             "is_representative": True,
             "is_seed": True,
+        }
+    ]
+
+
+def test_make_uniref_cdm_transform_propagates_source_file_to_rejected(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """make_uniref_cdm_transform resolves a default UTC timestamp and preserves source_file on _rejected."""
+    transform_fn = make_uniref_cdm_transform(PROTOCOL)
+    assert inspect_transform_signature(transform_fn) == (False, True, True)
+
+    valid_routed = transform_fn({"_id": "UniRef50_TEST", "name": "Cluster: Test"})
+    updated = valid_routed["entity"][0]["updated"]
+    assert isinstance(updated, dt.datetime)
+    assert updated.tzinfo == dt.UTC
+
+    with caplog.at_level(logging.ERROR, logger="cdm_data_loaders.datasets.uniprot.uniref"):
+        routed = route_and_coerce_record(
+            {"name": "Cluster: missing id"},
+            "entry",
+            transform=transform_fn,
+            schema_map=UNIREF_CDM_SCHEMA_MAP,
+            source_file="chunks/uniref50_01.xml.gz",
+        )
+
+    assert "No cluster ID found in entry" in caplog.text
+    assert list(routed.keys()) == [REJECTED_TABLE_NAME]
+    assert routed[REJECTED_TABLE_NAME] == [
+        {
+            "table_name": "entry",
+            "source_file": "chunks/uniref50_01.xml.gz",
+            "line_no": None,
+            "raw_record": json.dumps({"name": "Cluster: missing id"}),
+            "error_detail": "No cluster ID found in entry",
         }
     ]
 

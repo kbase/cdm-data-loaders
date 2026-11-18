@@ -8,6 +8,7 @@ import pyarrow.compute as pc
 
 from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TableTransformFn, TransformContext
 from cdm_data_loaders.core.transforms.routing import emit_raw_table
+from cdm_data_loaders.datasets.uniprot.common import UNIPROT_CURIE_PREFIX
 from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     DB_REFERENCE_ID_COL,
     DB_REFERENCE_TYPE_COL,
@@ -17,8 +18,6 @@ from cdm_data_loaders.schemas.uniprot.idmapping.schema import (
     RAW_ID_MAPPING_TABLE_NAME,
     UNIPROT_ID_COL,
 )
-
-UNIPROT_CURIE_PREFIX: Final[str] = "uniprot:"
 
 UNIPROT_IDMAPPING_OUTPUT_SCHEMAS: Final[ArrowSchemaRegistry] = ArrowSchemaRegistry(
     registry={

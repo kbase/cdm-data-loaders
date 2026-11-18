@@ -21,7 +21,7 @@ intro: |
   1. **Target selection, preset configurations, and PyArrow schema resolution** (`XmlToPyArrowSettings`, `PresetXmlToPyArrowSettings`, `LevelPresetXmlToPyArrowSettings`).
   2. **Streaming XML element extraction, default namespace resolution, and XSD-driven PyArrow table coercion** (`process_xml_file_to_pyarrow`).
   3. **File discovery, `.gz` decompression, MD5 sidecar pre-processing, dead-letter routing (`_rejected`), table transforms, and pipeline reporting** (`run_xmltopyarrow_pipeline`).
-  4. **Preset subclass behavior** (`pubmed`, `uniprot`, `uniref50`, `uniref90`, `uniref100`).
+  4. **Preset subclass behavior** (`pubmed`, `uniprot`, `uniprot_cdm`, `uniref50`, `uniref50_cdm`, `uniref90`, `uniref90_cdm`, `uniref100`, `uniref100_cdm`).
   5. **Errors** (`XmlToPyArrowConfigError` subclasses) raised for invalid target selection, invalid XSDs, or invalid pipeline hooks.
 
 sections:
@@ -103,10 +103,11 @@ sections:
           path), `line_no=None`, `raw_record=None`, and `error_detail`.
       - id: R-XML-TRANSFORMS
         statement: |
-          When `transforms_module` defines a `RecordTransformFn` for a target table, converted XML element dicts
-          are passed to the transform before buffering. The transform may drop records (`{}`), modify fields, or
-          fan out records across multiple destination tables, coercing each table with `OUTPUT_SCHEMAS` when
-          provided.
+          When `transforms_module` defines a `RecordTransformFn` for a target table, `route_and_coerce_record`
+          passes converted XML element dicts (and `TransformContext(table_name, source_file)` when the callable
+          declares a context parameter) to the transform before buffering. The transform may drop records (`{}`),
+          route rejected records to `_rejected` (`REJECTED_PYARROW_SCHEMA`) with `table_name` and `source_file`
+          provenance, update fields, or fan out records across destination tables coerced with `OUTPUT_SCHEMAS`.
       - id: R-XML-REPORT
         statement: |
           Every pipeline execution writes one audit row to `_load_info` and a YAML summary to
@@ -132,3 +133,23 @@ sections:
           When a `.xml.gz` file fails `validate_md5_sidecar` in `pubmed`, the file is omitted from
           `ingested_files`, a file-level provenance row (`table_name=None`, `line_no=None`, `raw_record=None`)
           is written to `_rejected`, and `report.txt` records `status: completed with errors` and `load_errors`.
+
+  - id: uniprot_cdm_presets
+    title: UniProtKB and UniRef CDM Preset Subclasses
+    rules:
+      - id: R-UNIPROT-CDM-PRESET
+        statement: |
+          `UniProtSettings` (`uniprot_cdm` CLI) subclasses `LockedTransformHooksMixin` and
+          `PresetXmlToPyArrowSettings`, locking `dataset_name="uniprot_cdm"`, `table_name="entry"`,
+          `xml_tag="entry"`, `transforms_module=None`, and `output_schemas_module=None`, and binding
+          `make_uniprot_cdm_transform` and `UNIPROT_CDM_SCHEMA_MAP` (`entity`, `identifier`, `name`,
+          `protein`, `entity_x_publication`). Entries missing `<accession>` or raising parse errors route
+          to `_rejected` with `table_name="entry"` and `source_file` provenance.
+      - id: R-UNIREF-CDM-PRESET
+        statement: |
+          `UniRef50CdmSettings`, `UniRef90CdmSettings`, and `UniRef100CdmSettings` (`uniref50_cdm`,
+          `uniref90_cdm`, `uniref100_cdm` CLIs) subclass `UniRefCdmSettings` (`LockedTransformHooksMixin`
+          and `PresetXmlToPyArrowSettings`), locking `dataset_name`, `table_name="entry"`, `xml_tag="entry"`,
+          `transforms_module=None`, and `output_schemas_module=None`, and binding `make_uniref_cdm_transform`
+          and `UNIREF_CDM_SCHEMA_MAP` (`entity`, `cluster`, `clustermember`). Entries missing `_id` or raising
+          parse errors route to `_rejected` with `table_name="entry"` and `source_file` provenance.

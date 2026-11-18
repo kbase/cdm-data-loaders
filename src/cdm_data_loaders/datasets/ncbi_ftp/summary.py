@@ -5,23 +5,21 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Final
 from urllib.parse import urlsplit
 
-from cdm_data_loaders.datasets.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, FTP_HOST
+from cdm_data_loaders.datasets.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, FTP_HOST, Source
 from cdm_data_loaders.io.ftp_client import ftp_retrieve_text, ftp_session
 
 logger: Logger = getLogger(__name__)
 
-DATABASE_ACC_PREFIX: Final[dict[str, str]] = {
-    "refseq": "GCF_",
-    "genbank": "GCA_",
-}
-
-SUMMARY_FTP_PATHS: Final[dict[str, PurePosixPath]] = {
-    "refseq": PurePosixPath("/") / "genomes" / "ASSEMBLY_REPORTS" / "assembly_summary_refseq.txt",
-    "genbank": PurePosixPath("/") / "genomes" / "ASSEMBLY_REPORTS" / "assembly_summary_genbank.txt",
-}
+SUMMARY_FTP_PATHS: Final[MappingProxyType[str, PurePosixPath]] = MappingProxyType(
+    {
+        Source.REFSEQ: PurePosixPath("/") / "genomes" / "ASSEMBLY_REPORTS" / "assembly_summary_refseq.txt",
+        Source.GENBANK: PurePosixPath("/") / "genomes" / "ASSEMBLY_REPORTS" / "assembly_summary_genbank.txt",
+    }
+)
 
 ACCESSION_COL: Final[int] = 0
 STATUS_COL: Final[int] = 10
@@ -43,7 +41,7 @@ class AssemblyRecord:
 
 @dataclass
 class DiffResult:
-    """Result of comparing current and previous assembly summaries."""
+    """Result of comparing two NCBI assembly summary states."""
 
     new: list[str] = field(default_factory=list)
     updated: list[str] = field(default_factory=list)
@@ -54,7 +52,7 @@ class DiffResult:
 def ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> PurePosixPath:
     """Convert an FTP or HTTPS URL from the assembly summary to an FTP directory path.
 
-    :param ftp_url: full FTP or HTTPS URL from an assembly summary row
+    :param ftp_url: FTP or HTTPS URL from an assembly summary row
     :type ftp_url: str
     :param ftp_host: expected FTP hostname
     :type ftp_host: str
@@ -73,7 +71,7 @@ def ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> PurePosixPath:
     raise ValueError(msg)
 
 
-def download_assembly_summary(database: str = "refseq", ftp_host: str = FTP_HOST) -> str:
+def download_assembly_summary(database: str = Source.REFSEQ, ftp_host: str = FTP_HOST) -> str:
     """Download the assembly summary TSV from NCBI FTP.
 
     :param database: ``"refseq"`` or ``"genbank"``
@@ -154,7 +152,7 @@ def get_latest_assembly_paths(
 
     :param assemblies: parsed assembly records
     :type assemblies: dict[str, AssemblyRecord]
-    :param ftp_host: FTP hostname for URL validation
+    :param ftp_host: FTP hostname for URL checks
     :type ftp_host: str
     :return: list of ``(accession, ftp_dir_path)`` pairs
     :rtype: list[tuple[str, PurePosixPath]]
@@ -177,7 +175,7 @@ def accession_prefix(accession: str) -> str:
     :raises ValueError: if ``accession`` cannot be parsed
     """
     if m := ACCESSION_PARTS_REGEX.match(accession):
-        return m.group(2)
+        return m.group("p1")
     msg = f"Could not parse accession: {accession}"
     raise ValueError(msg)
 
@@ -214,11 +212,11 @@ def compute_diff(
     previous_assemblies: dict[str, AssemblyRecord] | None = None,
     previous_accessions: set[str] | None = None,
 ) -> DiffResult:
-    """Compute new, updated, replaced, and suppressed assemblies between current and previous state.
+    """Compute new, updated, replaced, and suppressed assemblies between two states.
 
-    :param current: parsed current NCBI assembly summary
+    :param current: parsed NCBI assembly summary
     :type current: dict[str, AssemblyRecord]
-    :param previous_assemblies: parsed previous summary, or ``None`` when using store-scan fallback
+    :param previous_assemblies: parsed baseline summary, or ``None`` when using store-scan fallback
     :type previous_assemblies: dict[str, AssemblyRecord] | None
     :param previous_accessions: set of known accessions from store scan when ``previous_assemblies`` is ``None``
     :type previous_accessions: set[str] | None

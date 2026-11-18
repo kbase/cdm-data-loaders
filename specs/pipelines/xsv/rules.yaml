@@ -171,8 +171,7 @@ sections:
         statement: |
           `UniProtIdMappingSettings` (`uniprot_idmapping` CLI) subclasses `XsvIngestSettings` and shares
           `run_xsv_pipeline`, locking `dataset_name="uniprot_idmapping"`, `table_name="id_mapping"`,
-          defaulting `schema_file=IDMAPPING_SCHEMA_FILE`, `file_glob="**/*idmapping*.dat*"`, and
-          `partition_buckets=64`.
+          and defaulting `schema_file=IDMAPPING_SCHEMA_FILE` and `file_glob="**/*idmapping*.dat*"`.
       - id: R-UNIPROT-IDMAPPING-TABLES
         statement: |
           `UniProtIdMappingSettings` binds `(emit_raw_table, transform_uniprot_id_mapping)` in `TABLE_TRANSFORMS`
@@ -182,8 +181,3 @@ sections:
           table description `"Standardised mapping data from UniProt"`) emits `id_mapping` with
           `uniprot_id=f"uniprot:{uniprot_id}"`, `db_reference=f"{db_reference_type}:{db_reference_id}"`, and
           `source` set to the input file basename from `TransformContext`.
-      - id: R-UNIPROT-IDMAPPING-PARTITION
-        statement: |
-          `UniProtIdMappingSettings.get_output_table_hints()` registers per-table `OutputTableHints` with
-          `iceberg_partition.bucket(partition_buckets, "uniprot_id")` (`x-iceberg-partition`) and table/column
-          descriptions on both `raw_id_mapping` and `id_mapping`.

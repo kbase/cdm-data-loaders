@@ -81,15 +81,15 @@ class Crc64NvmeHasher:
         return base64.b64encode(self.digest()).decode()
 
 
-def _final_digest(hasher: Hasher) -> str:
-    """Return the canonical digest representation for a completed hasher.
+def finalize_digest(hasher: Hasher) -> str:
+    """Return the canonical digest string for a completed hasher.
 
-    Uses the base64 form for crc64nvme (matching S3's ChecksumCRC64NVME
-    representation) and the hex form for everything else.
+    Uses the base64 form for ``crc64nvme`` (matching S3's ``ChecksumCRC64NVME``
+    representation) and lowercase hex for all other algorithms.
 
-    :param hasher: a hasher that has already consumed all its input data
+    :param hasher: hasher that has consumed all input bytes
     :type hasher: Hasher
-    :return: hex digest, or base64 digest for crc64nvme
+    :return: hex digest, or base64 digest for ``crc64nvme``
     :rtype: str
     """
     if isinstance(hasher, Crc64NvmeHasher):
@@ -193,7 +193,7 @@ def compute_stream_checksum(
     hasher: Hasher = new_hasher(algorithm)
     for chunk in iter(lambda: stream.read(chunk_size), b""):
         hasher.update(chunk)
-    return _final_digest(hasher)
+    return finalize_digest(hasher)
 
 
 def compute_file_checksum(file_path: str | Path, algorithm: str) -> str:

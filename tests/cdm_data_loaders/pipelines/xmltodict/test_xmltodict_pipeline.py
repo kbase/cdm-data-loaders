@@ -150,3 +150,18 @@ def test_run_xmltodict_pipeline_pass_filters_and_splits_with_transforms_module(
         ("book", [{"book_id": "2", "title": "The Stand"}]),
         ("book_id_only", [{"book_id": "2"}]),
     ]
+
+
+def test_run_xmltodict_pipeline_uses_subclass_cli_prog_name(
+    settings_factory: Callable[..., XmlToDictSettings],
+) -> None:
+    """run_xmltodict_pipeline forwards a preset subclass cli_prog_name as pipeline_name."""
+
+    class PresetXmlToDictSettings(XmlToDictSettings, cli_prog_name="preset_xmltodict"):
+        pass
+
+    base_settings = settings_factory()
+    preset_settings = PresetXmlToDictSettings.model_validate(
+        base_settings.model_dump(exclude=set(XmlToDictSettings.model_computed_fields))
+    )
+    assert_core_run_pipeline_args(xmltodict_module, run_xmltodict_pipeline, preset_settings, "preset_xmltodict")

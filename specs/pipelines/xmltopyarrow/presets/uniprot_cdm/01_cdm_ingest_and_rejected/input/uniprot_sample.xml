@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uniprot xmlns="https://uniprot.org/uniprot">
+  <entry created="2000-05-30" modified="2020-01-01" version="3" dataset="Swiss-Prot">
+    <accession>P12345</accession>
+    <accession>Q67890</accession>
+    <name>TEST_ENTRY</name>
+    <protein>
+      <recommendedName>
+        <fullName>Test protein</fullName>
+      </recommendedName>
+    </protein>
+    <gene>
+      <name type="primary">testGene</name>
+    </gene>
+    <organism>
+      <name type="scientific">Test organism</name>
+      <dbReference type="NCBI Taxonomy" id="9606"/>
+    </organism>
+    <reference key="1">
+      <citation type="journal article" date="2020" name="Test Journal">
+        <title>A test paper.</title>
+        <authorList>
+          <person name="Tester T."/>
+        </authorList>
+        <dbReference type="PubMed" id="12345678"/>
+      </citation>
+      <scope>SEQUENCE</scope>
+    </reference>
+    <comment type="function">
+      <text>A test function.</text>
+    </comment>
+    <dbReference type="GeneID" id="1636"/>
+    <evidence type="ECO:0000255" key="1"/>
+    <proteinExistence type="evidence at protein level"/>
+    <sequence length="5" mass="500" checksum="ABCDEF0123456789" modified="2020-01-01" version="1">ACGTA</sequence>
+  </entry>
+  <entry created="2000-05-30" modified="2020-01-01" version="1" dataset="Swiss-Prot">
+    <accession>   </accession>
+    <name>MISSING_ACC</name>
+    <protein>
+      <submittedName>
+        <fullName>Unindexed entry</fullName>
+      </submittedName>
+    </protein>
+    <organism>
+      <name type="scientific">Test organism</name>
+      <dbReference type="NCBI Taxonomy" id="9606"/>
+    </organism>
+    <proteinExistence type="uncertain"/>
+    <sequence length="4" mass="400" checksum="0123456789ABCDEF" modified="2020-01-01" version="1">ACGT</sequence>
+  </entry>
+</uniprot>

@@ -9,7 +9,6 @@ from typing import Any, Final
 from unittest.mock import MagicMock, patch
 
 import dlt
-import pyarrow as pa
 import pytest
 import yaml
 from dlt.common.destination.exceptions import DestinationTerminalException
@@ -34,10 +33,6 @@ from cdm_data_loaders.core.settings import (
     FileFormatIngestSettings,
     InputLocalOutputSettings,
     LoggerSettings,
-)
-from cdm_data_loaders.core.transforms.hints import (
-    OutputTableHints,
-    propagate_run_hints_to_variants,
 )
 from cdm_data_loaders.pipelines import runner as core
 from cdm_data_loaders.pipelines.jsonlines.settings import JsonlExtractSettings
@@ -768,78 +763,6 @@ def test_run_pipeline_fail_partial_extract_worker_failure_filesystem(
     )
     assert report_data["pipeline_err_msg"].startswith("Pipeline failed: ")
     assert SINK_ERROR in report_data["pipeline_err_msg"]
-
-
-@pytest.mark.parametrize(
-    ("has_hint_method", "hints_empty", "pipeline_run_kwargs"),
-    [
-        pytest.param(True, False, None, id="run_kwargs_none"),
-        pytest.param(True, False, {}, id="run_kwargs_empty"),
-        pytest.param(False, False, {"loader_file_format": "parquet"}, id="no_get_output_table_hints_method"),
-        pytest.param(True, True, {"loader_file_format": "parquet"}, id="empty_output_table_hints"),
-        pytest.param(True, False, {"schema_contract": "evolve"}, id="irrelevant_run_kwargs_only"),
-    ],
-)
-def test_propagate_run_hints_to_variants_pass_noop_cases(
-    tmp_path: Path,
-    *,
-    has_hint_method: bool,
-    hints_empty: bool,
-    pipeline_run_kwargs: dict[str, Any] | None,
-) -> None:
-    """propagate_run_hints_to_variants leaves resources untouched when hints or relevant run kwargs are absent."""
-    schema = pa.schema([pa.field("id", pa.string())])
-
-    class _HintedSettings(CtsSettings):
-        def get_output_table_hints(self) -> tuple[OutputTableHints, ...]:
-            return () if hints_empty else (OutputTableHints(table_name="variant_tbl", pyarrow_schema=schema),)
-
-    settings_cls = _HintedSettings if has_hint_method else CtsSettings
-    settings = make_cts_settings(settings_cls, tmp_path)
-    res = tiny_resource()
-
-    propagate_run_hints_to_variants(settings, res, pipeline_run_kwargs)
-
-    marked = dlt.mark.with_table_name({"id": "1"}, "variant_tbl")
-    variant_schema = res.compute_table_schema(marked.data, marked.meta)
-    assert "table_format" not in variant_schema
-    assert "file_format" not in variant_schema
-    assert variant_schema.get("write_disposition") != "replace"
-
-
-@pytest.mark.parametrize("as_list", [False, True], ids=["single-resource", "resource-list"])
-def test_propagate_run_hints_to_variants_pass_single_and_list_resources(
-    tmp_path: Path,
-    as_list: bool,
-) -> None:
-    """propagate_run_hints_to_variants applies table_format, file_format, and write_disposition onto variants."""
-    schema = pa.schema([pa.field("id", pa.string())])
-
-    class _MultiHintSettings(CtsSettings):
-        def get_output_table_hints(self) -> tuple[OutputTableHints, ...]:
-            return (
-                OutputTableHints(table_name="tbl_one", pyarrow_schema=schema),
-                OutputTableHints(table_name="tbl_two", pyarrow_schema=schema),
-            )
-
-    settings = make_cts_settings(_MultiHintSettings, tmp_path)
-    resources: list[DltResource] = [tiny_resource(), tiny_resource()] if as_list else [tiny_resource()]
-    target: DltResource | list[DltResource] = resources if as_list else resources[0]
-    run_kwargs = {
-        "table_format": "iceberg",
-        "loader_file_format": "parquet",
-        "write_disposition": "replace",
-    }
-
-    propagate_run_hints_to_variants(settings, target, run_kwargs)
-
-    for res in resources:
-        for tbl_name in ("tbl_one", "tbl_two"):
-            marked = dlt.mark.with_table_name({"id": "1"}, tbl_name)
-            variant_schema = res.compute_table_schema(marked.data, marked.meta)
-            assert variant_schema["table_format"] == "iceberg"
-            assert variant_schema["file_format"] == "parquet"
-            assert variant_schema["write_disposition"] == "replace"
 
 
 def test_run_pipeline_pass_filesystem_resource_records_ingested_files_in_report(

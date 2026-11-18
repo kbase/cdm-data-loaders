@@ -21,6 +21,7 @@ from cdm_data_loaders.utils.checksums import (
     Hasher,
     HashingReader,
     compute_file_checksum,
+    finalize_digest,
     new_hasher,
     parse_md5_checksums_file,
     parse_md5_sidecar,
@@ -592,3 +593,16 @@ def test_parse_md5_checksums_file_parses_gnu_manifest() -> None:
         PurePosixPath("GCF_000001405_genomic.fna.gz"): "d41d8cd98f00b204e9800998ecf8427e",
         PurePosixPath("annotation_hashes.txt"): "098f6bcd4621d373cade4e832627b4f6",
     }
+
+
+def test_finalize_digest_formats_hex_and_crc64nvme_base64() -> None:
+    """Return hex digests for hashlib hashers and base64 digests for Crc64NvmeHasher."""
+    payload = b"streamed-payload"
+    sha_hasher = new_hasher("sha256")
+    sha_hasher.update(payload)
+    assert finalize_digest(sha_hasher) == hashlib.sha256(payload).hexdigest()
+
+    crc_hasher = new_hasher("crc64nvme")
+    crc_hasher.update(payload)
+    expected_crc = _crc64nvme(payload, 0)
+    assert finalize_digest(crc_hasher) == base64.b64encode(expected_crc.to_bytes(8, "big")).decode()

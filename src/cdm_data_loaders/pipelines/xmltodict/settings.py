@@ -2,21 +2,10 @@
 
 from typing import Final
 
-from pydantic_settings import SettingsConfigDict
-
-from cdm_data_loaders.core.settings import default_settings_with_shortcuts
-from cdm_data_loaders.pipelines.xml_common import (
-    XML_CLI_SHORTCUTS,
-    SingleTableXmlIngestSettings,
-)
+from cdm_data_loaders.pipelines.xml_common import SingleTableXmlIngestSettings
 
 PIPELINE_NAME: Final[str] = "xmltodict"
 
 
-class XmlToDictSettings(SingleTableXmlIngestSettings):
+class XmlToDictSettings(SingleTableXmlIngestSettings, cli_prog_name=PIPELINE_NAME):
     """Settings for the XML ingestion pipeline."""
-
-    model_config: SettingsConfigDict = default_settings_with_shortcuts(
-        cli_prog_name=PIPELINE_NAME,
-        cli_shortcuts=XML_CLI_SHORTCUTS,
-    )

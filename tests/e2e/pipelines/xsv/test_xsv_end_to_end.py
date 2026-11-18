@@ -24,6 +24,7 @@ from tests.helpers.table_readers import (
     assert_iceberg_table_metadata,
     assert_pipeline_report_written,
     assert_run_ok,
+    read_destination_rows,
 )
 
 pytestmark = pytest.mark.usefixtures("qsv_cmd")
@@ -159,12 +160,11 @@ def test_run_xsv_pipeline_pass_configured_null_regex_replaces_placeholder(
     assert floats[1] == "1.11"
 
 
-@pytest.mark.parametrize("loader_file_format", [PARQUET, ICEBERG])
+@pytest.mark.parametrize("loader_file_format", [PARQUET, ICEBERG], ids=str)
 def test_run_xsv_pipeline_pass_parquet_format_loads_expected_row_count(
     settings_factory: Callable[..., XsvIngestSettings],
     write_xsv_file: Callable[[XsvIngestSettings, str, str], Path],
     pipeline_runner: PipelineTestRunner,
-    destination_bucket: Path,
     loader_file_format: str,
 ) -> None:
     """The pipeline also loads successfully when loader_file_format is parquet or iceberg.
@@ -178,10 +178,12 @@ def test_run_xsv_pipeline_pass_parquet_format_loads_expected_row_count(
 
     load_info = assert_run_ok(pipeline_runner.run(PIPELINE_NAME, settings=settings))
 
-    df = load_info.pipeline.dataset().table("my_table").df()
-    assert len(df) == len(VALID_ROWS)
+    with load_info.pipeline.destination_client() as client:
+        dataset_dir = Path(client.dataset_path)  # pyright: ignore[reportAttributeAccessIssue]
+    rows = read_destination_rows(dataset_dir, "my_table")
+    assert len(rows) == len(VALID_ROWS)
     if loader_file_format == ICEBERG:
-        assert_iceberg_table_metadata(destination_bucket / load_info.dataset_name, "my_table")
+        assert_iceberg_table_metadata(dataset_dir, "my_table")
 
 
 def test_cli_pass_runs_end_to_end_from_command_line_arguments(
