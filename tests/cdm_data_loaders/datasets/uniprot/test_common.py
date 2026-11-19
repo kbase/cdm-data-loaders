@@ -3,8 +3,8 @@
 import datetime as dt
 import json
 import logging
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, Final
 
 import pytest
 
@@ -110,13 +110,23 @@ def test_format_curie_translates_prefixes_and_applies_fallback(
     assert format_curie(db, accession, fallback_upper=fallback_upper) == expected
 
 
-def test_resolve_timestamp_returns_explicit_or_utc_now() -> None:
-    """resolve_timestamp preserves an explicit timestamp and generates a UTC timestamp when None."""
-    fixed = dt.datetime(2025, 3, 1, 8, 0, tzinfo=dt.UTC)
-    assert resolve_timestamp(fixed) == fixed
+FIXED_UTC_TS: Final[dt.datetime] = dt.datetime(2025, 3, 1, 8, 0, tzinfo=dt.UTC)
 
-    generated = resolve_timestamp(None)
-    assert generated.tzinfo == dt.UTC
+
+@pytest.mark.parametrize(
+    "explicit_ts",
+    [
+        pytest.param(FIXED_UTC_TS, id="explicit-timestamp"),
+        pytest.param(None, id="none-defaults-to-utc-now"),
+    ],
+)
+def test_resolve_timestamp_returns_explicit_or_utc_now(explicit_ts: dt.datetime | None) -> None:
+    """resolve_timestamp preserves an explicit timestamp and generates a UTC timestamp when None."""
+    resolved = resolve_timestamp(explicit_ts)
+    if explicit_ts is not None:
+        assert resolved == explicit_ts
+    else:
+        assert resolved.tzinfo == dt.UTC
 
 
 @pytest.mark.parametrize(
@@ -154,42 +164,84 @@ def test_reject_cdm_entry_preserves_context_provenance(
     }
 
 
+def _parse_ok_entry() -> dict[str, list[dict[str, Any]]]:
+    """Return a parsed single-entity row mapping."""
+    return {"entity": [{"entity_id": "uniprot:P1"}]}
+
+
+def _parse_fail_entry() -> dict[str, list[dict[str, Any]]]:
+    """Raise a RuntimeError to exercise exception routing."""
+    msg = "explode"
+    raise RuntimeError(msg)
+
+
+@pytest.mark.parametrize(
+    ("entry", "parse_fn", "expected", "expected_log_substr"),
+    [
+        pytest.param(
+            {"_id": "ok"},
+            _parse_ok_entry,
+            {"entity": [{"entity_id": "uniprot:P1"}]},
+            None,
+            id="parsed-ok",
+        ),
+        pytest.param(
+            {"_id": "broken"},
+            _parse_fail_entry,
+            {
+                REJECTED_TABLE_NAME: [
+                    {
+                        "table_name": "entry",
+                        "source_file": "batch/in.xml.gz",
+                        "line_no": None,
+                        "raw_record": json.dumps({"_id": "broken"}),
+                        "error_detail": "explode",
+                    }
+                ]
+            },
+            "Unexpected parse failure",
+            id="exception-routed-to-rejected",
+        ),
+    ],
+)
 def test_run_cdm_entry_parser_returns_parsed_or_routes_exception_with_ctx(
     caplog: pytest.LogCaptureFixture,
+    entry: dict[str, Any],
+    parse_fn: Callable[[], dict[str, list[dict[str, Any]]]],
+    expected: dict[str, list[dict[str, Any]]],
+    expected_log_substr: str | None,
 ) -> None:
     """run_cdm_entry_parser returns parse_fn output on success and routes exceptions to _rejected with ctx."""
     test_logger = logging.getLogger("test_uniprot_common")
     ctx = TransformContext(table_name="entry", source_file="batch/in.xml.gz")
 
-    ok = run_cdm_entry_parser(
-        {"_id": "ok"},
-        lambda: {"entity": [{"entity_id": "uniprot:P1"}]},
-        ctx=ctx,
-        logger=test_logger,
-        error_message="Unexpected parse failure",
-    )
-    assert ok == {"entity": [{"entity_id": "uniprot:P1"}]}
-
-    def _fail() -> dict[str, list[dict[str, Any]]]:
-        msg = "explode"
-        raise RuntimeError(msg)
-
     with caplog.at_level(logging.ERROR, logger="test_uniprot_common"):
-        failed = run_cdm_entry_parser(
-            {"_id": "broken"},
-            _fail,
+        result = run_cdm_entry_parser(
+            entry,
+            parse_fn,
             ctx=ctx,
             logger=test_logger,
             error_message="Unexpected parse failure",
         )
 
-    assert "Unexpected parse failure" in caplog.text
-    assert failed[REJECTED_TABLE_NAME][0]["source_file"] == "batch/in.xml.gz"
-    assert failed[REJECTED_TABLE_NAME][0]["table_name"] == "entry"
-    assert failed[REJECTED_TABLE_NAME][0]["error_detail"] == "explode"
+    assert result == expected
+    if expected_log_substr is not None:
+        assert expected_log_substr in caplog.text
+    else:
+        assert caplog.records == []
 
 
-def test_make_cdm_entry_transform_supports_single_arg_and_context_invocation() -> None:
+@pytest.mark.parametrize(
+    ("extra_args", "expected_source"),
+    [
+        pytest.param((), None, id="without-ctx"),
+        pytest.param((TransformContext(table_name="entry", source_file="chunk.xml"),), "chunk.xml", id="with-ctx"),
+    ],
+)
+def test_make_cdm_entry_transform_supports_single_arg_and_context_invocation(
+    extra_args: tuple[TransformContext, ...],
+    expected_source: str | None,
+) -> None:
     """make_cdm_entry_transform produces a context-aware RecordTransformFn callable with or without ctx."""
 
     def _entry_fn(entry: Mapping[str, Any], ctx: TransformContext | None) -> dict[str, list[dict[str, Any]]]:
@@ -206,7 +258,4 @@ def test_make_cdm_entry_transform_supports_single_arg_and_context_invocation() -
     _, _, takes_ctx = inspect_transform_signature(transform_fn)
 
     assert takes_ctx is True
-    assert transform_fn({"id": "P1"}) == {"entity": [{"id": "P1", "source": None}]}
-    assert transform_fn({"id": "P1"}, TransformContext(table_name="entry", source_file="chunk.xml")) == {
-        "entity": [{"id": "P1", "source": "chunk.xml"}]
-    }
+    assert transform_fn({"id": "P1"}, *extra_args) == {"entity": [{"id": "P1", "source": expected_source}]}

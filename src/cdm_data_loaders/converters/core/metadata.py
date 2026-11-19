@@ -1,10 +1,10 @@
 """Draft-specific JSON Schema keyword selection for field metadata."""
 
-from dataclasses import dataclass
 from functools import cache
 from typing import Final
 
 from jsonschema import Draft7Validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from cdm_data_loaders.validation.jsonschema.keywords import (
     REF_AND_IDENTITY_KEYWORDS,
@@ -26,12 +26,13 @@ def metadata_keys_for(validator_cls: type) -> frozenset[str]:
     return frozenset(get_known_jsonschema_keywords(validator_cls) - STRUCTURAL_OR_COMPOSITIONAL_KEYWORDS)
 
 
-@dataclass(frozen=True)
-class ConversionContext:
+class ConversionContext(BaseModel):
     """Draft-specific metadata selection for a single emission."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
+
     validator_cls: type
-    extra_metadata_keywords: frozenset[str] = frozenset()
+    extra_metadata_keywords: frozenset[str] = Field(default_factory=frozenset)
 
     @property
     def metadata_keys(self) -> frozenset[str]:

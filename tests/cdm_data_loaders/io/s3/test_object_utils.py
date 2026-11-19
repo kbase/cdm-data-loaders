@@ -1372,16 +1372,25 @@ def test_is_not_found_client_error(code: str, status: int, expected: bool) -> No
 
 
 @pytest.mark.s3
+@pytest.mark.parametrize(
+    ("key", "seed_body", "expected"),
+    [
+        pytest.param("present/data.bin", b"present-bytes", b"present-bytes", id="existing-object"),
+        pytest.param("missing/data.bin", None, None, id="missing-object"),
+    ],
+)
 def test_get_object_bytes_if_exists_existing_and_missing(
     mock_s3_client: S3Client,
     caplog: pytest.LogCaptureFixture,
+    key: str,
+    seed_body: bytes | None,
+    expected: bytes | None,
 ) -> None:
     """Return payload bytes when present and None without ERROR logs when absent."""
-    mock_s3_client.put_object(Bucket=TEST_BUCKET, Key="present/data.bin", Body=b"present-bytes")
-    assert get_object_bytes_if_exists(f"{TEST_BUCKET}/present/data.bin") == b"present-bytes"
-
+    if seed_body is not None:
+        mock_s3_client.put_object(Bucket=TEST_BUCKET, Key=key, Body=seed_body)
     with caplog.at_level(logging.ERROR):
-        assert get_object_bytes_if_exists(f"{TEST_BUCKET}/missing/data.bin") is None
+        assert get_object_bytes_if_exists(f"{TEST_BUCKET}/{key}") == expected
     assert caplog.records == []
 
 

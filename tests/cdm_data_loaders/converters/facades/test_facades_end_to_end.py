@@ -257,7 +257,7 @@ def _build_vendor_converter(
             "required": ["classification"],
             "additionalProperties": False,
         }
-        registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-vendor", contract))
+        registry = DEFAULT_EXTENSIONS.register(ExtensionSpec(namespace="x-vendor", schema=contract))
         contract["properties"].clear()
         if route == "dlt":
             return registry, JSONSchemaToDlt(schema_name="records", extension_registry=registry)
@@ -600,22 +600,22 @@ def test_facades_end_to_end_pass_iceberg_fragments(required: bool, default: Deci
     [
         (
             JsonSchemaReader().read_node(source=True),
-            Field("value", JsonSchemaReader().read_node(source=True)),
+            Field(name="value", node=JsonSchemaReader().read_node(source=True)),
             True,
         ),
         (
             JsonSchemaReader().read_node(source=False),
-            Field("value", JsonSchemaReader().read_node(source=False)),
+            Field(name="value", node=JsonSchemaReader().read_node(source=False)),
             False,
         ),
         (
             JsonSchemaReader().read_node({"type": "integer"}),
-            Field("value", JsonSchemaReader().read_node({"type": "integer"})),
+            Field(name="value", node=JsonSchemaReader().read_node({"type": "integer"})),
             {"type": "integer"},
         ),
         (
             TypedNode(type="string"),
-            Field("value", TypedNode(type="string")),
+            Field(name="value", node=TypedNode(type="string")),
             {"type": "string"},
         ),
         (

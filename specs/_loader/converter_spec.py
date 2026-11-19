@@ -9,25 +9,28 @@ A converter specification lives next to its test fixtures:
 The same manifests drive the specification tests and the generated specification documents.
 """
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from specs._loader.yaml_io import CASE_MANIFEST, load_yaml_dict
 
 
-@dataclass(frozen=True, slots=True)
-class Rule:
+class Rule(BaseModel):
     """A single conversion or pipeline specification rule."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
     statement: str
     section_id: str
 
 
-@dataclass(frozen=True, slots=True)
-class Section:
+class Section(BaseModel):
     """A group of rules rendered under one heading."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
     title: str
@@ -36,14 +39,15 @@ class Section:
     rules: tuple[Rule, ...]
 
 
-@dataclass(frozen=True, slots=True)
-class RuleCatalogue:
+class RuleCatalogue(BaseModel):
     """All rules and front-matter metadata for one converter or pipeline specification."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     title: str
     intro: str
     sections: tuple[Section, ...]
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def rules(self) -> dict[str, Rule]:
@@ -55,37 +59,48 @@ class RuleCatalogue:
         return {rule.id: rule for section in self.sections for rule in section.rules}
 
 
-@dataclass(frozen=True, slots=True)
-class Run:
+class Run(BaseModel):
     """One execution of a converter case: input data, parameters, and expected outputs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
     data: Path
     expected_json: Path
     expected_table: Path
     xml_tag: str | None
-    params: dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
     schema_attr: str = "EXPECTED_SCHEMA"
     table_attr: str = "EXPECTED_TABLE"
     expected_count: int | None = None
     expected_rejected: Path | None = None
-    extra_expected_json: dict[str, Path] = field(default_factory=dict)
+    extra_expected_json: dict[str, Path] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class Case:
+class Case(BaseModel):
     """A converter fixture directory with its manifest."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, validate_by_name=True, validate_by_alias=True)
 
     suite: str
     name: str
     directory: Path
     title: str
-    schema: Path
+    schema_path: Path = Field(alias="schema")
     expected_schema: Path
     xml_tag: str | None
     rules: tuple[str, ...]
     notes: str
     runs: tuple[Run, ...]
+
+    @property
+    def schema(self) -> Path:  # type: ignore[override]
+        """Return the input schema file path for this converter case.
+
+        :return: Resolved input schema path.
+        :rtype: Path
+        """
+        return self.schema_path
 
     @property
     def anchor(self) -> str:
@@ -97,16 +112,17 @@ class Case:
         return f"case-{self.suite}-{self.name}".replace("_", "-").lower()
 
 
-@dataclass(frozen=True, slots=True)
-class ErrorCase:
+class ErrorCase(BaseModel):
     """An input that must be rejected with a specific error code."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     file: Path
     code: str
     match: str
     description: str
     xml_tag: str | None
-    params: dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 def load_rules(path: Path) -> RuleCatalogue:

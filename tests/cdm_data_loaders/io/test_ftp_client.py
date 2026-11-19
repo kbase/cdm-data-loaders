@@ -217,20 +217,32 @@ def test_close_all(mock_connect: MagicMock) -> None:
     mock_ftp.quit.assert_called_once()
 
 
+@pytest.mark.parametrize(
+    "borrow_existing",
+    [
+        pytest.param(False, id="owned-closes-on-exit"),
+        pytest.param(True, id="borrowed-left-open"),
+    ],
+)
 @patch("cdm_data_loaders.io.ftp_client.connect_ftp")
-def test_ftp_session_owned_vs_borrowed_lifecycle(mock_connect: MagicMock) -> None:
+def test_ftp_session_owned_vs_borrowed_lifecycle(
+    mock_connect: MagicMock,
+    borrow_existing: bool,
+) -> None:
     """Close FTP connection on exit when owned, and leave caller-supplied FTP open."""
-    owned_ftp = MagicMock(spec=FTP)
-    mock_connect.return_value = owned_ftp
-    with ftp_session("ftp.example.com", timeout=FTP_TIMEOUT) as active:
-        assert active is owned_ftp
-    mock_connect.assert_called_once_with("ftp.example.com", timeout=FTP_TIMEOUT)
-    owned_ftp.quit.assert_called_once()
+    expected_ftp = MagicMock(spec=FTP)
+    mock_connect.return_value = expected_ftp
+    ftp_arg = expected_ftp if borrow_existing else None
 
-    borrowed_ftp = MagicMock(spec=FTP)
-    with ftp_session("ftp.example.com", ftp=borrowed_ftp) as active:
-        assert active is borrowed_ftp
-    borrowed_ftp.quit.assert_not_called()
+    with ftp_session("ftp.example.com", timeout=FTP_TIMEOUT, ftp=ftp_arg) as active:
+        assert active is expected_ftp
+
+    if borrow_existing:
+        mock_connect.assert_not_called()
+        expected_ftp.quit.assert_not_called()
+    else:
+        mock_connect.assert_called_once_with("ftp.example.com", timeout=FTP_TIMEOUT)
+        expected_ftp.quit.assert_called_once()
 
 
 @pytest.mark.parametrize(

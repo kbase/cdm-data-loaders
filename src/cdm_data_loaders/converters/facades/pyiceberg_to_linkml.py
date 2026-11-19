@@ -20,7 +20,9 @@ def convert_type(
     :type extension_registry: ExtensionRegistry
     :returns: LinkML slot definition.
     """
-    return LinkMLEmitter().emit_node(IcebergReader(extension_registry, mapping_target="LinkML").read_node(field_type))
+    return LinkMLEmitter().emit_node(
+        IcebergReader(extension_registry=extension_registry, mapping_target="LinkML").read_node(field_type)
+    )
 
 
 def convert_field(field: NestedField, *, extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS) -> SlotDefinition:
@@ -32,7 +34,9 @@ def convert_field(field: NestedField, *, extension_registry: ExtensionRegistry =
     :type extension_registry: ExtensionRegistry
     :returns: Named LinkML slot definition.
     """
-    return LinkMLEmitter().emit_field(IcebergReader(extension_registry, mapping_target="LinkML").read_field(field))
+    return LinkMLEmitter().emit_field(
+        IcebergReader(extension_registry=extension_registry, mapping_target="LinkML").read_field(field)
+    )
 
 
 def convert_struct(
@@ -68,6 +72,8 @@ def table_to_linkml(
     :type schema: SchemaDefinition | None
     :returns: Schema model suitable for LinkML's YAML dumper.
     """
-    document = IcebergReader(extension_registry, mapping_target="LinkML").read_table(table, identifier)
+    document = IcebergReader(extension_registry=extension_registry, mapping_target="LinkML").read_table(
+        table, identifier
+    )
     emitter = LinkMLEmitter()
     return emitter.emit(document) if schema is None else emitter.emit_into(document, schema)

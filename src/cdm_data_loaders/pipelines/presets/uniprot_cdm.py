@@ -8,7 +8,10 @@ from pydantic import Field
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.fields import LogInterval
 from cdm_data_loaders.core.transforms.settings_mixin import LockedTransformHooksMixin
-from cdm_data_loaders.datasets.uniprot.kb import UNIPROT_CDM_SCHEMA_MAP, make_uniprot_cdm_transform
+from cdm_data_loaders.datasets.uniprot.uniprot_kb import (
+    UNIPROT_CDM_SCHEMA_MAP,
+    make_uniprot_cdm_transform,
+)
 from cdm_data_loaders.datasets.uniprot.uniref import UNIREF_CDM_SCHEMA_MAP, make_uniref_cdm_transform
 from cdm_data_loaders.pipelines.presets.uniprot_xml import (
     UniProtXmlToPyArrowSettings,

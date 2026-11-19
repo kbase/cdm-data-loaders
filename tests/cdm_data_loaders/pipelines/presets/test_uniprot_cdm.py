@@ -10,7 +10,7 @@ from pydantic_settings import CliApp, SettingsError
 
 from cdm_data_loaders.core.cli import CliRunner
 from cdm_data_loaders.core.registry import TransformRegistry
-from cdm_data_loaders.datasets.uniprot.kb import UNIPROT_CDM_SCHEMA_MAP
+from cdm_data_loaders.datasets.uniprot.uniprot_kb import UNIPROT_CDM_SCHEMA_MAP
 from cdm_data_loaders.datasets.uniprot.uniref import UNIREF_CDM_SCHEMA_MAP
 from cdm_data_loaders.pipelines.presets.uniprot_cdm import (
     PIPELINE_NAME,

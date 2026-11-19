@@ -62,25 +62,16 @@ def test_child_table_name_pass_literal_join(parent: str, key: str, expected: str
     assert child_table_name(parent, key) == expected
 
 
-def test_unflatten_tables_pass_precise_forest_roundtrip() -> None:
+@pytest.mark.parametrize(
+    "parents_first_input",
+    [
+        pytest.param(False, id="children-first-order"),
+        pytest.param(True, id="parents-first-order"),
+    ],
+)
+def test_unflatten_tables_pass_precise_forest_roundtrip(parents_first_input: bool) -> None:
     """Preserve every raw field while following explicit parents in declaration order."""
-    tables = json.loads(Path("tests/data/dlt_normalization/tables.json").read_text(encoding="utf-8"))
-    original = deepcopy(tables)
-    roots = unflatten_tables(tables)
-    leaf = DltTableNode("unrelated__leaf", "unrelated", "leaf", tables["unrelated__leaf"])
-    unrelated = DltTableNode("unrelated", "root", "unrelated", tables["unrelated"], {"leaf": leaf})
-    tags = DltTableNode("root__root__tags", "root", "root__tags", tables["root__root__tags"])
-    assert roots == {
-        "catalog__literal": DltTableNode("catalog__literal", None, "catalog__literal", tables["catalog__literal"]),
-        "root": DltTableNode("root", None, "root", tables["root"], {"root__tags": tags, "unrelated": unrelated}),
-        "root__looks_nested": DltTableNode(
-            "root__looks_nested", None, "root__looks_nested", tables["root__looks_nested"]
-        ),
-    }
-    assert list(roots) == ["catalog__literal", "root", "root__looks_nested"]
-    assert list(roots["root"].children) == ["root__tags", "unrelated"]
-    flattened = flatten_nodes(roots)
-    assert flattened == original
+    raw_tables = json.loads(Path("tests/data/dlt_normalization/tables.json").read_text(encoding="utf-8"))
     expected_order = [
         "catalog__literal",
         "root",
@@ -89,10 +80,35 @@ def test_unflatten_tables_pass_precise_forest_roundtrip() -> None:
         "unrelated__leaf",
         "root__looks_nested",
     ]
+    tables = {name: raw_tables[name] for name in expected_order} if parents_first_input else raw_tables
+    original = deepcopy(tables)
+    roots = unflatten_tables(tables)
+    leaf = DltTableNode(name="unrelated__leaf", parent="unrelated", key="leaf", table=tables["unrelated__leaf"])
+    unrelated = DltTableNode(
+        name="unrelated", parent="root", key="unrelated", table=tables["unrelated"], children={"leaf": leaf}
+    )
+    tags = DltTableNode(name="root__root__tags", parent="root", key="root__tags", table=tables["root__root__tags"])
+    assert roots == {
+        "catalog__literal": DltTableNode(
+            name="catalog__literal", parent=None, key="catalog__literal", table=tables["catalog__literal"]
+        ),
+        "root": DltTableNode(
+            name="root",
+            parent=None,
+            key="root",
+            table=tables["root"],
+            children={"root__tags": tags, "unrelated": unrelated},
+        ),
+        "root__looks_nested": DltTableNode(
+            name="root__looks_nested", parent=None, key="root__looks_nested", table=tables["root__looks_nested"]
+        ),
+    }
+    assert list(roots) == ["catalog__literal", "root", "root__looks_nested"]
+    assert list(roots["root"].children) == ["root__tags", "unrelated"]
+    flattened = flatten_nodes(roots)
+    assert flattened == {name: original[name] for name in expected_order}
     assert list(flattened) == expected_order
     assert tables_parents_first(tables) == [original[name] for name in expected_order]
-    assert unflatten_tables(flattened) == roots
-    assert flatten_nodes(unflatten_tables(tables)) == flattened
     assert tables == original
 
 
@@ -215,10 +231,14 @@ def test_unflatten_tables_pass_deep_graph(depth: int) -> None:
 @pytest.mark.parametrize(
     ("node", "mapping_key", "message"),
     [
-        (DltTableNode("root", None, "root", {"parent": "other"}), "root", "parent does not match"),
-        (DltTableNode("root", "other", "root", {}), "root", "parent does not match"),
-        (DltTableNode("root", None, "wrong", {}), "root", "key does not match"),
-        (DltTableNode("root", None, "root", {}), "wrong", "key does not match"),
+        (
+            DltTableNode(name="root", parent=None, key="root", table={"parent": "other"}),
+            "root",
+            "parent does not match",
+        ),
+        (DltTableNode(name="root", parent="other", key="root", table={}), "root", "parent does not match"),
+        (DltTableNode(name="root", parent=None, key="wrong", table={}), "root", "key does not match"),
+        (DltTableNode(name="root", parent=None, key="root", table={}), "wrong", "key does not match"),
     ],
     ids=["raw-parent-mismatch", "node-parent-mismatch", "node-key-mismatch", "mapping-key-mismatch"],
 )
@@ -231,7 +251,9 @@ def test_flatten_nodes_fail_inconsistent_tree(node: DltTableNode, mapping_key: s
 @pytest.mark.parametrize("reuse_node", [True, False], ids=["cyclic-node", "duplicate-name"])
 def test_flatten_nodes_fail_repeated_table(reuse_node: bool) -> None:
     """Reject cycles and duplicate names in manually constructed trees."""
-    root = DltTableNode("root", None, "root", {})
-    root.children["root"] = root if reuse_node else DltTableNode("root", "root", "root", {"parent": "root"})
+    root = DltTableNode(name="root", parent=None, key="root", table={})
+    root.children["root"] = (
+        root if reuse_node else DltTableNode(name="root", parent="root", key="root", table={"parent": "root"})
+    )
     with pytest.raises(DltNormalizationError, match="Cycle or duplicate table name"):
         flatten_nodes({"root": root})

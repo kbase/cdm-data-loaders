@@ -755,10 +755,8 @@ def test_make_uniref_cdm_transform() -> None:
     ]
 
 
-def test_make_uniref_cdm_transform_propagates_source_file_to_rejected(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """make_uniref_cdm_transform resolves a default UTC timestamp and preserves source_file on _rejected."""
+def test_make_uniref_cdm_transform_defaults_updated_to_utc() -> None:
+    """make_uniref_cdm_transform exposes a context-aware signature and defaults updated to UTC."""
     transform_fn = make_uniref_cdm_transform(PROTOCOL)
     assert inspect_transform_signature(transform_fn) == (False, True, True)
 
@@ -766,6 +764,13 @@ def test_make_uniref_cdm_transform_propagates_source_file_to_rejected(
     updated = valid_routed["entity"][0]["updated"]
     assert isinstance(updated, dt.datetime)
     assert updated.tzinfo == dt.UTC
+
+
+def test_make_uniref_cdm_transform_propagates_source_file_to_rejected(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """make_uniref_cdm_transform preserves source_file on _rejected rows and logs an ERROR."""
+    transform_fn = make_uniref_cdm_transform(PROTOCOL)
 
     with caplog.at_level(logging.ERROR, logger="cdm_data_loaders.datasets.uniprot.uniref"):
         routed = route_and_coerce_record(

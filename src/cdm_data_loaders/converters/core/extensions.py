@@ -13,6 +13,11 @@ from jsonschema.exceptions import ValidationError
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir_values import Value, freeze_mapping, mutable_value
 from cdm_data_loaders.validation.jsonschema.metaschema import get_xsv_config_schema
+from typing import Annotated
+from pydantic import AfterValidator, ConfigDict, InstanceOf, WithJsonSchema
+from pydantic.dataclasses import dataclass as pydantic_dataclass
+from cdm_data_loaders.converters.core.errors import ConversionError, unwrap_conversion_errors
+
 
 type ExtensionSchemaLoader = Callable[[], Mapping[str, object] | bool]
 
@@ -127,21 +132,33 @@ class ExtensionSpec:
         return hash((self.namespace, self.schema))
 
 
-@dataclass(frozen=True, slots=True)
+def _unique_extension_specs(specs: tuple[ExtensionSpec, ...]) -> tuple[ExtensionSpec, ...]:
+    """Reject duplicate extension namespaces within a registry declaration.
+
+    :param specs: Validated tuple of ``ExtensionSpec`` entries.
+    :type specs: tuple[ExtensionSpec, ...]
+    :return: Validated tuple of ``ExtensionSpec`` entries.
+    :rtype: tuple[ExtensionSpec, ...]
+    :raises ExtensionError: If two specs declare the same namespace.
+    """
+    if len({spec.namespace for spec in specs}) != len(specs):
+        msg = "Duplicate extension namespace"
+        raise ExtensionError(msg)
+    return specs
+
+
+type ExtensionSpecEntry = Annotated[
+    InstanceOf[ExtensionSpec],
+    WithJsonSchema({"type": "object", "title": "ExtensionSpec"}),
+]
+
+
+@unwrap_conversion_errors
+@pydantic_dataclass(frozen=True, slots=True, config=ConfigDict(extra="forbid"))
 class ExtensionRegistry:
     """A closed set of namespace contracts; additions produce a new registry."""
 
-    specs: tuple[ExtensionSpec, ...] = ()
-
-    def __post_init__(self) -> None:
-        """Reject duplicate contracts and isolate the declaration sequence."""
-        object.__setattr__(self, "specs", tuple(self.specs))
-        if any(not isinstance(spec, ExtensionSpec) for spec in self.specs):
-            msg = "Registry entries must be ExtensionSpec instances"
-            raise TypeError(msg)
-        if len({spec.namespace for spec in self.specs}) != len(self.specs):
-            msg = "Duplicate extension namespace"
-            raise ExtensionError(msg)
+    specs: Annotated[tuple[ExtensionSpecEntry, ...], AfterValidator(_unique_extension_specs)] = ()
 
     def register(self, spec: ExtensionSpec, *, replace: bool = False) -> "ExtensionRegistry":
         """Add a contract, requiring an explicit flag to replace an existing one."""

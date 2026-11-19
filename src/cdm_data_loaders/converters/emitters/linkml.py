@@ -1,7 +1,6 @@
 """Emit official LinkML schema models from typed schema documents."""
 
 import re
-from dataclasses import dataclass, field
 from typing import Final, cast
 
 from linkml_runtime.linkml_model.meta import (
@@ -12,6 +11,7 @@ from linkml_runtime.linkml_model.meta import (
     SchemaDefinition,
     SlotDefinition,
 )
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
 from cdm_data_loaders.converters.core.ir import SchemaDocument, TypedNode
@@ -41,14 +41,15 @@ LOGICAL_RANGES: Final = {
 UNSIGNED_LOGICAL_INTS: Final[frozenset[str]] = frozenset({"uint8", "uint16", "uint32", "uint64"})
 
 
-@dataclass(slots=True)
-class LinkMLEmitter:
+class LinkMLEmitter(BaseModel):
     """Render a document as a LinkML SchemaDefinition."""
 
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
     schema_name: str | None = None
-    _classes: dict[str, ClassDefinition] = field(init=False, default_factory=dict)
-    _enums: dict[str, EnumDefinition] = field(init=False, default_factory=dict)
-    _used_names: set[str] = field(init=False, default_factory=set)
+    _classes: dict[str, ClassDefinition] = PrivateAttr(default_factory=dict)
+    _enums: dict[str, EnumDefinition] = PrivateAttr(default_factory=dict)
+    _used_names: set[str] = PrivateAttr(default_factory=set)
 
     def emit(self, document: SchemaDocument) -> SchemaDefinition:
         """Emit a standalone LinkML schema model.
@@ -210,8 +211,8 @@ class LinkMLEmitter:
                 type="object",
                 nullable=False,
                 properties=(
-                    SchemaField("key", node.key_type, required=True),
-                    SchemaField("value", node.value_type, required=value_required),
+                    SchemaField(name="key", node=node.key_type, required=True),
+                    SchemaField(name="value", node=node.value_type, required=value_required),
                 ),
                 provenance=node.provenance,
             )

@@ -99,8 +99,8 @@ def run_pipeline(
         err_msg = f"Pipeline failed: {e!s}"
         logger.exception(err_msg)
 
-    has_errors = bool(load_info and load_info.has_failed_jobs) or bool(collector.preprocess_errors)
-    if load_info:
+    has_errors = bool(load_info is not None and load_info.has_failed_jobs) or bool(collector.preprocess_errors)
+    if load_info is not None:
         logger.info(load_info)
         if has_errors:
             logger.warning("Pipeline contains failed jobs")

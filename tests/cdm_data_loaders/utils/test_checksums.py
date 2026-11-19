@@ -2,7 +2,6 @@
 
 import base64
 import copy
-import dataclasses
 import hashlib
 from collections.abc import Callable, Generator
 from io import BytesIO
@@ -13,6 +12,7 @@ import pytest
 import requests
 from _pytest.mark.structures import ParameterSet
 from awscrt.checksums import crc64nvme as _crc64nvme
+from pydantic import ValidationError
 
 from cdm_data_loaders.utils.checksums import (
     EXTRA_ALGORITHMS,
@@ -84,7 +84,7 @@ def test_extra_algorithms_pass_contains_only_crc64nvme() -> None:
     assert frozenset({"crc64nvme"}) == EXTRA_ALGORITHMS
 
 
-"""Tests for the ChecksumEntry dataclass"""
+"""Tests for the ChecksumEntry model"""
 
 
 def test_checksumentry_pass_construction_and_fields() -> None:
@@ -117,22 +117,19 @@ def test_checksumentry_pass_hashable() -> None:
 
 
 def test_checksumentry_fail_frozen_immutable() -> None:
-    """Mutating an existing field on a ChecksumEntry raises FrozenInstanceError."""
+    """Mutating an existing field on a ChecksumEntry raises ValidationError."""
     entry = ChecksumEntry(algorithm="sha256", value="flash_gordon")
-    with pytest.raises(dataclasses.FrozenInstanceError, match="cannot assign to field 'algorithm'"):
+    with pytest.raises(ValidationError, match="Instance is frozen"):
         entry.algorithm = "md5"  # type: ignore[misc]
 
 
 def test_checksumentry_fail_frozen_prevents_new_attributes() -> None:
-    """The frozen dataclass rejects attribute assignment even for names that aren't declared fields."""
+    """The frozen model rejects extra attributes both at construction and on assignment."""
     entry = ChecksumEntry(algorithm="sha256", value="flash_gordon")
-    # can be one of two errors, depending on which version of CPython is in use.
-    # should be a FrozenInstanceError but some versions produce a TypeError instead
-    with pytest.raises(
-        (TypeError, dataclasses.FrozenInstanceError),
-        match=r"(is not an instance or subtype of type \(ChecksumEntry\)|cannot assign to field 'extra')",
-    ):
+    with pytest.raises(ValidationError):
         entry.extra = "not allowed"  # type: ignore[attr-defined]
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        ChecksumEntry(algorithm="sha256", value="flash_gordon", extra="not allowed")  # type: ignore[call-arg]
 
 
 """Tests of new_hasher"""
@@ -595,14 +592,22 @@ def test_parse_md5_checksums_file_parses_gnu_manifest() -> None:
     }
 
 
-def test_finalize_digest_formats_hex_and_crc64nvme_base64() -> None:
-    """Return hex digests for hashlib hashers and base64 digests for Crc64NvmeHasher."""
-    payload = b"streamed-payload"
-    sha_hasher = new_hasher("sha256")
-    sha_hasher.update(payload)
-    assert finalize_digest(sha_hasher) == hashlib.sha256(payload).hexdigest()
+STREAMED_PAYLOAD: Final[bytes] = b"streamed-payload"
 
-    crc_hasher = new_hasher("crc64nvme")
-    crc_hasher.update(payload)
-    expected_crc = _crc64nvme(payload, 0)
-    assert finalize_digest(crc_hasher) == base64.b64encode(expected_crc.to_bytes(8, "big")).decode()
+
+@pytest.mark.parametrize(
+    ("algorithm", "expected"),
+    [
+        pytest.param("sha256", hashlib.sha256(STREAMED_PAYLOAD).hexdigest(), id="sha256-hex"),
+        pytest.param(
+            "crc64nvme",
+            base64.b64encode(_crc64nvme(STREAMED_PAYLOAD, 0).to_bytes(8, "big")).decode(),
+            id="crc64nvme-base64",
+        ),
+    ],
+)
+def test_finalize_digest_formats_hex_and_crc64nvme_base64(algorithm: str, expected: str) -> None:
+    """Return hex digests for hashlib hashers and base64 digests for Crc64NvmeHasher."""
+    hasher = new_hasher(algorithm)
+    hasher.update(STREAMED_PAYLOAD)
+    assert finalize_digest(hasher) == expected
