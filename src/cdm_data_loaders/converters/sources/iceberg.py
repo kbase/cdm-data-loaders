@@ -2,11 +2,13 @@
 
 from base64 import b64encode
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import date, datetime, time
 from typing import Final
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, InstanceOf
+from pydantic import Field as PydanticField
 from pyiceberg.schema import Schema
 from pyiceberg.table import Table
 from pyiceberg.types import (
@@ -32,7 +34,7 @@ from pyiceberg.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
+from cdm_data_loaders.converters.core.extensions import ExtensionRegistry, Extensions, default_extension_registry
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.core.ir_values import Value, freeze_value
 
@@ -77,11 +79,12 @@ PRIMITIVES: Final[dict[type[IcebergType], tuple[NodeType, str, int | None, bool 
 }
 
 
-@dataclass(frozen=True, slots=True)
-class IcebergReader:
+class IcebergReader(BaseModel):
     """Read physical/logical types separately from JSON rendering conventions."""
 
-    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
+
+    extension_registry: InstanceOf[ExtensionRegistry] = PydanticField(default_factory=default_extension_registry)
     mapping_target: str = "IR"
 
     def read(self, source: Schema) -> SchemaDocument:
@@ -92,15 +95,17 @@ class IcebergReader:
         return SchemaDocument(
             root=self._type(source.as_struct(), ()),
             extensions=Extensions(
-                {
+                payload={
                     "x-iceberg": {
                         "schema_id": source.schema_id,
                         "identifier_field_ids": sorted(source.identifier_field_ids),
                     }
                 },
-                self.extension_registry,
+                registry=self.extension_registry,
             ),
-            provenance=Provenance("iceberg", metadata=_metadata(source.model_dump(mode="python", by_alias=True))),
+            provenance=Provenance(
+                source="iceberg", metadata=_metadata(source.model_dump(mode="python", by_alias=True))
+            ),
         )
 
     def read_table(self, table: Table, identifier: tuple[str, ...]) -> SchemaDocument:
@@ -128,8 +133,10 @@ class IcebergReader:
             name=identifier[-1],
             identifier=f"urn:iceberg:{'.'.join(identifier)}",
             annotations={"description": table.properties["comment"]} if "comment" in table.properties else {},
-            extensions=Extensions({"x-iceberg": iceberg}, self.extension_registry),
-            provenance=Provenance("iceberg", identifier, _metadata(metadata.model_dump(mode="python", by_alias=True))),
+            extensions=Extensions(payload={"x-iceberg": iceberg}, registry=self.extension_registry),
+            provenance=Provenance(
+                source="iceberg", path=identifier, metadata=_metadata(metadata.model_dump(mode="python", by_alias=True))
+            ),
         )
 
     def read_node(self, source: IcebergType) -> TypedNode:
@@ -151,13 +158,15 @@ class IcebergReader:
             replace(self._type(source.field_type, path), nullable=not source.required),
             required=source.required,
             annotations={"description": source.doc} if "doc" in source.model_fields_set else {},
-            extensions=Extensions({"x-iceberg": metadata}, self.extension_registry),
-            provenance=Provenance("iceberg", path, _metadata(source.model_dump(mode="python", by_alias=True))),
+            extensions=Extensions(payload={"x-iceberg": metadata}, registry=self.extension_registry),
+            provenance=Provenance(
+                source="iceberg", path=path, metadata=_metadata(source.model_dump(mode="python", by_alias=True))
+            ),
         )
 
     def _type(self, source: IcebergType, path: tuple[str | int, ...]) -> TypedNode:
         """Translate supported Iceberg types into genuine typed child trees."""
-        provenance = Provenance("iceberg", path)
+        provenance = Provenance(source="iceberg", path=path)
         if type(source) in PRIMITIVES:
             kind, logical, width, timezone = PRIMITIVES[type(source)]
             return TypedNode(
@@ -198,13 +207,13 @@ class IcebergReader:
                     self._type(source.element_type, (*path, "element")), nullable=not source.element_required
                 ),
                 extensions=Extensions(
-                    {
+                    payload={
                         "x-iceberg": {
                             "element_id": source.element_id,
                             "element_required": source.element_required,
                         }
                     },
-                    self.extension_registry,
+                    registry=self.extension_registry,
                 ),
             )
         if isinstance(source, MapType):
@@ -215,14 +224,14 @@ class IcebergReader:
                 key_type=self._type(source.key_type, (*path, "key")),
                 value_type=replace(self._type(source.value_type, (*path, "value")), nullable=not source.value_required),
                 extensions=Extensions(
-                    {
+                    payload={
                         "x-iceberg": {
                             "key_id": source.key_id,
                             "value_id": source.value_id,
                             "value_required": source.value_required,
                         }
                     },
-                    self.extension_registry,
+                    registry=self.extension_registry,
                 ),
             )
         msg = f"No {self.mapping_target} mapping for Iceberg type: {source}"

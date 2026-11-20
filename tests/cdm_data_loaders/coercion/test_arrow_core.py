@@ -3,6 +3,7 @@
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from enum import StrEnum
+from typing import Final
 
 import pyarrow as pa
 import pytest
@@ -212,28 +213,51 @@ def test_coerce_numeric_converts_and_preserves_guards(
     assert coerce_numeric(raw, target_type) == expected
 
 
-def test_coerce_string_and_enum_unwrapping() -> None:
-    """Unwrap Enum values and format temporal, binary, and container values for string columns."""
+def test_coerce_scalar_for_pyarrow_unwraps_enum() -> None:
+    """Unwrap StrEnum values for PyArrow string columns."""
     assert coerce_scalar_for_pyarrow(_ColorEnum.RED, pa.string()) == "red"
-    assert coerce_string(UTC_REF_DT) == "2024-02-29T12:30:00+00:00"
-    assert coerce_string(b"text") == "text"
-    assert coerce_string((1, date(2024, 1, 1))) == '[1, "2024-01-01"]'
 
 
-def test_coerce_struct_from_mapping_or_tuple_handles_tuple_union_and_passthrough() -> None:
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param(UTC_REF_DT, "2024-02-29T12:30:00+00:00", id="utc-datetime"),
+        pytest.param(b"text", "text", id="bytes"),
+        pytest.param((1, date(2024, 1, 1)), '[1, "2024-01-01"]', id="tuple-with-date"),
+    ],
+)
+def test_coerce_string_formats_values(raw: object, expected: str) -> None:
+    """Format temporal, binary, and container values for string columns."""
+    assert coerce_string(raw) == expected
+
+
+TUPLE_STRUCT: Final[pa.StructType] = pa.struct([pa.field("item_0", pa.int64()), pa.field("item_1", pa.string())])
+UNION_STRUCT: Final[pa.StructType] = pa.struct([pa.field("label", pa.string()), pa.field("_value", pa.int64())])
+PLAIN_STRUCT: Final[pa.StructType] = pa.struct([pa.field("label", pa.string())])
+
+
+@pytest.mark.parametrize(
+    ("raw", "struct_type", "allow_tuple", "expected"),
+    [
+        pytest.param((1, "a"), TUPLE_STRUCT, False, (1, "a"), id="tuple-disallowed-passthrough"),
+        pytest.param((1, None), TUPLE_STRUCT, True, {"item_0": 1}, id="tuple-allowed-omits-none"),
+        pytest.param("42", UNION_STRUCT, False, {"_value": 42}, id="scalar-union-value-field"),
+        pytest.param("orphan", PLAIN_STRUCT, False, "orphan", id="non-mapping-passthrough"),
+    ],
+)
+def test_coerce_struct_from_mapping_or_tuple_handles_tuple_union_and_passthrough(
+    raw: object,
+    struct_type: pa.StructType,
+    allow_tuple: bool,
+    expected: object,
+) -> None:
     """Coerce positional tuples, _value scalar unions, and non-matching values on StructType."""
-    tuple_struct = pa.struct([pa.field("item_0", pa.int64()), pa.field("item_1", pa.string())])
-    union_struct = pa.struct([pa.field("label", pa.string()), pa.field("_value", pa.int64())])
-    plain_struct = pa.struct([pa.field("label", pa.string())])
-
-    assert coerce_struct_from_mapping_or_tuple(
-        (1, "a"), tuple_struct, coerce_scalar_for_pyarrow, allow_tuple=False
-    ) == (
-        1,
-        "a",
+    assert (
+        coerce_struct_from_mapping_or_tuple(
+            raw,
+            struct_type,
+            coerce_scalar_for_pyarrow,
+            allow_tuple=allow_tuple,
+        )
+        == expected
     )
-    assert coerce_struct_from_mapping_or_tuple(
-        (1, None), tuple_struct, coerce_scalar_for_pyarrow, allow_tuple=True
-    ) == {"item_0": 1}
-    assert coerce_struct_from_mapping_or_tuple("42", union_struct, coerce_scalar_for_pyarrow) == {"_value": 42}
-    assert coerce_struct_from_mapping_or_tuple("orphan", plain_struct, coerce_scalar_for_pyarrow) == "orphan"

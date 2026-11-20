@@ -233,8 +233,9 @@ build-backend = "uv_build"
 
 [tool.mutmut]
 source_paths = [ "src/" ]
-pytest_add_cli_args_test_selection= [ "-m", "not requires_spark", "-m", "not slow_test", "-m", "not requires_ceph", "-m", "not external_request", "-m", "not docker", "-m", "not docs", "-m", "not state_audit" ]
-
+pytest_add_cli_args_test_selection= [ "-m", "not requires_spark", "-m", "not slow_test", "-m", "not requires_ceph", "-m", "not external_request", "-m", "not docker", "-m", "not state_audit", "tests/cdm_data_loaders/"]
+also_copy = ["docs/", "docs_macros/", "scripts/", "specs/", "notebooks/"]
+do_not_mutate = [ "src/cdm_data_loaders/schemas/**/schema.py"]
 
 
 [tool.pytest]

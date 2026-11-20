@@ -3,7 +3,6 @@
 import os
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
 from shutil import copy, move
@@ -11,6 +10,7 @@ from typing import Any, Final, Self
 
 from pydantic import (
     BaseModel,
+    ConfigDict,
     DirectoryPath,
     Field,
     FilePath,
@@ -298,15 +298,25 @@ def prepend_header(header_file_path: Path, xsv_file_path: Path, dest: Path) -> N
         out.write(xsv_file_path.read_bytes())
 
 
-@dataclass(slots=True)
-class FileNames:
+class FileNames(BaseModel):
     """Derived file paths produced during a ``qsv validate`` pass."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, validate_by_name=True, validate_by_alias=True)
 
     valid_output: Path
     errors: Path
     valid_lines: Path
     invalid_lines: Path
-    schema: Path
+    schema_path: Path = Field(alias="schema")
+
+    @property
+    def schema(self) -> Path:  # type: ignore[override]
+        """Return the derived JSON Schema file path for this validation pass.
+
+        :return: Derived JSON Schema path.
+        :rtype: Path
+        """
+        return self.schema_path
 
 
 def generate_qsv_validate_file_names(
@@ -323,7 +333,7 @@ def generate_qsv_validate_file_names(
     :type input_file_name: str
     :param first_pass: Whether this is the first validation pass (defaults to ``True``).
     :type first_pass: bool
-    :return: Dataclass containing derived output, error, valid/invalid split, and schema paths.
+    :return: Model containing derived output, error, valid/invalid split, and schema paths.
     :rtype: FileNames
     """
     output_file_stem = (

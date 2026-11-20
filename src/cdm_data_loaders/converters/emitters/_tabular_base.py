@@ -119,7 +119,10 @@ class _TabularEmitterBase[DataTypeT](BaseModel):
 
     def build_context(self, validator_cls: type) -> ConversionContext:
         """Build draft-specific metadata policy and report invalid requested keywords."""
-        context = ConversionContext(validator_cls, self.extra_metadata_keywords)
+        context = ConversionContext(
+            validator_cls=validator_cls,
+            extra_metadata_keywords=self.extra_metadata_keywords,
+        )
         if context.invalid_extra_metadata_keywords:
             self._logger().warning(
                 "Ignoring invalid extra_metadata_keywords %s: these are neither recognised JSON Schema "

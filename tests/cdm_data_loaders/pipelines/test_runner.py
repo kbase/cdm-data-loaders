@@ -12,6 +12,7 @@ import dlt
 import pytest
 import yaml
 from dlt.common.destination.exceptions import DestinationTerminalException
+from dlt.common.pipeline import LoadInfo
 from dlt.common.schema.typing import TTableSchema
 from dlt.common.typing import TDataItems
 from dlt.destinations.impl.filesystem.filesystem import FilesystemLoadJob
@@ -94,7 +95,8 @@ def make_mock_pipeline(save_run_result: object, slack_hook: str | None = None) -
     pipeline.runtime_config.slack_incoming_hook = slack_hook
     pipeline.last_trace.started_at = datetime(2025, 1, 2, 3, 4, 0, tzinfo=UTC)
     pipeline.last_trace.finished_at = datetime(2025, 1, 2, 3, 4, 10, tzinfo=UTC)
-    entity_load_info = MagicMock()
+    entity_load_info = MagicMock(spec=LoadInfo)
+    entity_load_info.__len__.return_value = 1
     entity_load_info.has_failed_jobs = False
     entity_load_info.loads_ids = ["1.0"]
     entity_load_info.started_at = datetime(2025, 1, 2, 3, 4, 5, tzinfo=UTC)

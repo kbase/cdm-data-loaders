@@ -63,7 +63,7 @@ def build_sequence_node(
         type="array",
         nullable=nullable,
         items=item_node,
-        provenance=Provenance("pydantic", path),
+        provenance=Provenance(source="pydantic", path=path),
     )
 
 
@@ -106,7 +106,7 @@ def build_tuple_node(
         properties=fields,
         required_names=required_names,
         additional_properties=TypedNode(type="never", nullable=False),
-        provenance=Provenance("pydantic", path),
+        provenance=Provenance(source="pydantic", path=path),
     )
 
 
@@ -142,7 +142,7 @@ def build_map_node(
         type="string",
         nullable=False,
         hints=NodeHints(logical_type="string"),
-        provenance=Provenance("pydantic", (*path, "key")),
+        provenance=Provenance(source="pydantic", path=(*path, "key")),
     )
     val_field = build_field_ir("value", val_ann, ctx, (*path, "value"), required_in_parent=True)
     val_node = replace(val_field.node, annotations=val_field.annotations)
@@ -151,7 +151,7 @@ def build_map_node(
         nullable=nullable,
         key_type=key_node,
         value_type=val_node,
-        provenance=Provenance("pydantic", path),
+        provenance=Provenance(source="pydantic", path=path),
     )
 
 
@@ -250,7 +250,7 @@ def build_merged_models_struct(
                     node=node,
                     required=not field_nullable,
                     annotations=annotations,
-                    provenance=Provenance("pydantic", field_path, prov_meta),
+                    provenance=Provenance(source="pydantic", path=field_path, metadata=prov_meta),
                 )
             )
 
@@ -258,7 +258,7 @@ def build_merged_models_struct(
         resolved_scalars = [resolve_parsed_scalar(sb, ctx) for sb in scalar_branches]
         val_node_type, val_hints, val_label = unify_scalar_specs(resolved_scalars)
         val_path = (*path, "_value")
-        val_prov = Provenance("pydantic", val_path, {"pydantic_type": val_label})
+        val_prov = Provenance(source="pydantic", path=val_path, metadata={"pydantic_type": val_label})
         val_node = TypedNode(type=val_node_type, nullable=True, hints=val_hints, provenance=val_prov)
         ir_fields.append(SchemaField(name="_value", node=val_node, required=False, provenance=val_prov))
 
@@ -281,7 +281,7 @@ def build_merged_models_struct(
         properties=fields_tuple,
         required_names=required_names,
         additional_properties=TypedNode(type="never", nullable=False),
-        provenance=Provenance("pydantic", path, prov_meta),
+        provenance=Provenance(source="pydantic", path=path, metadata=prov_meta),
     )
 
 
@@ -391,7 +391,7 @@ def build_multi_branch_node(
             type=node_type,
             nullable=nullable,
             hints=hints,
-            provenance=Provenance("pydantic", path, {"pydantic_type": pyd_type}),
+            provenance=Provenance(source="pydantic", path=path, metadata={"pydantic_type": pyd_type}),
         )
 
     for m in model_branches:
@@ -404,7 +404,7 @@ def build_multi_branch_node(
             type="string",
             nullable=nullable,
             hints=NodeHints(logical_type="string"),
-            provenance=Provenance("pydantic", path),
+            provenance=Provenance(source="pydantic", path=path),
         )
 
     return build_merged_models_struct(
@@ -454,7 +454,7 @@ def build_parsed_node(
                 type="string",
                 nullable=nullable,
                 hints=NodeHints(logical_type="string"),
-                provenance=Provenance("pydantic", path),
+                provenance=Provenance(source="pydantic", path=path),
             )
         return build_merged_models_struct([model_cls], ctx, path, nullable=nullable)
     builder = CONTAINER_NODE_BUILDERS.get(kind)
@@ -466,7 +466,7 @@ def build_parsed_node(
         type=node_type,
         nullable=nullable,
         hints=hints,
-        provenance=Provenance("pydantic", path, {"pydantic_type": pyd_type}),
+        provenance=Provenance(source="pydantic", path=path, metadata={"pydantic_type": pyd_type}),
     )
 
 
@@ -502,7 +502,7 @@ def build_parsed_field_ir(
         node=node,
         required=not nullable,
         annotations=annotations,
-        provenance=Provenance("pydantic", path, prov_meta),
+        provenance=Provenance(source="pydantic", path=path, metadata=prov_meta),
     )
 
 

@@ -175,33 +175,30 @@ def test_jsonschema_to_pyarrow_pass_options_reach_emitter() -> None:
 
 
 @pytest.mark.parametrize(
-    ("constructor", "is_strict_reader"),
+    "constructor",
     [
-        pytest.param(StrictJsonSchemaReader, True, id="strict-reader"),
-        pytest.param(JSONSchemaToPyArrow, False, id="jsonschema-to-pyarrow"),
-        pytest.param(PydanticToPyArrow, False, id="pydantic-to-pyarrow"),
-        pytest.param(functools.partial(XsdToPyArrow, xml_tag="entry"), False, id="xsd-to-pyarrow"),
+        pytest.param(StrictJsonSchemaReader, id="strict-reader"),
+        pytest.param(JSONSchemaToPyArrow, id="jsonschema-to-pyarrow"),
+        pytest.param(PydanticToPyArrow, id="pydantic-to-pyarrow"),
+        pytest.param(functools.partial(XsdToPyArrow, xml_tag="entry"), id="xsd-to-pyarrow"),
     ],
 )
 @pytest.mark.parametrize(
-    ("bad_depth", "reader_exc"),
+    "bad_depth",
     [
-        pytest.param(0, ValueError, id="zero"),
-        pytest.param(-1, ValueError, id="negative"),
-        pytest.param(True, TypeError, id="bool-true"),
-        pytest.param(False, TypeError, id="bool-false"),
+        pytest.param(0, id="zero"),
+        pytest.param(-1, id="negative"),
+        pytest.param(True, id="bool-true"),
+        pytest.param(False, id="bool-false"),
     ],
 )
 def test_converters_and_strict_reader_fail_invalid_max_recursion_depth(
     constructor: Callable[..., object],
     *,
-    is_strict_reader: bool,
     bad_depth: int,
-    reader_exc: type[Exception],
 ) -> None:
     """Reject non-positive or boolean max_recursion_depth across StrictJsonSchemaReader and converter facades."""
-    expected_exc = reader_exc if is_strict_reader else ValidationError
-    with pytest.raises(expected_exc, match="max_recursion_depth"):
+    with pytest.raises(ValidationError, match="max_recursion_depth"):
         constructor(max_recursion_depth=bad_depth)
 
 

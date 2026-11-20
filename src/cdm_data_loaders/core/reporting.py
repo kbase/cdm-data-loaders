@@ -1,15 +1,16 @@
 """Reporting and output for pipelines."""
 
-from dataclasses import dataclass
 from datetime import datetime
 from logging import Logger, getLogger
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Annotated, Final
 
 import dlt
 import yaml
 from dlt.common.pipeline import LoadInfo
 from dlt.common.runtime.slack import send_slack_message
+from pydantic import BaseModel, ConfigDict, GetPydanticSchema
+from pydantic_core import core_schema
 
 from cdm_data_loaders.core.fields import JSONL
 from cdm_data_loaders.core.settings import CtsSettings
@@ -23,16 +24,22 @@ LOAD_INFO_TABLE_NAME: Final[str] = "_load_info"
 
 logger: Logger = getLogger(__name__)
 
+type _LoadInfoField = Annotated[
+    LoadInfo,
+    GetPydanticSchema(lambda _tp, _handler: core_schema.is_instance_schema(LoadInfo)),
+]
 
-@dataclass(frozen=True, slots=True)
-class PipelineReport:
+
+class PipelineReport(BaseModel):
     """Summary information for a pipeline run report."""
 
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
     pipeline_name: str
-    dataset_name: str
+    dataset_name: str | None
     started_at: datetime
-    finished_at: datetime
-    pipeline_load_info: LoadInfo | None = None
+    finished_at: datetime | None = None
+    pipeline_load_info: _LoadInfoField | None = None
     pipeline_err_msg: str | None = None
     info_load_err_msg: str | None = None
     ingested_files: list[str] | None = None

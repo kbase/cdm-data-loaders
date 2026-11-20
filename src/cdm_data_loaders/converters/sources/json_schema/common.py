@@ -18,8 +18,8 @@ def extract_extensions(schema: Mapping[str, Any], registry: ExtensionRegistry) -
     :rtype: Extensions
     """
     return Extensions(
-        {key: value for key, value in schema.items() if key.startswith("x-")},
-        registry,
+        payload={key: value for key, value in schema.items() if key.startswith("x-")},
+        registry=registry,
     )
 
 

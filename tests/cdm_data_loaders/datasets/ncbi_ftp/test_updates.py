@@ -245,14 +245,31 @@ def test_compute_batch_width(row_counts: tuple[int, int], batch_size: int, expec
     assert compute_batch_width(splits, batch_size) == expected_width
 
 
-def test_write_id_batches_writes_zero_padded_files(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("ids", "prefix", "expected_written", "expected_files"),
+    [
+        pytest.param([], "empty_prefix", 0, {}, id="empty-ids"),
+        pytest.param(
+            ["GCF_000000001.1", "GCF_000000002.1", "GCF_000000003.1"],
+            "after_20240501",
+            2,
+            {
+                "after_20240501-01.txt": "GCF_000000001.1\nGCF_000000002.1\n",
+                "after_20240501-02.txt": "GCF_000000003.1\n",
+            },
+            id="zero-padded-batches",
+        ),
+    ],
+)
+def test_write_id_batches_writes_zero_padded_files(
+    tmp_path: Path,
+    ids: list[str],
+    prefix: str,
+    expected_written: int,
+    expected_files: dict[str, str],
+) -> None:
     """Write numbered batch files with zero-padded suffixes and skip writing when ids is empty."""
-    assert write_id_batches([], tmp_path, "empty_prefix", batch_size=2, width=2) == 0
-    assert list(tmp_path.iterdir()) == []
-
-    ids = ["GCF_000000001.1", "GCF_000000002.1", "GCF_000000003.1"]
-    written = write_id_batches(ids, tmp_path, "after_20240501", batch_size=2, width=2)
-    expected_batches = 2
-    assert written == expected_batches
-    assert (tmp_path / "after_20240501-01.txt").read_text(encoding="utf-8") == "GCF_000000001.1\nGCF_000000002.1\n"
-    assert (tmp_path / "after_20240501-02.txt").read_text(encoding="utf-8") == "GCF_000000003.1\n"
+    written = write_id_batches(ids, tmp_path, prefix, batch_size=2, width=2)
+    assert written == expected_written
+    actual_files = {p.name: p.read_text(encoding="utf-8") for p in sorted(tmp_path.iterdir())}
+    assert actual_files == expected_files

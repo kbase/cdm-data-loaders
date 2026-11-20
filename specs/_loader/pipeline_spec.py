@@ -2,11 +2,11 @@
 
 import json
 import sys
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
 import pyarrow as pa
+from pydantic import BaseModel, ConfigDict, Field
 
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from specs._loader.yaml_io import CASE_MANIFEST, load_settings_file, load_spec_module, load_yaml_dict
@@ -14,9 +14,10 @@ from specs._loader.yaml_io import CASE_MANIFEST, load_settings_file, load_spec_m
 RELATIVE_PATH_SETTINGS_KEYS: Final[frozenset[str]] = frozenset({"xsd_file", "schema_file", "log_config_file"})
 
 
-@dataclass(frozen=True, slots=True)
-class ExpectedReport:
+class ExpectedReport(BaseModel):
     """Expected contents of ``report.txt`` written by ``save_pipeline_metadata``."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     status: str = "completed"
     ingested_files: tuple[str, ...] = ()
@@ -24,29 +25,31 @@ class ExpectedReport:
     pipeline_load_info_errs: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class PipelineRun:
+class PipelineRun(BaseModel):
     """One execution of a pipeline case: input path, settings, and expected outputs."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
     input_dir: Path
     input_subdir: str | None = None
     settings_file: Path | None = None
-    settings: dict[str, Any] = field(default_factory=dict)
-    expected_report: ExpectedReport = field(default_factory=ExpectedReport)
-    expected_counts: dict[str, int] = field(default_factory=dict)
+    settings: dict[str, Any] = Field(default_factory=dict)
+    expected_report: ExpectedReport = Field(default_factory=ExpectedReport)
+    expected_counts: dict[str, int] = Field(default_factory=dict)
     expected_tables: Path | None = None
     expected_json: Path | None = None
     tables_attr: str = "EXPECTED_TABLES"
     primary_table: str | None = None
     expected_rejected: Path | None = None
-    extra_expected_json: dict[str, Path] = field(default_factory=dict)
+    extra_expected_json: dict[str, Path] = Field(default_factory=dict)
     smoke: bool = True
 
 
-@dataclass(frozen=True, slots=True)
-class PipelineCase:
+class PipelineCase(BaseModel):
     """A pipeline specification fixture directory with its manifest."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     pipeline: str
     name: str
@@ -219,9 +222,10 @@ def load_expected_json_tables(run: PipelineRun) -> dict[str, list[dict[str, Any]
     return result
 
 
-@dataclass(frozen=True, slots=True)
-class _CaseRunContext:
+class _CaseRunContext(BaseModel):
     """Case-level defaults shared across all runs in one ``case.yaml`` manifest."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     pipeline: str
     directory: Path

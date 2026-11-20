@@ -98,7 +98,10 @@ def test_emit_pass_root_union_and_inference(declaration: list[str] | None) -> No
 @pytest.mark.parametrize("validator", [Draft7Validator, Draft202012Validator], ids=["draft7", "draft2020"])
 def test_conversion_context_pass_keyword_policy(validator: type) -> None:
     """Metadata helpers exclude structural keywords and preserve recognized assertions and annotations."""
-    context = ConversionContext(validator, frozenset({"pattern", "x-custom", "type", "$id", "typo"}))
+    context = ConversionContext(
+        validator_cls=validator,
+        extra_metadata_keywords=frozenset({"pattern", "x-custom", "type", "$id", "typo"}),
+    )
     known = get_known_jsonschema_keywords(validator)
     assert {"title", "description", "pattern"} <= known
     assert not known & REF_AND_IDENTITY_KEYWORDS
@@ -139,14 +142,15 @@ def test_emit_pass_invalid_metadata_warns_once(dialect: str, caplog: pytest.LogC
 def test_build_metadata_pass_annotation_presence(annotations: dict[str, Any], expected: dict[str, Any]) -> None:
     """Absent, null and empty annotations remain distinct."""
     node = TypedNode(type="string", annotations=annotations)
-    assert PySparkEmitter().build_metadata(node, ConversionContext(Draft202012Validator)) == expected
+    assert PySparkEmitter().build_metadata(node, ConversionContext(validator_cls=Draft202012Validator)) == expected
 
 
 def test_emit_pass_registered_extensions_and_metadata_isolation() -> None:
     """Registered extension payloads and exact decimals are copied without sharing mutable output."""
     registry = DEFAULT_EXTENSIONS.register(
         ExtensionSpec(
-            "x-custom", {"type": "object", "properties": {"values": {"type": "array"}}, "additionalProperties": False}
+            namespace="x-custom",
+            schema={"type": "object", "properties": {"values": {"type": "array"}}, "additionalProperties": False},
         )
     )
     schema = {
@@ -318,7 +322,7 @@ def test_emit_node_pass_explicit_context_and_branch_metadata() -> None:
     document = _document(
         {"title": "Outer", "oneOf": [{"type": "integer", "title": "Inner", "description": "Branch"}], "default": 1}
     )
-    context = ConversionContext(Draft7Validator, frozenset({"default"}))
+    context = ConversionContext(validator_cls=Draft7Validator, extra_metadata_keywords=frozenset({"default"}))
     actual = PySparkEmitter().emit_node(document.root, context)
     assert actual.jsonValue() == {
         "type": "struct",

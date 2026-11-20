@@ -199,13 +199,10 @@ def test_render_error_section_rule_style_and_expandable_fixtures_pass(kind: str,
                 assert f"`{param_key}={param_repr}`" in rendered
 
 
-def test_render_error_section_boundary_cases_pass() -> None:
-    """Verify partials/errors_section.md.j2 handles empty fixture lists and empty fixture descriptions."""
-    template = create_jinja_env().get_template("partials/errors_section.md.j2")
-    section = ErrorSectionContext(
-        base_class_name="SampleConversionError",
-        parent_type_name="ValueError",
-        rows=(
+@pytest.mark.parametrize(
+    ("row", "expected_snippet"),
+    [
+        pytest.param(
             ErrorRowContext(
                 code="E1",
                 anchor="e1",
@@ -214,6 +211,10 @@ def test_render_error_section_boundary_cases_pass() -> None:
                 reason="Used to test empty fixture fallback.",
                 fixtures=(),
             ),
+            "    *Fixtures:* —",
+            id="empty-fixtures",
+        ),
+        pytest.param(
             ErrorRowContext(
                 code="E2",
                 anchor="e2",
@@ -230,14 +231,27 @@ def test_render_error_section_boundary_cases_pass() -> None:
                     ),
                 ),
             ),
+            (
+                "    - [`bad.xml`](https://example.org/bad.xml) (`xml_tag='entry'`, `table_name='entries'`)\n\n"
+                '        ??? abstract "bad.xml"\n\n'
+                "            ```xml\n"
+                "            <root/>\n"
+                "            ```"
+            ),
+            id="empty-description-with-params",
         ),
+    ],
+)
+def test_render_error_section_boundary_cases_pass(
+    row: ErrorRowContext,
+    expected_snippet: str,
+) -> None:
+    """Verify partials/errors_section.md.j2 handles empty fixture lists and empty fixture descriptions."""
+    template = create_jinja_env().get_template("partials/errors_section.md.j2")
+    section = ErrorSectionContext(
+        base_class_name="SampleConversionError",
+        parent_type_name="ValueError",
+        rows=(row,),
     )
     rendered = template.render(error_section=section)
-    assert "    *Fixtures:* —" in rendered
-    assert (
-        "    - [`bad.xml`](https://example.org/bad.xml) (`xml_tag='entry'`, `table_name='entries'`)\n\n"
-        '        ??? abstract "bad.xml"\n\n'
-        "            ```xml\n"
-        "            <root/>\n"
-        "            ```"
-    ) in rendered
+    assert expected_snippet in rendered

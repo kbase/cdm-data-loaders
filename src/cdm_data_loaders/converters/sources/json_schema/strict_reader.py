@@ -1,13 +1,15 @@
 """Read strict Draft 2020-12 JSON Schema documents with ``$defs`` recursion into the IR."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Any, NoReturn
 
 from frozendict import frozendict
+from pydantic import BaseModel, ConfigDict, InstanceOf
+from pydantic import Field as PydanticField
 
-from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
+from cdm_data_loaders.converters.core.errors import ConversionError, ErrorCodeMap, raise_spec_error
+from cdm_data_loaders.converters.core.extensions import ExtensionRegistry, default_extension_registry
 from cdm_data_loaders.converters.core.guards import (
     require_object_root,
     require_schema_keyword,
@@ -40,7 +42,7 @@ from cdm_data_loaders.converters.sources.json_schema.strict_refs import (
     validate_node,
 )
 from cdm_data_loaders.converters.sources.json_schema.strict_scalars import resolve_scalar
-from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, StrictPositiveRecursionDepth
 from cdm_data_loaders.validation.jsonschema.keywords import strip_ref_target_identity
 from cdm_data_loaders.validation.jsonschema.metaschema import (
     STRICT_SUPPORTED_SCHEMA_DIALECTS,
@@ -48,20 +50,19 @@ from cdm_data_loaders.validation.jsonschema.metaschema import (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class StrictJsonSchemaReader:
+class StrictJsonSchemaReader(BaseModel):
     """Read Draft 2020-12 JSON Schema documents under the strict tabular conversion specification."""
 
-    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
-    error_type: type[ConversionError] = ConversionError
-    converter_name: str = "StrictJsonSchemaReader"
-    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
-    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
-    forbidden_recursive_formats: frozenset[str] = DEFAULT_FORBIDDEN_RECURSIVE_FORMATS
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
-    def __post_init__(self) -> None:
-        """Validate reader recursion depth configuration."""
-        validate_max_recursion_depth(self.max_recursion_depth)
+    extension_registry: InstanceOf[ExtensionRegistry] = PydanticField(default_factory=default_extension_registry)
+    error_type: type[ConversionError] = PydanticField(default_factory=lambda: ConversionError)
+    converter_name: str = "StrictJsonSchemaReader"
+    max_recursion_depth: StrictPositiveRecursionDepth = DEFAULT_MAX_RECURSION_DEPTH
+    error_by_code: ErrorCodeMap = PydanticField(default_factory=frozendict)
+    forbidden_recursive_formats: frozenset[str] = PydanticField(
+        default_factory=lambda: DEFAULT_FORBIDDEN_RECURSIVE_FORMATS
+    )
 
     def _raise_err(self, code: str, msg: str) -> NoReturn:
         """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.
@@ -167,7 +168,7 @@ class StrictJsonSchemaReader:
             identifier=schema.get("$id"),
             annotations=node.annotations,
             extensions=node.extensions,
-            provenance=Provenance("json-schema"),
+            provenance=Provenance(source="json-schema"),
             jsonschema_validator_cls=validator_cls,
         )
 
@@ -295,15 +296,20 @@ class StrictJsonSchemaReader:
                 merged_prop, prop_ctx, (*meta.path, "properties", prop_name), required_in_parent=is_req
             )
             fields.append(
-                Field(prop_name, prop_node, required=not bool(prop_node.nullable), provenance=prop_node.provenance)
+                Field(
+                    name=prop_name,
+                    node=prop_node,
+                    required=not bool(prop_node.nullable),
+                    provenance=prop_node.provenance,
+                )
             )
 
         if all_scalars:
             val_path = (*meta.path, "_value")
             val_type, val_hints, val_label = self._resolve_and_unify_scalar_branches(all_scalars, ctx, val_path)
-            val_prov = Provenance("json-schema", val_path, {"jsonschema_type": val_label})
+            val_prov = Provenance(source="json-schema", path=val_path, metadata={"jsonschema_type": val_label})
             val_node = TypedNode(type=val_type, nullable=True, hints=val_hints, provenance=val_prov)
-            fields.append(Field("_value", val_node, required=False, provenance=val_prov))
+            fields.append(Field(name="_value", node=val_node, required=False, provenance=val_prov))
 
         if not fields:
             msg = "Empty object schema with no properties cannot be converted to a PyArrow struct"
@@ -318,7 +324,7 @@ class StrictJsonSchemaReader:
             annotations=meta.annotations,
             extensions=meta.extensions,
             constraints=meta.constraints,
-            provenance=Provenance("json-schema", meta.path),
+            provenance=Provenance(source="json-schema", path=meta.path),
         )
 
     def _build_map(
@@ -350,7 +356,7 @@ class StrictJsonSchemaReader:
             type="string",
             nullable=False,
             hints=NodeHints(logical_type="string"),
-            provenance=Provenance("json-schema", meta.path, {"jsonschema_type": "string"}),
+            provenance=Provenance(source="json-schema", path=meta.path, metadata={"jsonschema_type": "string"}),
         )
         return TypedNode(
             type="map",
@@ -361,7 +367,7 @@ class StrictJsonSchemaReader:
             annotations=meta.annotations,
             extensions=meta.extensions,
             constraints=meta.constraints,
-            provenance=Provenance("json-schema", meta.path),
+            provenance=Provenance(source="json-schema", path=meta.path),
         )
 
     def _build_array(
@@ -393,8 +399,8 @@ class StrictJsonSchemaReader:
                 )
                 fields.append(
                     Field(
-                        f"item_{idx}",
-                        item_node,
+                        name=f"item_{idx}",
+                        node=item_node,
                         required=not bool(item_node.nullable),
                         provenance=item_node.provenance,
                     )
@@ -412,7 +418,7 @@ class StrictJsonSchemaReader:
                 annotations=meta.annotations,
                 extensions=meta.extensions,
                 constraints=meta.constraints,
-                provenance=Provenance("json-schema", meta.path),
+                provenance=Provenance(source="json-schema", path=meta.path),
             )
 
         validated_items = self._validate(node.get("items"))
@@ -425,7 +431,7 @@ class StrictJsonSchemaReader:
             annotations=meta.annotations,
             extensions=meta.extensions,
             constraints=meta.constraints,
-            provenance=Provenance("json-schema", meta.path),
+            provenance=Provenance(source="json-schema", path=meta.path),
         )
 
     def _build_union_type(
@@ -474,7 +480,7 @@ class StrictJsonSchemaReader:
                 annotations=meta.annotations,
                 extensions=meta.extensions,
                 constraints=meta.constraints,
-                provenance=Provenance("json-schema", meta.path, {"jsonschema_type": u_label}),
+                provenance=Provenance(source="json-schema", path=meta.path, metadata={"jsonschema_type": u_label}),
             )
 
         if obj_branches and not scalar_branches:
@@ -520,7 +526,7 @@ class StrictJsonSchemaReader:
                 annotations=meta.annotations,
                 extensions=meta.extensions,
                 constraints=meta.constraints,
-                provenance=Provenance("json-schema", meta.path),
+                provenance=Provenance(source="json-schema", path=meta.path),
             )
         sibling_keys = {k: v for k, v in validated.items() if k not in {"$ref", "description"}}
         if not sibling_keys:
@@ -608,7 +614,7 @@ class StrictJsonSchemaReader:
             annotations=meta.annotations,
             extensions=meta.extensions,
             constraints=meta.constraints,
-            provenance=Provenance("json-schema", meta.path, {"jsonschema_type": s_label}),
+            provenance=Provenance(source="json-schema", path=meta.path, metadata={"jsonschema_type": s_label}),
         )
 
     def _build_field_node(

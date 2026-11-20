@@ -1,19 +1,20 @@
 """Read XML Schema Definition (XSD) documents into the converter IR."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final, NoReturn
 
 import xmlschema
 from frozendict import frozendict
+from pydantic import BaseModel, ConfigDict, Field
 from xmlschema.validators import (
     XsdComplexType,
     XsdElement,
     XsdType,
 )
 
-from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
+from cdm_data_loaders.converters.core.errors import ConversionError, ErrorCodeMap, raise_spec_error
 from cdm_data_loaders.converters.core.ir import (
     SPEC_BINARY,
     SPEC_BOOL,
@@ -35,7 +36,7 @@ from cdm_data_loaders.converters.core.ir import (
     TypedNode,
 )
 from cdm_data_loaders.converters.core.ir import Field as SchemaField
-from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, StrictPositiveRecursionDepth
 from cdm_data_loaders.utils.xml_utils import local_name as _local_name
 from cdm_data_loaders.validation.xsd.particles import resolve_child_cardinality
 from cdm_data_loaders.validation.xsd.scalars import (
@@ -106,7 +107,7 @@ def _string_ir_node(
         type="string",
         nullable=nullable,
         hints=NodeHints(logical_type="string"),
-        provenance=Provenance("xsd", path, metadata or {}),
+        provenance=Provenance(source="xsd", path=path, metadata=metadata or {}),
     )
 
 
@@ -153,13 +154,13 @@ def simple_type_to_ir_node(
             type=item_nt,
             nullable=True,
             hints=item_hints,
-            provenance=Provenance("xsd", (*path, "item"), {"xsd_type": item_xsd}),
+            provenance=Provenance(source="xsd", path=(*path, "item"), metadata={"xsd_type": item_xsd}),
         )
         return TypedNode(
             type="array",
             nullable=nullable,
             items=item_node,
-            provenance=Provenance("xsd", path),
+            provenance=Provenance(source="xsd", path=path),
         )
 
     node_type, hints, xsd_name = _resolve_scalar_ir_spec(simple_type)
@@ -167,7 +168,7 @@ def simple_type_to_ir_node(
         type=node_type,
         nullable=nullable,
         hints=hints,
-        provenance=Provenance("xsd", path, {"xsd_type": xsd_name}),
+        provenance=Provenance(source="xsd", path=path, metadata={"xsd_type": xsd_name}),
     )
 
 
@@ -242,7 +243,7 @@ def _wrap_leaf_ir_field(
             type="array",
             nullable=nullable,
             items=leaf_node,
-            provenance=Provenance("xsd", path),
+            provenance=Provenance(source="xsd", path=path),
         )
         prov_meta: dict[str, Any] = {}
     else:
@@ -254,7 +255,7 @@ def _wrap_leaf_ir_field(
         node=field_node,
         required=not nullable,
         annotations=annotations,
-        provenance=Provenance("xsd", path, prov_meta),
+        provenance=Provenance(source="xsd", path=path, metadata=prov_meta),
     )
 
 
@@ -292,7 +293,7 @@ def _wrap_truncated_leaf_ir_field(
             type="array",
             nullable=nullable,
             items=leaf_node,
-            provenance=Provenance("xsd", path, trunc_meta),
+            provenance=Provenance(source="xsd", path=path, metadata=trunc_meta),
         )
         if is_list
         else leaf_node
@@ -302,7 +303,7 @@ def _wrap_truncated_leaf_ir_field(
         node=field_node,
         required=not nullable,
         annotations=annotations,
-        provenance=Provenance("xsd", path, trunc_meta),
+        provenance=Provenance(source="xsd", path=path, metadata=trunc_meta),
     )
 
 
@@ -349,7 +350,7 @@ def _build_complex_struct_fields(
                 node=node,
                 required=not nullable,
                 annotations=annotations,
-                provenance=Provenance("xsd", attr_path, prov_meta),
+                provenance=Provenance(source="xsd", path=attr_path, metadata=prov_meta),
             )
         )
 
@@ -367,7 +368,7 @@ def _build_complex_struct_fields(
                 name="#text",
                 node=node,
                 required=False,
-                provenance=Provenance("xsd", text_path, prov_meta),
+                provenance=Provenance(source="xsd", path=text_path, metadata=prov_meta),
             )
         )
         return tuple(fields)
@@ -460,7 +461,7 @@ def _build_element_ir_field(
             properties=struct_fields,
             required_names=required_names,
             additional_properties=TypedNode(type="never", nullable=False),
-            provenance=Provenance("xsd", path, struct_meta),
+            provenance=Provenance(source="xsd", path=path, metadata=struct_meta),
         )
         if is_cacheable:
             ctx.struct_cache[cache_key] = struct_node
@@ -470,7 +471,7 @@ def _build_element_ir_field(
             type="array",
             nullable=nullable,
             items=replace(struct_node, nullable=True),
-            provenance=Provenance("xsd", path),
+            provenance=Provenance(source="xsd", path=path),
         )
         if is_list
         else replace(struct_node, nullable=nullable)
@@ -481,7 +482,7 @@ def _build_element_ir_field(
         node=field_node,
         required=not nullable,
         annotations=annotations,
-        provenance=Provenance("xsd", path),
+        provenance=Provenance(source="xsd", path=path),
     )
 
 
@@ -531,7 +532,7 @@ def _build_element_struct_node(
         properties=fields,
         required_names=required_names,
         additional_properties=TypedNode(type="never", nullable=False),
-        provenance=Provenance("xsd", (), struct_meta),
+        provenance=Provenance(source="xsd", path=(), metadata=struct_meta),
     )
 
 
@@ -561,7 +562,7 @@ def _finish_element_doc(
         name=_local_name(tag_name),
         identifier=schema.target_namespace or None,
         annotations=annotations,
-        provenance=Provenance("xsd", (tag_name,)),
+        provenance=Provenance(source="xsd", path=(tag_name,)),
     )
 
 
@@ -600,7 +601,7 @@ def _build_element_table_doc(
             properties=(text_field,),
             required_names=(),
             additional_properties=TypedNode(type="never", nullable=False),
-            provenance=Provenance("xsd", (), {"scalar_leaf_table": True}),
+            provenance=Provenance(source="xsd", path=(), metadata={"scalar_leaf_table": True}),
         )
     else:
         elem_type = require_complex_type(
@@ -615,8 +616,7 @@ def _build_element_table_doc(
     return _finish_element_doc(base_ctx.schema, target_elem, tag_name, root_node)
 
 
-@dataclass(frozen=True, slots=True)
-class XsdReader:
+class XsdReader(BaseModel):
     """Build typed converter IR documents from XML Schema Definition (XSD) files.
 
     :param xml_tag: Default target XML element tag name when not supplied to :meth:`read`.
@@ -626,17 +626,15 @@ class XsdReader:
     :param error_type: Base exception class raised when a construct cannot be converted.
     :type error_type: type[ConversionError]
     :param error_by_code: Mapping from specification error code (``E1``-``E9``) to exception class.
-    :type error_by_code: Mapping[str, type[ConversionError]]
+    :type error_by_code: ErrorCodeMap
     """
 
-    xml_tag: str | None = None
-    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
-    error_type: type[ConversionError] = ConversionError
-    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
-    def __post_init__(self) -> None:
-        """Validate reader configuration."""
-        validate_max_recursion_depth(self.max_recursion_depth)
+    xml_tag: str | None = None
+    max_recursion_depth: StrictPositiveRecursionDepth = DEFAULT_MAX_RECURSION_DEPTH
+    error_type: type[ConversionError] = Field(default_factory=lambda: ConversionError)
+    error_by_code: ErrorCodeMap = Field(default_factory=frozendict)
 
     def _raise_err(self, code: str, msg: str) -> NoReturn:
         """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.

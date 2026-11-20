@@ -272,7 +272,9 @@ class DltEmitter(BaseModel):
         table["columns"] = columns
         if "description" in node.annotations:
             table["description"] = cast("str", mutable_value(node.annotations["description"]))
-        tree = DltTableNode(name, parent, child_key(parent, name) if parent else name, table, children)
+        tree = DltTableNode(
+            name=name, parent=parent, key=child_key(parent, name) if parent else name, table=table, children=children
+        )
         if native:
             tree = _restore_table(tree, node)
         if parent is None and self.write_disposition is not None:
@@ -310,11 +312,11 @@ class DltEmitter(BaseModel):
                 value = (
                     new_column("value", _scalar_type(item))
                     if _is_json(node)
-                    else self._column(SchemaField("value", item), native=native)
+                    else self._column(SchemaField(name="value", node=item), native=native)
                 )
                 table = new_table(name, parent_table_name=parent)
                 table["columns"] = {"value": value}
-                child = DltTableNode(name, parent, child_key(parent, name), table)
+                child = DltTableNode(name=name, parent=parent, key=child_key(parent, name), table=table)
         if child is not None:
             if native:
                 child = _restore_table(child, node)

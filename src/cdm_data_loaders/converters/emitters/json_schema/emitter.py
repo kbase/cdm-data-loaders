@@ -1,7 +1,8 @@
 """Emit JSON Schema from typed schema facts and scoped metadata."""
 
-from dataclasses import dataclass
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, StrictBool
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
@@ -21,20 +22,12 @@ from cdm_data_loaders.converters.emitters.json_schema.pyarrow_policy import (
 )
 
 
-@dataclass(frozen=True, slots=True)
-class JsonSchemaEmitter:
+class JsonSchemaEmitter(BaseModel):
     """Render typed IR trees using each source's JSON Schema compatibility policy."""
 
-    preserve_unknown_hints: bool = True
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
-    def __post_init__(self) -> None:
-        """Reject non-boolean hint policies.
-
-        :raises TypeError: If ``preserve_unknown_hints`` is not a ``bool``.
-        """
-        if type(self.preserve_unknown_hints) is not bool:
-            msg = "preserve_unknown_hints must be a boolean"
-            raise TypeError(msg)
+    preserve_unknown_hints: StrictBool = True
 
     def emit(self, document: SchemaDocument) -> dict[str, Any]:
         """Return a fresh JSON Schema document dictionary for ``document``.

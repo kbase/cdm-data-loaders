@@ -7,6 +7,7 @@ from typing import Any, Final
 
 import pytest
 from jsonschema.exceptions import SchemaError, ValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from cdm_data_loaders.converters.core.extensions import (
     DEFAULT_EXTENSIONS,
@@ -50,10 +51,12 @@ def test_extensions_pass_decimal_multiple_of_float(
     divisor: float | Decimal,
 ) -> None:
     """Fractional validation accepts exact multiples regardless of Decimal context precision."""
-    registry = ExtensionRegistry((ExtensionSpec("x-amount", {"type": "number", "multipleOf": divisor}),))
+    registry = ExtensionRegistry(
+        specs=(ExtensionSpec(namespace="x-amount", schema={"type": "number", "multipleOf": divisor}),)
+    )
     with localcontext() as context:
         context.prec = 2
-        extensions = Extensions({"x-amount": amount}, registry)
+        extensions = Extensions(payload={"x-amount": amount}, registry=registry)
         assert extensions["x-amount"] is amount
 
 
@@ -83,11 +86,13 @@ def test_extensions_fail_decimal_multiple_of_float(
     invalid: float | Decimal,
 ) -> None:
     """Fractional validation rejects non-multiples regardless of Decimal context precision."""
-    registry = ExtensionRegistry((ExtensionSpec("x-amount", {"type": "number", "multipleOf": divisor}),))
+    registry = ExtensionRegistry(
+        specs=(ExtensionSpec(namespace="x-amount", schema={"type": "number", "multipleOf": divisor}),)
+    )
     with localcontext() as context:
         context.prec = 2
         with pytest.raises(ExtensionError, match=r"Invalid x-amount at \[\]: .*not a multiple"):
-            Extensions({"x-amount": invalid}, registry)
+            Extensions(payload={"x-amount": invalid}, registry=registry)
 
 
 @pytest.mark.parametrize(
@@ -112,9 +117,11 @@ def test_extensions_pass_mixed_numeric_keywords(
     accepted: str,
 ) -> None:
     """All numeric keywords accept valid mixed representations consistently."""
-    registry = ExtensionRegistry((ExtensionSpec("x-amount", {"type": "number", keyword: schema_type("2")}),))
+    registry = ExtensionRegistry(
+        specs=(ExtensionSpec(namespace="x-amount", schema={"type": "number", keyword: schema_type("2")}),)
+    )
     amount = instance_type(accepted)
-    assert Extensions({"x-amount": amount}, registry)["x-amount"] is amount
+    assert Extensions(payload={"x-amount": amount}, registry=registry)["x-amount"] is amount
 
 
 @pytest.mark.parametrize(
@@ -139,9 +146,11 @@ def test_extensions_fail_mixed_numeric_keywords(
     rejected: str,
 ) -> None:
     """All numeric keywords reject invalid mixed representations consistently."""
-    registry = ExtensionRegistry((ExtensionSpec("x-amount", {"type": "number", keyword: schema_type("2")}),))
+    registry = ExtensionRegistry(
+        specs=(ExtensionSpec(namespace="x-amount", schema={"type": "number", keyword: schema_type("2")}),)
+    )
     with pytest.raises(ExtensionError) as error:
-        Extensions({"x-amount": instance_type(rejected)}, registry)
+        Extensions(payload={"x-amount": instance_type(rejected)}, registry=registry)
     assert isinstance(error.value.__cause__, ValidationError)
     assert error.value.__cause__.validator == keyword
 
@@ -160,12 +169,14 @@ def test_extensions_pass_exact_fractional_bounds(
     amount: float | Decimal, boundary: float | Decimal, keyword: str
 ) -> None:
     """Decimal and JSON float boundaries compare as equal without binary rounding."""
-    registry = ExtensionRegistry((ExtensionSpec("x-amount", {"type": "number", keyword: boundary}),))
+    registry = ExtensionRegistry(
+        specs=(ExtensionSpec(namespace="x-amount", schema={"type": "number", keyword: boundary}),)
+    )
     if keyword.startswith("exclusive"):
         with pytest.raises(ExtensionError):
-            Extensions({"x-amount": amount}, registry)
+            Extensions(payload={"x-amount": amount}, registry=registry)
     else:
-        assert Extensions({"x-amount": amount}, registry)["x-amount"] is amount
+        assert Extensions(payload={"x-amount": amount}, registry=registry)["x-amount"] is amount
 
 
 def _nested_numeric_ref_registry() -> ExtensionRegistry:
@@ -183,14 +194,14 @@ def _nested_numeric_ref_registry() -> ExtensionRegistry:
         "type": "array",
         "items": {"type": "object", "properties": {"amount": {"$ref": "#/$defs/amount"}}},
     }
-    return ExtensionRegistry((ExtensionSpec("x-amount", schema),))
+    return ExtensionRegistry(specs=(ExtensionSpec(namespace="x-amount", schema=schema),))
 
 
 def test_extensions_pass_nested_numeric_refs() -> None:
     """Local refs retain exact arithmetic and preserve Decimal identity in valid nested items."""
     registry = _nested_numeric_ref_registry()
     amount = Decimal("0.3")
-    extensions = Extensions({"x-amount": [{"amount": amount}]}, registry)
+    extensions = Extensions(payload={"x-amount": [{"amount": amount}]}, registry=registry)
     assert extensions["x-amount"] == ({"amount": amount},)
     assert extensions["x-amount"][0]["amount"] is amount
 
@@ -199,7 +210,7 @@ def test_extensions_fail_nested_numeric_refs() -> None:
     """Local refs report nested validation error paths when exact arithmetic fails."""
     registry = _nested_numeric_ref_registry()
     with pytest.raises(ExtensionError, match=r"Invalid x-amount at \[0, 'amount'\]: .*not a multiple") as error:
-        Extensions({"x-amount": [{"amount": Decimal("0.31")}]}, registry)
+        Extensions(payload={"x-amount": [{"amount": Decimal("0.31")}]}, registry=registry)
     assert isinstance(error.value.__cause__, ValidationError)
     assert list(error.value.__cause__.path) == [0, "amount"]
 
@@ -212,12 +223,12 @@ def test_extensions_fail_nested_numeric_refs() -> None:
 )
 def test_extensions_pass_boolean_schemas(value: Value, schema: bool) -> None:
     """True and false schemas remain unconditional for all finite payloads."""
-    registry = ExtensionRegistry((ExtensionSpec("x-value", schema=schema),))
+    registry = ExtensionRegistry(specs=(ExtensionSpec(namespace="x-value", schema=schema),))
     if schema:
-        assert Extensions({"x-value": value}, registry)["x-value"] == freeze_value(value)
+        assert Extensions(payload={"x-value": value}, registry=registry)["x-value"] == freeze_value(value)
     else:
         with pytest.raises(ExtensionError, match="False schema"):
-            Extensions({"x-value": value}, registry)
+            Extensions(payload={"x-value": value}, registry=registry)
 
 
 @pytest.mark.parametrize(
@@ -253,23 +264,23 @@ def test_extensions_pass_boolean_schemas(value: Value, schema: bool) -> None:
 )
 def test_extensions_pass_custom_schema_types(schema: dict[str, Any], value: Value, valid: bool) -> None:
     """Numeric normalization preserves type checks and literal schema comparisons."""
-    registry = ExtensionRegistry((ExtensionSpec("x-value", schema),))
+    registry = ExtensionRegistry(specs=(ExtensionSpec(namespace="x-value", schema=schema),))
     if valid:
-        assert Extensions({"x-value": value}, registry)["x-value"] == freeze_value(value)
+        assert Extensions(payload={"x-value": value}, registry=registry)["x-value"] == freeze_value(value)
     else:
         with pytest.raises(ExtensionError):
-            Extensions({"x-value": value}, registry)
+            Extensions(payload={"x-value": value}, registry=registry)
 
 
 def _spec_with_minimum(value: float | Decimal) -> ExtensionSpec:
     """Construct an ExtensionSpec with a numeric minimum bound."""
-    return ExtensionSpec("x-amount", {"minimum": value})
+    return ExtensionSpec(namespace="x-amount", schema={"minimum": value})
 
 
 def _extensions_with_amount(value: float | Decimal) -> Extensions:
     """Construct an Extensions payload for an unconditional x-amount namespace."""
-    registry = ExtensionRegistry((ExtensionSpec("x-amount", schema=True),))
-    return Extensions({"x-amount": value}, registry)
+    registry = ExtensionRegistry(specs=(ExtensionSpec(namespace="x-amount", schema=True),))
+    return Extensions(payload={"x-amount": value}, registry=registry)
 
 
 @pytest.mark.parametrize(
@@ -304,7 +315,7 @@ def test_extensions_fail_nonfinite_numbers(
 )
 def test_extensions_pass_builtin(values: dict[str, Any]) -> None:
     """Builtin namespaces validate exact internal key spellings."""
-    extensions = Extensions(values)
+    extensions = Extensions(payload=values)
     assert list(extensions) == list(values)
     assert len(extensions) == len(values)
     assert TypedNode(type="any", extensions=extensions).extensions is extensions
@@ -333,9 +344,9 @@ def test_extensions_fail_invalid(values: dict[str, Any]) -> None:
 def test_extension_registry_pass_custom_copy_isolation() -> None:
     """Custom arrays and null are allowed only under an explicit schema."""
     schema = {"type": "array", "items": {"type": ["string", "null"]}}
-    registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-custom", schema))
+    registry = DEFAULT_EXTENSIONS.register(ExtensionSpec(namespace="x-custom", schema=schema))
     values = {"x-custom": ["data", None]}
-    extensions = Extensions(values, registry)
+    extensions = Extensions(payload=values, registry=registry)
     schema["items"]["type"].append("number")
     values["x-custom"].append("changed")
     assert extensions["x-custom"] == ("data", None)
@@ -353,10 +364,10 @@ def test_extension_registry_pass_custom_copy_isolation() -> None:
 def test_extension_spec_fail_namespace(namespace: str) -> None:
     """Only named x-prefixed namespaces can be registered."""
     with pytest.raises(ExtensionError):
-        ExtensionSpec(namespace, schema=True)
+        ExtensionSpec(namespace=namespace, schema=True)
 
 
-DUPLICATE_TEST_SPEC: Final[ExtensionSpec] = ExtensionSpec("x-test", schema=True)
+DUPLICATE_TEST_SPEC: Final[ExtensionSpec] = ExtensionSpec(namespace="x-test", schema=True)
 
 
 @pytest.mark.parametrize(
@@ -368,7 +379,7 @@ DUPLICATE_TEST_SPEC: Final[ExtensionSpec] = ExtensionSpec("x-test", schema=True)
             id="duplicate-in-constructor",
         ),
         pytest.param(
-            partial(ExtensionRegistry((DUPLICATE_TEST_SPEC,)).register, DUPLICATE_TEST_SPEC),
+            partial(ExtensionRegistry(specs=(DUPLICATE_TEST_SPEC,)).register, DUPLICATE_TEST_SPEC),
             "Already registered",
             id="duplicate-on-register",
         ),
@@ -382,7 +393,7 @@ def test_extension_registry_fail_duplicates(call: Callable[[], object], match: s
 
 def test_extension_registry_pass_register_replace() -> None:
     """Explicit replacement updates an existing namespace contract."""
-    registry = ExtensionRegistry((DUPLICATE_TEST_SPEC,))
+    registry = ExtensionRegistry(specs=(DUPLICATE_TEST_SPEC,))
     assert registry.register(DUPLICATE_TEST_SPEC, replace=True) == registry
 
 
@@ -397,13 +408,14 @@ def test_extension_registry_pass_register_replace() -> None:
 def test_extension_spec_fail_invalid_schemas(schema: object, error_type: type[Exception], match: str | None) -> None:
     """Invalid extension validation schemas fail at spec construction."""
     with pytest.raises(error_type, match=match):
-        ExtensionSpec("x-bad", schema)
+        ExtensionSpec(namespace="x-bad", schema=schema)
 
 
 def test_extension_registry_fail_invalid_entries() -> None:
-    """Registry entries must be ExtensionSpec instances."""
-    with pytest.raises(TypeError, match="entries"):
-        ExtensionRegistry(({},))  # type: ignore[arg-type]
+    """Registry entries must be ExtensionSpec instances and registries use __slots__."""
+    assert not hasattr(DEFAULT_EXTENSIONS, "__dict__")
+    with pytest.raises(PydanticValidationError, match="Input should be an instance of ExtensionSpec"):
+        ExtensionRegistry(specs=({},))  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -425,7 +437,7 @@ def test_extensions_pass_exact_xsv_schema_and_mapping_api() -> None:
     """The exact existing XSV schema is reused, and mapping methods remain callable."""
     xsv_config_schema = get_xsv_config_schema()
     spec = next(spec for spec in DEFAULT_EXTENSIONS.specs if spec.namespace == "x-xsv-config")
-    extensions = Extensions({"x-pii": True})
+    extensions = Extensions(payload={"x-pii": True})
     assert list(extensions.values()) == [True]
     assert list(extensions.items()) == [("x-pii", True)]
     assert spec.schema["additionalProperties"] == xsv_config_schema["additionalProperties"]
@@ -445,18 +457,18 @@ def test_extension_spec_pass_lazy_loader_defers_until_accessed() -> None:
         calls += 1
         return {"type": "string", "minLength": 1}
 
-    spec = ExtensionSpec("x-lazy", load_schema)
-    registry = ExtensionRegistry((spec, ExtensionSpec("x-other", {"type": "boolean"})))
+    spec = ExtensionSpec(namespace="x-lazy", schema=load_schema)
+    registry = ExtensionRegistry(specs=(spec, ExtensionSpec(namespace="x-other", schema={"type": "boolean"})))
     assert calls == 0
-    assert Extensions({"x-other": True}, registry)["x-other"] is True
+    assert Extensions(payload={"x-other": True}, registry=registry)["x-other"] is True
     assert calls == 0
-    assert Extensions({"x-lazy": "ok"}, registry)["x-lazy"] == "ok"
+    assert Extensions(payload={"x-lazy": "ok"}, registry=registry)["x-lazy"] == "ok"
     assert calls == 1
     assert spec.schema == {"type": "string", "minLength": 1}
     assert calls == 1
-    assert spec == ExtensionSpec("x-lazy", {"type": "string", "minLength": 1})
+    assert spec == ExtensionSpec(namespace="x-lazy", schema={"type": "string", "minLength": 1})
     assert spec != "x-lazy"
-    assert hash(spec) == hash(ExtensionSpec("x-lazy", {"type": "string", "minLength": 1}))
+    assert hash(spec) == hash(ExtensionSpec(namespace="x-lazy", schema={"type": "string", "minLength": 1}))
 
 
 @pytest.mark.parametrize(
@@ -468,7 +480,7 @@ def test_extension_spec_pass_lazy_loader_defers_until_accessed() -> None:
 )
 def test_extension_spec_fail_lazy_loader_invalid_schema(bad_schema: object, error_type: type[Exception]) -> None:
     """Invalid schemas returned by a lazy loader fail when `.schema` is accessed."""
-    spec = ExtensionSpec("x-lazy", lambda: bad_schema)  # type: ignore[arg-type, return-value]
+    spec = ExtensionSpec(namespace="x-lazy", schema=lambda: bad_schema)  # type: ignore[arg-type, return-value]
     with pytest.raises(error_type):
         _ = spec.schema
 
@@ -504,11 +516,11 @@ DLT_BOOLEAN_HINT_IDS: Final[tuple[str, ...]] = (
 @pytest.mark.parametrize("hint", DLT_BOOLEAN_HINTS, ids=DLT_BOOLEAN_HINT_IDS)
 def test_extensions_pass_dlt_boolean_hints(hint: str) -> None:
     """Each observed dlt column hint accepts boolean values."""
-    assert Extensions({"x-dlt": {hint: True}})["x-dlt"] == {hint: True}
+    assert Extensions(payload={"x-dlt": {hint: True}})["x-dlt"] == {hint: True}
 
 
 @pytest.mark.parametrize("hint", DLT_BOOLEAN_HINTS, ids=DLT_BOOLEAN_HINT_IDS)
 def test_extensions_fail_dlt_nonboolean_hints(hint: str) -> None:
     """Each observed dlt column hint rejects non-boolean values."""
     with pytest.raises(ExtensionError):
-        Extensions({"x-dlt": {hint: "yes"}})
+        Extensions(payload={"x-dlt": {hint: "yes"}})

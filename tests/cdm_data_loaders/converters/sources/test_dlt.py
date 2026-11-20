@@ -3,6 +3,7 @@
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionError
@@ -153,18 +154,16 @@ def test_read_fail_invalid_graph(source: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "error_type", "match"),
+    ("kwargs", "match"),
     [
-        ({"child_table_mode": "guess"}, ValueError, "child_table_mode"),
-        ({"include_dlt_columns": "yes"}, TypeError, None),
+        ({"child_table_mode": "guess"}, "child_table_mode"),
+        ({"include_dlt_columns": "yes"}, "include_dlt_columns"),
     ],
     ids=["invalid-child-table-mode", "invalid-include-dlt-columns"],
 )
-def test_dlt_reader_fail_invalid_options(
-    kwargs: dict[str, Any], error_type: type[Exception], match: str | None
-) -> None:
+def test_dlt_reader_fail_invalid_options(kwargs: dict[str, Any], match: str) -> None:
     """Invalid reader policies fail immediately."""
-    with pytest.raises(error_type, match=match):
+    with pytest.raises(ValidationError, match=match):
         DltReader(**kwargs)
 
 
