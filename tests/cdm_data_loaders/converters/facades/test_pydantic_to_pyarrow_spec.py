@@ -128,8 +128,15 @@ def test_generate_pyarrow_schema_pass_cases(case: Case, run: Run) -> None:
     assert empty_table.schema.equals(pa_schema, check_metadata=True)
 
 
+@pytest.mark.parametrize(
+    "from_model",
+    [
+        pytest.param(False, id="raw-dict"),
+        pytest.param(True, id="validated-model"),
+    ],
+)
 @pytest.mark.parametrize(("case", "run"), RUN_PARAMS)
-def test_coerce_pydantic_record_for_pyarrow_pass_cases(case: Case, run: Run) -> None:
+def test_coerce_pydantic_record_for_pyarrow_pass_cases(case: Case, run: Run, from_model: bool) -> None:
     """Verify coerce_pydantic_record_for_pyarrow produces identical expected tables from dicts and validated BaseModels."""
     model_cls = _load_model_class(case.schema)
     depth = _max_recursion_depth(run)
@@ -137,20 +144,19 @@ def test_coerce_pydantic_record_for_pyarrow_pass_cases(case: Case, run: Run) -> 
     pa_schema = generate_pyarrow_schema(model_cls, max_recursion_depth=depth, by_alias=by_alias)
     raw_records = load_json_records(run.data)
 
-    rows_from_dict = [
-        coerce_pydantic_record_for_pyarrow(record, pa_schema, model=model_cls, by_alias=by_alias)
-        for record in raw_records
-    ]
+    if from_model:
+        validated_cls = _load_pydantic_model_class(case.schema)
+        rows = [
+            coerce_pydantic_record_for_pyarrow(validated_cls.model_validate(record), pa_schema, by_alias=by_alias)
+            for record in raw_records
+        ]
+    else:
+        rows = [
+            coerce_pydantic_record_for_pyarrow(record, pa_schema, model=model_cls, by_alias=by_alias)
+            for record in raw_records
+        ]
     assert_rows_and_table_match_expected(
-        rows_from_dict, pa_schema, run.expected_json, run.expected_table, table_attr=run.table_attr
-    )
-
-    rows_from_model = [
-        coerce_pydantic_record_for_pyarrow(model_cls.model_validate(record), pa_schema, by_alias=by_alias)
-        for record in raw_records
-    ]
-    assert_rows_and_table_match_expected(
-        rows_from_model, pa_schema, run.expected_json, run.expected_table, table_attr=run.table_attr
+        rows, pa_schema, run.expected_json, run.expected_table, table_attr=run.table_attr
     )
 
 

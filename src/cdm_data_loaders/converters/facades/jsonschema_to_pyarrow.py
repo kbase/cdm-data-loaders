@@ -73,7 +73,7 @@ class JSONSchemaToPyArrow(JsonSchemaConverterBase[pa.Schema]):
         """
         forbidden_formats = frozenset(fmt for fmt, dtype in self.format_map.items() if is_non_json_arrow_type(dtype))
         return StrictJsonSchemaReader(
-            self.extension_registry,
+            extension_registry=self.extension_registry,
             error_type=self._error_cls,
             converter_name=self._converter_name,
             max_recursion_depth=self.max_recursion_depth,

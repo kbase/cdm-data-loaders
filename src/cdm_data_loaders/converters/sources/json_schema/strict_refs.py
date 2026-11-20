@@ -1,14 +1,18 @@
 """Reference resolution, node validation, and cycle checks for strict JSON Schema."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
-from typing import Any, Final
+from dataclasses import field, replace
+from typing import Annotated, Any, Final
 
 from frozendict import frozendict
+from pydantic import ConfigDict, GetPydanticSchema, InstanceOf, StrictBool, StrictInt, StrictStr
+from pydantic.dataclasses import dataclass
+from pydantic_core import core_schema
 
-from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
+from cdm_data_loaders.converters.core.errors import ConversionError, ErrorCodeMap, raise_spec_error
+from cdm_data_loaders.converters.core.extensions import ExtensionRegistry, default_extension_registry
 from cdm_data_loaders.converters.sources.json_schema.common import extract_extensions
+from cdm_data_loaders.utils.recursion import StrictPositiveRecursionDepth
 from cdm_data_loaders.validation.jsonschema.keywords import iter_child_subschemas
 
 CONSTRAINING_KEYWORDS: Final[frozenset[str]] = frozenset(
@@ -33,17 +37,25 @@ CONSTRAINING_KEYWORDS: Final[frozenset[str]] = frozenset(
 DEFAULT_FORBIDDEN_RECURSIVE_FORMATS: Final[frozenset[str]] = frozenset({"date"})
 
 
-@dataclass(frozen=True, slots=True)
+type _MappingInstance[K, V] = Annotated[
+    Mapping[K, V],
+    GetPydanticSchema(lambda _tp, _handler: core_schema.is_instance_schema(Mapping)),
+]
+
+
+@dataclass(frozen=True, slots=True, config=ConfigDict(arbitrary_types_allowed=True, extra="forbid"))
 class StrictBuildContext:
     """Immutable traversal context for strict JSON Schema IR lowering."""
 
-    defs: Mapping[str, Any]
-    ref_counts: Mapping[str, int]
-    max_recursion_depth: int
-    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
-    error_type: type[ConversionError] = ConversionError
-    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
-    forbidden_recursive_formats: frozenset[str] = DEFAULT_FORBIDDEN_RECURSIVE_FORMATS
+    defs: _MappingInstance[str, Any]
+    ref_counts: Mapping[StrictStr, StrictInt]
+    max_recursion_depth: StrictPositiveRecursionDepth
+    extension_registry: InstanceOf[ExtensionRegistry] = field(default_factory=default_extension_registry)
+    error_type: type[ConversionError] = field(default_factory=lambda: ConversionError)
+    error_by_code: ErrorCodeMap = field(default_factory=frozendict)
+    forbidden_recursive_formats: frozenset[StrictStr] = field(
+        default_factory=lambda: DEFAULT_FORBIDDEN_RECURSIVE_FORMATS
+    )
 
     def with_ref(self, ref_name: str) -> "StrictBuildContext":
         """Return a new context with the recursion counter for ``ref_name`` incremented by 1.
@@ -59,15 +71,15 @@ class StrictBuildContext:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, config=ConfigDict(extra="forbid"))
 class StrictNodeMeta:
     """Node-level path, nullability, and facet payloads for strict IR lowering."""
 
-    path: tuple[str | int, ...] = ()
-    nullable: bool = False
-    annotations: Mapping[str, Any] = field(default_factory=frozendict)
-    extensions: Mapping[str, Any] = field(default_factory=frozendict)
-    constraints: Mapping[str, Any] = field(default_factory=frozendict)
+    path: tuple[StrictStr | StrictInt, ...] = ()
+    nullable: StrictBool = False
+    annotations: _MappingInstance[str, Any] = field(default_factory=frozendict)
+    extensions: _MappingInstance[str, Any] = field(default_factory=frozendict)
+    constraints: _MappingInstance[str, Any] = field(default_factory=frozendict)
 
 
 def is_null_branch(node: Mapping[str, Any]) -> bool:

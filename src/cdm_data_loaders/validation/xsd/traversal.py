@@ -1,12 +1,15 @@
 """XSD schema loading, multi-level element resolution, and complex-type traversal helpers."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import field, replace
 from pathlib import Path
-from typing import Any, Literal, NoReturn
+from typing import Annotated, Any, Literal, NoReturn
 
 import xmlschema
 from frozendict import frozendict
+from pydantic import AfterValidator, ConfigDict, GetPydanticSchema, InstanceOf, StrictInt, StrictStr
+from pydantic.dataclasses import dataclass
+from pydantic_core import core_schema
 from xmlschema.validators import (
     XsdAttribute,
     XsdComplexType,
@@ -14,7 +17,7 @@ from xmlschema.validators import (
     XsdType,
 )
 
-from cdm_data_loaders.utils.recursion import validate_max_recursion_depth
+from cdm_data_loaders.utils.recursion import StrictPositiveRecursionDepth, validate_max_recursion_depth
 from cdm_data_loaders.utils.xml_utils import local_name as _local_name
 from cdm_data_loaders.validation.xsd.particles import (
     group_max_occurs_by_name,
@@ -41,16 +44,37 @@ def load_schema(schema_path: str | Path) -> xmlschema.XMLSchema:
     return xmlschema.XMLSchema(str(schema_path))
 
 
-@dataclass(frozen=True, slots=True)
+def _freeze_exception_map(
+    mapping: Mapping[str, type[Exception]],
+) -> frozendict[str, type[Exception]]:
+    """Copy a validated exception mapping into an immutable ``frozendict``.
+
+    :param mapping: Mapping from specification code to exception class.
+    :type mapping: Mapping[str, type[Exception]]
+    :return: Immutable ``frozendict`` copy.
+    :rtype: frozendict[str, type[Exception]]
+    """
+    return frozendict(mapping)
+
+
+type _StructCacheField = Annotated[
+    dict[tuple[int, bool], Any],
+    GetPydanticSchema(lambda _tp, _handler: core_schema.is_instance_schema(dict)),
+]
+
+
+@dataclass(frozen=True, slots=True, config=ConfigDict(arbitrary_types_allowed=True, extra="forbid"))
 class TraversalContext:
     """Immutable traversal context for XSD schema lowering and XML-to-dict coercion."""
 
-    schema: xmlschema.XMLSchema
-    type_counts: Mapping[int, int]
-    max_recursion_depth: int | None
-    struct_cache: dict[tuple[int, bool], Any] = field(default_factory=dict)
-    error_type: type[Exception] = ValueError
-    error_by_code: Mapping[str, type[Exception]] = field(default_factory=frozendict)
+    schema: InstanceOf[xmlschema.XMLSchema]
+    type_counts: Mapping[StrictInt, StrictInt]
+    max_recursion_depth: StrictPositiveRecursionDepth | None
+    struct_cache: _StructCacheField = field(default_factory=dict)
+    error_type: type[Exception] = field(default_factory=lambda: ValueError)
+    error_by_code: Annotated[Mapping[StrictStr, type[Exception]], AfterValidator(_freeze_exception_map)] = field(
+        default_factory=frozendict
+    )
 
     def raise_err(self, code: str, msg: str) -> NoReturn:
         """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.

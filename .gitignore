@@ -1,6 +1,7 @@
 not_for_github/
 cdl_skill/
 .DS_Store
+mutants/
 
 # git worktree
 .history

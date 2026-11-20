@@ -3,21 +3,29 @@
 from collections import deque
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass, field
-from typing import Final, cast
+from dataclasses import field
+from typing import Annotated, Final, cast
 
 from dlt.common.schema.typing import TTableSchema
+from pydantic import ConfigDict, GetPydanticSchema, InstanceOf, StrictStr
+from pydantic.dataclasses import dataclass, rebuild_dataclass
+from pydantic_core import core_schema
 
 from cdm_data_loaders.converters.core.errors import ConversionError
 
 NESTED_TABLE_SEPARATOR: Final[str] = "__"
+
+type _TableSchemaField = Annotated[
+    TTableSchema,
+    GetPydanticSchema(lambda _tp, _handler: core_schema.is_instance_schema(Mapping)),
+]
 
 
 class DltNormalizationError(ConversionError):
     """Raised for malformed tables, invalid parent graphs, or inconsistent trees."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, config=ConfigDict(extra="forbid"))
 class DltTableNode:
     """A table with its mapping name, declared parent, property key, and raw definition.
 
@@ -26,11 +34,14 @@ class DltTableNode:
     Identity fields are frozen; table and children mappings are independently owned.
     """
 
-    name: str
-    parent: str | None
-    key: str
-    table: TTableSchema
-    children: dict[str, "DltTableNode"] = field(default_factory=dict)
+    name: StrictStr
+    parent: StrictStr | None
+    key: StrictStr
+    table: _TableSchemaField
+    children: dict[StrictStr, InstanceOf["DltTableNode"]] = field(default_factory=dict)
+
+
+rebuild_dataclass(DltTableNode)
 
 
 def child_key(parent_name: str, child_name: str) -> str:

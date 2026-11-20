@@ -10,7 +10,6 @@ in its scratch output directory.
 import gzip
 import shutil
 from collections.abc import Generator
-from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory, mkdtemp
 from typing import Any
@@ -21,6 +20,7 @@ from dlt.common.pipeline import LoadInfo
 from dlt.common.storages.fsspec_filesystem import FileItemDict
 from dlt.common.typing import TDataItems
 from dlt.sources.filesystem import filesystem
+from pydantic import BaseModel, ConfigDict
 
 from cdm_data_loaders.core.buffer import DictBuffer
 from cdm_data_loaders.core.cli import CliRunner
@@ -41,8 +41,7 @@ from cdm_data_loaders.readers.xsv.qsv import clean_validate_file, qsv_check
 from cdm_data_loaders.validation.jsonschema.models import generate_header
 
 
-@dataclass
-class XsvWorkPaths:
+class XsvWorkPaths(BaseModel):
     """Scratch resources shared across all files processed in one pipeline run.
 
     :param qsv_cmd: path to the qsv binary
@@ -58,6 +57,8 @@ class XsvWorkPaths:
     :param download_dir: directory non-local input files are downloaded to before validation (qsv needs local files)
     :type download_dir: Path
     """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     qsv_cmd: str
     header_file_path: Path

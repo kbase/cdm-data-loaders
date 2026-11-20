@@ -1,13 +1,14 @@
 """Read dereferenced JSON Schema documents into the intermediate representation."""
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any, cast
 
 from jsonschema.validators import validator_for
+from pydantic import BaseModel, ConfigDict, InstanceOf
+from pydantic import Field as PydanticField
 
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry
+from cdm_data_loaders.converters.core.extensions import ExtensionRegistry, default_extension_registry
 from cdm_data_loaders.converters.core.guards import (
     reject_unresolved_references,
     require_schema_keyword,
@@ -27,12 +28,13 @@ from cdm_data_loaders.validation.jsonschema.keywords import (
 from cdm_data_loaders.validation.jsonschema.metaschema import ensure_custom_metaschema_registered
 
 
-@dataclass(frozen=True, slots=True)
-class JsonSchemaReader:
+class JsonSchemaReader(BaseModel):
     """Read validated object-compatible JSON Schema documents using an extension registry."""
 
-    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
-    error_type: type[ConversionError] = ConversionError
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
+
+    extension_registry: InstanceOf[ExtensionRegistry] = PydanticField(default_factory=default_extension_registry)
+    error_type: type[ConversionError] = PydanticField(default_factory=lambda: ConversionError)
     converter_name: str = "JsonSchemaReader"
     dereference_function: str = "dereference_schema"
 
@@ -66,7 +68,7 @@ class JsonSchemaReader:
             identifier=schema.get("$id"),
             annotations=node.annotations,
             extensions=node.extensions,
-            provenance=Provenance("json-schema"),
+            provenance=Provenance(source="json-schema"),
             jsonschema_validator_cls=validator_for(schema),
         )
 
@@ -90,7 +92,7 @@ class JsonSchemaReader:
         :return: Lowered ``TypedNode``.
         :rtype: TypedNode
         """
-        provenance = Provenance("json-schema", path)
+        provenance = Provenance(source="json-schema", path=path)
         if isinstance(schema, bool):
             return TypedNode(type="any" if schema else "never", nullable=schema, provenance=provenance)
         if not isinstance(schema, Mapping):

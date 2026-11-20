@@ -8,6 +8,7 @@ from typing import Final
 import pyarrow as pa
 import pytest
 import xmlschema
+from pydantic import ValidationError
 from pyspark.sql.types import StructType
 
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
@@ -278,13 +279,13 @@ def test_xsd_to_pyarrow_facade_pass_outputs(tmp_path: Path, output_mode: str) ->
     [
         pytest.param(
             functools.partial(XsdReader, max_recursion_depth=0),
-            ValueError,
+            ValidationError,
             "max_recursion_depth",
             id="zero-max-recursion-depth",
         ),
         pytest.param(
             functools.partial(XsdReader, max_recursion_depth=True),  # type: ignore[arg-type]
-            TypeError,
+            ValidationError,
             "max_recursion_depth",
             id="bool-max-recursion-depth",
         ),

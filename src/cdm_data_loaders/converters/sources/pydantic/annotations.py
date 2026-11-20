@@ -15,7 +15,6 @@ from collections.abc import (
     Sequence,
 )
 from collections.abc import Set as AbstractSet
-from dataclasses import dataclass
 from enum import StrEnum
 from typing import (
     Annotated,
@@ -31,7 +30,8 @@ from typing import (
     get_origin,
 )
 
-from pydantic import Base64Bytes, BaseModel, NaiveDatetime, RootModel
+from pydantic import Base64Bytes, BaseModel, ConfigDict, NaiveDatetime, RootModel, StrictBool, StrictInt, StrictStr
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
@@ -88,16 +88,16 @@ CALLABLE_ORIGINS: Final[frozenset[object]] = frozenset(
 )
 
 
-@dataclass(frozen=True, slots=True)
+@pydantic_dataclass(frozen=True, slots=True, config=ConfigDict(extra="forbid"))
 class ParsedAnnotation:
     """Unwrapped annotation paired with extracted Pydantic metadata."""
 
     annotation: Any
-    description: str | None = None
-    max_digits: int | None = None
-    decimal_places: int | None = None
-    is_naive_datetime: bool = False
-    is_base64_bytes: bool = False
+    description: StrictStr | None = None
+    max_digits: StrictInt | None = None
+    decimal_places: StrictInt | None = None
+    is_naive_datetime: StrictBool = False
+    is_base64_bytes: StrictBool = False
 
 
 def is_union_origin(origin: object) -> bool:

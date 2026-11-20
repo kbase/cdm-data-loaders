@@ -79,3 +79,14 @@ def mutable_value(value: Value) -> MutableValue:
     if isinstance(value, tuple):
         return [mutable_value(item) for item in value]
     return value
+
+
+def freeze_dict[K, V](mapping: Mapping[K, V]) -> frozendict[K, V]:
+    """Copy a validated mapping into a shallow ``frozendict``.
+
+    :param mapping: Validated mapping to freeze.
+    :type mapping: Mapping[K, V]
+    :return: Shallow ``frozendict`` copy.
+    :rtype: frozendict[K, V]
+    """
+    return frozendict(mapping)

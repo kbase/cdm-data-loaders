@@ -1,13 +1,14 @@
 """Target-independent schema model contracts."""
 
 from collections.abc import Callable
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from decimal import Decimal
 from functools import partial
 from typing import Any, Final
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from cdm_data_loaders.converters.core import ir
 from cdm_data_loaders.converters.core.errors import ConversionError
@@ -17,8 +18,8 @@ from cdm_data_loaders.converters.core.ir_values import freeze_mapping, freeze_va
 METADATA_POSITIONS: Final = [
     pytest.param(partial(TypedNode, type="any"), "constraints", id="type-constraints"),
     pytest.param(partial(TypedNode, type="any"), "annotations", id="type-annotations"),
-    pytest.param(partial(Field, "value", TypedNode(type="any")), "annotations", id="field-annotations"),
-    pytest.param(partial(SchemaDocument, TypedNode(type="any")), "annotations", id="document-annotations"),
+    pytest.param(partial(Field, name="value", node=TypedNode(type="any")), "annotations", id="field-annotations"),
+    pytest.param(partial(SchemaDocument, root=TypedNode(type="any")), "annotations", id="document-annotations"),
 ]
 
 
@@ -52,10 +53,12 @@ def test_schema_document_pass_owned_values_and_presence() -> None:
     """Field presence, nullable values and nested metadata remain independent."""
     values = {"enum": [{"amount": Decimal("1.2300")}], "const": None}
     node = TypedNode(type="number", nullable=True, constraints=values)
-    document = SchemaDocument(root=TypedNode(type="object", properties=(Field("amount", node, required=True),)))
+    document = SchemaDocument(
+        root=TypedNode(type="object", properties=(Field(name="amount", node=node, required=True),))
+    )
     values["enum"].clear()
     assert node.constraints == {"enum": ({"amount": Decimal("1.2300")},), "const": None}
-    assert document.root.properties == (Field("amount", node, required=True),)
+    assert document.root.properties == (Field(name="amount", node=node, required=True),)
     with pytest.raises(TypeError):
         node.constraints["const"] = 1
     with pytest.raises(FrozenInstanceError):
@@ -63,7 +66,7 @@ def test_schema_document_pass_owned_values_and_presence() -> None:
 
 
 def test_schema_document_pass_post_init_freezes_annotations_once() -> None:
-    """__post_init__ freezes document annotations exactly once, not once per identity field."""
+    """Document construction freezes annotations exactly once, not once per identity field."""
     root = TypedNode(type="any")
     with patch("cdm_data_loaders.converters.core.ir._schema_metadata", wraps=ir._schema_metadata) as spy:  # noqa: SLF001
         SchemaDocument(root=root, name="n", dialect="d", identifier="i", annotations={"a": 1})
@@ -82,7 +85,7 @@ def test_freeze_value_fail_invalid(value: object) -> None:
 def test_provenance_pass_owned_metadata() -> None:
     """Metadata preserves absent versus explicit null values."""
     metadata = {"description": None, "tags": ["one"]}
-    provenance = Provenance("dlt", ("tables", "entries"), metadata)
+    provenance = Provenance(source="dlt", path=("tables", "entries"), metadata=metadata)
     metadata["tags"].append("two")
     assert provenance.metadata == {"description": None, "tags": ("one",)}
     assert "default" not in provenance.metadata
@@ -98,7 +101,7 @@ def test_provenance_pass_owned_metadata() -> None:
         {"declared_type": [1]},
         {"declared_type": 1},
         {"properties": [1]},
-        {"properties": [Field("a", TypedNode(type="any")), Field("a", TypedNode(type="any"))]},
+        {"properties": [Field(name="a", node=TypedNode(type="any")), Field(name="a", node=TypedNode(type="any"))]},
         {"required_names": [1]},
         {"items": 1},
         {"items": [1]},
@@ -133,7 +136,7 @@ def test_provenance_pass_owned_metadata() -> None:
 )
 def test_typed_node_fail_invalid_fields(kwargs: dict[str, Any]) -> None:
     """Normal constructors reject malformed types and mutable model substitutes."""
-    with pytest.raises((TypeError, ValueError)):
+    with pytest.raises(ValidationError):
         TypedNode(**{"type": "any", **kwargs})
 
 
@@ -149,18 +152,18 @@ def test_typed_node_fail_invalid_fields(kwargs: dict[str, Any]) -> None:
 )
 def test_node_hints_fail_invalid(kwargs: dict[str, Any]) -> None:
     """Logical hints validate values rather than coercing invalid inputs."""
-    with pytest.raises((TypeError, ValueError)):
+    with pytest.raises(ValidationError):
         NodeHints(**kwargs)
 
 
 @pytest.mark.parametrize(
     ("call", "error_type", "match"),
     [
-        (partial(Provenance, "bogus"), ValueError, "source"),
-        (partial(Provenance, "dlt", (True,)), TypeError, "paths"),
-        (partial(Field, "name", {}), TypeError, "Fields require"),
-        (partial(SchemaDocument, root={}), TypeError, "root"),
-        (partial(SchemaDocument, root=TypedNode(type="any"), name=1), TypeError, "name"),
+        (partial(Provenance, source="bogus"), ValidationError, "source"),
+        (partial(Provenance, source="dlt", path=(True,)), ValidationError, "path"),
+        (partial(Field, name="name", node={}), ValidationError, "node"),
+        (partial(SchemaDocument, root={}), ValidationError, "root"),
+        (partial(SchemaDocument, root=TypedNode(type="any"), name=1), ValidationError, "name"),
         (partial(freeze_mapping, []), TypeError, "mapping"),
     ],
     ids=[
@@ -209,3 +212,20 @@ def test_typed_node_pass_all_containers_owned() -> None:
     value["default"].clear()
     assert node.annotations["default"] == (1, {"value": Decimal("1.00")})
     assert (freeze_value(1.5),) == (1.5,)
+
+
+def test_ir_models_pass_slots_and_replace_revalidation() -> None:
+    """All Converter IR dataclasses enforce __slots__ and revalidate on dataclasses.replace."""
+    prov = Provenance("dlt", ("tables", 0))
+    hints = NodeHints("string")
+    node = TypedNode("string", nullable=True, hints=hints, provenance=prov)
+    prop = Field("id", node, required=True, provenance=prov)
+    doc = SchemaDocument(TypedNode("object", properties=(prop,)), "demo")
+    for instance in (prov, hints, node, prop, doc):
+        assert not hasattr(instance, "__dict__")
+    updated = replace(node, nullable=False)
+    assert updated.nullable is False
+    with pytest.raises(ValidationError):
+        replace(node, nullable="bad")  # type: ignore[arg-type]
+    with pytest.raises(ConversionError, match="extensions"):
+        replace(node, annotations={"x-pii": True})

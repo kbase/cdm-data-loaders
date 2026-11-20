@@ -211,8 +211,8 @@ from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import JSONSchema
 from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 KBASE_EXTENSION_SPEC: Final[ExtensionSpec] = ExtensionSpec(
-    "x-kbase",
-    {
+    namespace="x-kbase",
+    schema={
         "type": "object",
         "properties": {
             "ontology_term": {"type": "string"},

@@ -501,6 +501,13 @@ def test_validate_table_transforms_fail_unknown_tables(
 
 
 @pytest.mark.parametrize(
+    "lookup_table",
+    [
+        pytest.param("items", id="configured-table"),
+        pytest.param("other", id="unconfigured-table"),
+    ],
+)
+@pytest.mark.parametrize(
     (
         "use_transforms_module",
         "use_output_schemas_module",
@@ -544,6 +551,7 @@ def test_transform_settings_mixin_pass_loads_transforms(
     expected_transforms: TransformRegistry | None,
     expected_schema_map: ArrowSchemaRegistry | None,
     expected_item_transform: RecordTransformFn | None,
+    lookup_table: str,
 ) -> None:
     """TransformSettingsMixin loads TABLE_TRANSFORMS and OUTPUT_SCHEMAS when configured."""
     mod_name = register_temp_module(
@@ -567,10 +575,9 @@ def test_transform_settings_mixin_pass_loads_transforms(
     assert settings.output_schemas_module == output_schemas_module
     assert settings.table_transforms == expected_transforms
     assert settings.schema_map == expected_schema_map
-    assert settings.get_table_transforms("items") == ((expected_item_transform,) if expected_item_transform else ())
-    assert settings.get_table_transforms("other") == ()
-    assert settings.get_table_transform("items") is expected_item_transform
-    assert settings.get_table_transform("other") is None
+    expected_for_lookup = expected_item_transform if lookup_table == "items" else None
+    assert settings.get_table_transforms(lookup_table) == ((expected_for_lookup,) if expected_for_lookup else ())
+    assert settings.get_table_transform(lookup_table) is expected_for_lookup
 
 
 @pytest.mark.parametrize(
@@ -857,8 +864,17 @@ def test_emit_raw_table_fail_empty_prefix() -> None:
         emit_raw_table({"id": "1"}, ctx, prefix="")
 
 
-def test_align_and_cast_table_casts_reorders_fills_missing_and_attaches_metadata() -> None:
-    """align_and_cast_table appends missing nullable columns, casts types, orders fields, and sets schema metadata."""
+@pytest.mark.parametrize(
+    "already_aligned",
+    [
+        pytest.param(False, id="misaligned-casts-reorders-and-fills"),
+        pytest.param(True, id="already-aligned-fast-path"),
+    ],
+)
+def test_align_and_cast_table_casts_reorders_fills_missing_and_attaches_metadata(
+    already_aligned: bool,
+) -> None:
+    """align_and_cast_table aligns mismatched tables and returns already-aligned tables unchanged."""
     target_schema = pa.schema(
         [
             pa.field("id", pa.string(), nullable=False, metadata={"comment": "Identifier"}),
@@ -867,12 +883,16 @@ def test_align_and_cast_table_casts_reorders_fills_missing_and_attaches_metadata
         ],
         metadata={"comment": "Target table description"},
     )
-    raw_table = pa.table({"extra": ["drop"], "count": pa.array([3], type=pa.int32()), "id": ["a1"]})
-    aligned = align_and_cast_table(raw_table, target_schema)
+    input_table = (
+        pa.Table.from_pylist([{"id": "a1", "count": 3, "note": None}], schema=target_schema)
+        if already_aligned
+        else pa.table({"extra": ["drop"], "count": pa.array([3], type=pa.int32()), "id": ["a1"]})
+    )
+    aligned = align_and_cast_table(input_table, target_schema)
     assert aligned.schema.equals(target_schema, check_metadata=True)
     assert aligned.to_pylist() == [{"id": "a1", "count": 3, "note": None}]
-    # fast-path returns the exact same table instance when schema and metadata already match
-    assert align_and_cast_table(aligned, target_schema) is aligned
+    if already_aligned:
+        assert aligned is input_table
 
 
 def test_compose_transforms_fails_with_no_transforms() -> None:

@@ -49,7 +49,7 @@ class JsonSchemaConverterBase[OutputT](BaseModel):
         :rtype: JsonSchemaIRReader
         """
         return JsonSchemaReader(
-            self.extension_registry,
+            extension_registry=self.extension_registry,
             error_type=self._error_cls,
             converter_name=self._converter_name or type(self).__name__,
             dereference_function=self._dereference_function,

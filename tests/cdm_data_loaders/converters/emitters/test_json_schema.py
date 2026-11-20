@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Final, Literal, cast
 
 import pytest
+from pydantic import ValidationError
 from pyiceberg.schema import Schema
 from pyiceberg.types import (
     BinaryType,
@@ -469,18 +470,18 @@ def test_emit_pass_json_structural_roundtrip(schema: dict[str, Any], dialect: st
 @pytest.mark.parametrize(
     ("node", "expected"),
     [
-        (TypedNode("any"), {}),
-        (TypedNode("never"), {"not": {}}),
-        (TypedNode("null"), {"type": "null"}),
-        (TypedNode("boolean", nullable=True), {"anyOf": [{"type": "boolean"}, {"type": "null"}]}),
+        (TypedNode(type="any"), {}),
+        (TypedNode(type="never"), {"not": {}}),
+        (TypedNode(type="null"), {"type": "null"}),
+        (TypedNode(type="boolean", nullable=True), {"anyOf": [{"type": "boolean"}, {"type": "null"}]}),
         (
-            TypedNode("object", properties=(Field("flag", TypedNode("boolean"), required=True),)),
+            TypedNode(type="object", properties=(Field(name="flag", node=TypedNode(type="boolean"), required=True),)),
             {"type": "object", "properties": {"flag": {"type": "boolean"}}, "required": ["flag"]},
         ),
-        (TypedNode("array", items=TypedNode("any")), {"type": "array", "items": {}}),
-        (TypedNode("any", annotations={"description": "unrestricted"}), {"description": "unrestricted"}),
+        (TypedNode(type="array", items=TypedNode(type="any")), {"type": "array", "items": {}}),
+        (TypedNode(type="any", annotations={"description": "unrestricted"}), {"description": "unrestricted"}),
         (
-            TypedNode("map", key_type=TypedNode("integer"), value_type=TypedNode("any")),
+            TypedNode(type="map", key_type=TypedNode(type="integer"), value_type=TypedNode(type="any")),
             {
                 "type": "array",
                 "items": {
@@ -496,7 +497,7 @@ def test_emit_pass_json_structural_roundtrip(schema: dict[str, Any], dialect: st
 )
 def test_emit_pass_source_neutral_nodes(node: TypedNode, expected: dict[str, Any]) -> None:
     """Direct typed nodes emit structural schemas without a fabricated source dialect."""
-    assert JsonSchemaEmitter().emit(SchemaDocument(node)) == expected
+    assert JsonSchemaEmitter().emit(SchemaDocument(root=node)) == expected
 
 
 @pytest.mark.parametrize("mode", ["object", "array"], ids=["objects", "arrays"])
@@ -741,7 +742,7 @@ def test_emit_pass_registered_dlt_extensions(preserve: bool) -> None:
 
 def test_emit_pass_json_registered_extensions_and_field_scopes() -> None:
     """Explicit extension contracts preserve nested literal data and field annotations."""
-    registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-custom", {"type": ["array", "null"]}))
+    registry = DEFAULT_EXTENSIONS.register(ExtensionSpec(namespace="x-custom", schema={"type": ["array", "null"]}))
     source = {"$schema": JSON_SCHEMA_DIALECT, "x-custom": [{"$ref": "literal"}], "properties": {"value": False}}
     document = JsonSchemaReader(extension_registry=registry).read(source)
     assert JsonSchemaEmitter().emit(document) == source
@@ -768,7 +769,7 @@ def test_emit_pass_json_registered_extensions_and_field_scopes() -> None:
 def test_emit_fail_invalid_extension_contract(payload: dict[str, Any]) -> None:
     """Malformed extension payloads fail at the IR boundary without silent registration."""
     with pytest.raises(ExtensionError):
-        JsonSchemaEmitter().emit(SchemaDocument(TypedNode("any", extensions=payload)))
+        JsonSchemaEmitter().emit(SchemaDocument(TypedNode(type="any", extensions=payload)))
 
 
 def test_emit_fail_unknown_dlt_type() -> None:
@@ -792,12 +793,14 @@ def test_emit_fail_unsupported_iceberg_types(field_type: IcebergType) -> None:
 @pytest.mark.parametrize(
     "node",
     [
-        TypedNode("unknown"),
-        TypedNode("map"),
-        TypedNode("map", provenance=Provenance("iceberg")),
-        TypedNode("number", hints=NodeHints(logical_type="decimal"), provenance=Provenance("iceberg")),
-        TypedNode("string", hints=NodeHints(logical_type="fixed"), provenance=Provenance("iceberg")),
-        TypedNode("unknown", hints=NodeHints(logical_type="timestamp_ns"), provenance=Provenance("iceberg")),
+        TypedNode(type="unknown"),
+        TypedNode(type="map"),
+        TypedNode(type="map", provenance=Provenance(source="iceberg")),
+        TypedNode(type="number", hints=NodeHints(logical_type="decimal"), provenance=Provenance(source="iceberg")),
+        TypedNode(type="string", hints=NodeHints(logical_type="fixed"), provenance=Provenance(source="iceberg")),
+        TypedNode(
+            type="unknown", hints=NodeHints(logical_type="timestamp_ns"), provenance=Provenance(source="iceberg")
+        ),
     ],
     ids=[
         "unknown",
@@ -811,13 +814,13 @@ def test_emit_fail_unsupported_iceberg_types(field_type: IcebergType) -> None:
 def test_emit_fail_incomplete_type_facts(node: TypedNode) -> None:
     """Missing required logical facts and unknown types are not silently guessed."""
     with pytest.raises(ConversionError):
-        JsonSchemaEmitter().emit(SchemaDocument(node))
+        JsonSchemaEmitter().emit(SchemaDocument(root=node))
 
 
 @pytest.mark.parametrize("policy", [None, 0, "true"], ids=["none", "integer", "string"])
 def test_json_schema_emitter_fail_nonboolean_policy(policy: object) -> None:
     """The hint policy accepts actual booleans only."""
-    with pytest.raises(TypeError, match="must be a boolean"):
+    with pytest.raises(ValidationError, match="preserve_unknown_hints"):
         JsonSchemaEmitter(preserve_unknown_hints=cast("bool", policy))
 
 
@@ -866,19 +869,23 @@ def test_emit_pass_sibling_and_call_isolation(logical: str) -> None:
     ("document", "expected"),
     [
         (
-            SchemaDocument(TypedNode("any"), name="records"),
+            SchemaDocument(root=TypedNode(type="any"), name="records"),
             {"title": "records"},
         ),
         (
             SchemaDocument(
                 TypedNode(
-                    "object",
+                    type="object",
                     properties=(
-                        Field("flag", TypedNode("boolean", hints=NodeHints(logical_type="bool")), required=True),
+                        Field(
+                            name="flag",
+                            node=TypedNode(type="boolean", hints=NodeHints(logical_type="bool")),
+                            required=True,
+                        ),
                     ),
                 ),
                 name="records",
-                provenance=Provenance("dlt"),
+                provenance=Provenance(source="dlt"),
             ),
             {
                 "type": "object",
@@ -893,11 +900,11 @@ def test_emit_pass_sibling_and_call_isolation(logical: str) -> None:
         (
             SchemaDocument(
                 TypedNode(
-                    "integer",
+                    type="integer",
                     hints=NodeHints(logical_type="int", bit_width=32),
                     nullable=True,
                     extensions={"x-iceberg": {"logical_type": "int"}},
-                    provenance=Provenance("iceberg"),
+                    provenance=Provenance(source="iceberg"),
                 ),
                 dialect="urn:dialect",
                 identifier="urn:identifier",
@@ -942,7 +949,7 @@ def test_emit_pass_document_and_type_metadata(document: SchemaDocument, expected
         pytest.param(
             True,
             {},
-            (Field("flag", TypedNode("boolean")),),
+            (Field(name="flag", node=TypedNode(type="boolean")),),
             {"properties": {"flag": {"type": "boolean"}}},
             id="true-with-properties",
         ),
@@ -961,4 +968,4 @@ def test_emit_pass_boolean_node_metadata_and_edits(
         node = replace(node, annotations=annotations)
     if properties:
         node = replace(node, properties=properties)
-    assert JsonSchemaEmitter().emit(SchemaDocument(node)) == expected
+    assert JsonSchemaEmitter().emit(SchemaDocument(root=node)) == expected

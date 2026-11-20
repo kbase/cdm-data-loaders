@@ -3,12 +3,12 @@
 import base64
 import hashlib
 import re
-from dataclasses import dataclass
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import IO, Any, Final, Protocol, runtime_checkable
 
 from awscrt.checksums import crc64nvme as _crc64nvme
+from pydantic import BaseModel, ConfigDict
 
 HASH_CHUNK_BYTES: Final[int] = 1 << 20
 
@@ -21,8 +21,7 @@ EXTRA_ALGORITHMS = frozenset({"crc64nvme"})
 logger: Logger = getLogger(__name__)
 
 
-@dataclass(frozen=True, slots=True)
-class ChecksumEntry:
+class ChecksumEntry(BaseModel):
     """A single expected checksum, tied to a specific algorithm.
 
     :param algorithm: hashlib algorithm name the checksum was generated with
@@ -30,6 +29,8 @@ class ChecksumEntry:
     :param value: expected digest, as lowercase hex
     :type value: str
     """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     algorithm: str
     value: str

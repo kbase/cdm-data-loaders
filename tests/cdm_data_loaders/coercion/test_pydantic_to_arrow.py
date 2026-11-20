@@ -31,10 +31,17 @@ class _SampleRecord(BaseModel):
     created_at: datetime
 
 
-def test_coerce_pydantic_record_for_pyarrow_pass_model_and_mapping_parity() -> None:
+@pytest.mark.parametrize(
+    "from_model",
+    [
+        pytest.param(True, id="validated-model"),
+        pytest.param(False, id="raw-mapping"),
+    ],
+)
+def test_coerce_pydantic_record_for_pyarrow_pass_model_and_mapping_parity(from_model: bool) -> None:
     """coerce_pydantic_record_for_pyarrow produces identical rows from validated models and raw dicts."""
     pa_schema = generate_pyarrow_schema(_SampleRecord, by_alias=True)
-    raw = {
+    raw: dict[str, Any] = {
         "record_id": "rec-1",
         "secret_token": "top-secret",
         "raw_key": b"\x01\x02",
@@ -43,13 +50,11 @@ def test_coerce_pydantic_record_for_pyarrow_pass_model_and_mapping_parity() -> N
         "duration": "PT90S",
         "created_at": "2024-05-01T10:00:00Z",
     }
-    instance = _SampleRecord.model_validate(raw)
+    record_input: _SampleRecord | dict[str, Any] = _SampleRecord.model_validate(raw) if from_model else raw
+    model_arg = None if from_model else _SampleRecord
 
-    from_model = coerce_pydantic_record_for_pyarrow(instance, pa_schema, by_alias=True)
-    from_dict = coerce_pydantic_record_for_pyarrow(raw, pa_schema, model=_SampleRecord, by_alias=True)
-
-    assert from_model == from_dict
-    assert from_model == {
+    coerced = coerce_pydantic_record_for_pyarrow(record_input, pa_schema, model=model_arg, by_alias=True)
+    assert coerced == {
         "recordId": "rec-1",
         "secret_token": "top-secret",
         "raw_key": b"\x01\x02",
@@ -58,7 +63,7 @@ def test_coerce_pydantic_record_for_pyarrow_pass_model_and_mapping_parity() -> N
         "duration": "PT1M30S",
         "created_at": datetime(2024, 5, 1, 10, 0, tzinfo=UTC),
     }
-    table = pa.Table.from_pylist([from_model], schema=pa_schema)
+    table = pa.Table.from_pylist([coerced], schema=pa_schema)
     assert table.num_rows == 1
 
 
@@ -187,28 +192,47 @@ class _ScalarRootModel(RootModel[int]):
     pass
 
 
-def test_coerce_pydantic_record_for_pyarrow_pass_root_models_excluded_fields_and_dataclass() -> None:
+@pytest.mark.parametrize(
+    ("instance", "pa_schema", "expected"),
+    [
+        pytest.param(
+            _NestedRootModel(_ModelWithExcludedAndComputed(visible=5, coord=_Coord(x=3))),
+            pa.schema(
+                [
+                    pa.field("visible", pa.int64()),
+                    pa.field("hidden", pa.string()),
+                    pa.field("doubled", pa.int64()),
+                    pa.field("coord", pa.struct([pa.field("x", pa.int64()), pa.field("y", pa.int64())])),
+                ]
+            ),
+            {
+                "visible": 5,
+                "doubled": 10,
+                "coord": {"x": 3},
+            },
+            id="nested-root-model",
+        ),
+        pytest.param(
+            _MappingRootModel({"k": 9}),
+            pa.schema([pa.field("k", pa.int64())]),
+            {"k": 9},
+            id="mapping-root-model",
+        ),
+        pytest.param(
+            _ScalarRootModel(42),
+            pa.schema([pa.field("_value", pa.int64())]),
+            {"_value": 42},
+            id="scalar-root-model",
+        ),
+    ],
+)
+def test_coerce_pydantic_record_for_pyarrow_pass_root_models_excluded_fields_and_dataclass(
+    instance: BaseModel,
+    pa_schema: pa.Schema,
+    expected: dict[str, Any],
+) -> None:
     """RootModel variants, excluded fields, computed fields, and dataclass structs coerce as expected."""
-    nested_schema = pa.schema(
-        [
-            pa.field("visible", pa.int64()),
-            pa.field("hidden", pa.string()),
-            pa.field("doubled", pa.int64()),
-            pa.field("coord", pa.struct([pa.field("x", pa.int64()), pa.field("y", pa.int64())])),
-        ]
-    )
-    nested_instance = _NestedRootModel(_ModelWithExcludedAndComputed(visible=5, coord=_Coord(x=3)))
-    assert coerce_pydantic_record_for_pyarrow(nested_instance, nested_schema) == {
-        "visible": 5,
-        "doubled": 10,
-        "coord": {"x": 3},
-    }
-
-    map_schema = pa.schema([pa.field("k", pa.int64())])
-    assert coerce_pydantic_record_for_pyarrow(_MappingRootModel({"k": 9}), map_schema) == {"k": 9}
-
-    scalar_schema = pa.schema([pa.field("_value", pa.int64())])
-    assert coerce_pydantic_record_for_pyarrow(_ScalarRootModel(42), scalar_schema) == {"_value": 42}
+    assert coerce_pydantic_record_for_pyarrow(instance, pa_schema) == expected
 
 
 def test_to_jsonable_recursive_pass_root_model_enum_network_and_scalars() -> None:

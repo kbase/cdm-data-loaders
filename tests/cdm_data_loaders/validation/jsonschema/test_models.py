@@ -3,6 +3,7 @@
 import json
 import re
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any, Final
 
@@ -331,6 +332,13 @@ def test_custom_xsv_metaschema_pass_accepts_valid_config(
 
 
 @pytest.mark.parametrize(
+    "via_file",
+    [
+        pytest.param(False, id="validator-check-schema"),
+        pytest.param(True, id="validate-xsv-jsonschema"),
+    ],
+)
+@pytest.mark.parametrize(
     ("x_xsv_config", "error_match"),
     [
         pytest.param(
@@ -350,20 +358,25 @@ def test_custom_xsv_metaschema_fail_rejects_invalid_config(
     make_schema_file: Callable[..., Path],
     x_xsv_config: dict[str, Any],
     error_match: str,
+    via_file: bool,
 ) -> None:
     """A schema whose x-xsv-config block violates the custom metaschema raises SchemaError."""
     register_xsv_validator()
-    validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
     schema = {
         "$schema": CUSTOM_META_SCHEMA_URI,
         "required": ["a"],
         "x-xsv-config": x_xsv_config,
     }
 
+    if via_file:
+        schema_path = make_schema_file(schema)
+        check_fn: Callable[[], object] = partial(validate_xsv_jsonschema, schema_path)
+    else:
+        validator_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI})
+        check_fn = partial(validator_cls.check_schema, schema)
+
     with pytest.raises(jsonschema.exceptions.SchemaError, match=error_match):
-        validator_cls.check_schema(schema)
-    with pytest.raises(jsonschema.exceptions.SchemaError, match=error_match):
-        validate_xsv_jsonschema(make_schema_file(schema))
+        check_fn()
 
 
 """generate_header"""

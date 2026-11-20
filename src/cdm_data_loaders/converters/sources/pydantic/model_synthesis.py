@@ -3,37 +3,61 @@
 import inspect
 import sys
 from collections.abc import Mapping
-from dataclasses import MISSING, dataclass, field, is_dataclass
+from dataclasses import MISSING, field, is_dataclass, replace
 from dataclasses import fields as dc_fields
 from enum import Enum, IntEnum, StrEnum
-from typing import Any, NoReturn, NotRequired, Required, Self, get_args, get_origin, get_type_hints, is_typeddict
+from typing import (
+    Annotated,
+    Any,
+    NoReturn,
+    NotRequired,
+    Required,
+    Self,
+    get_args,
+    get_origin,
+    get_type_hints,
+    is_typeddict,
+)
 
 from frozendict import frozendict
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
+    GetPydanticSchema,
+    InstanceOf,
     PydanticSchemaGenerationError,
     PydanticUndefinedAnnotation,
     RootModel,
+    StrictBool,
+    StrictInt,
+    StrictStr,
     create_model,
 )
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic.fields import FieldInfo
+from pydantic_core import core_schema
 
-from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
-from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
+from cdm_data_loaders.converters.core.errors import ConversionError, ErrorCodeMap, raise_spec_error
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, StrictPositiveRecursionDepth
+
+type _ModuleNamespace = Annotated[
+    Mapping[str, Any],
+    GetPydanticSchema(lambda _tp, _handler: core_schema.is_instance_schema(Mapping)),
+]
 
 
-@dataclass(frozen=True, slots=True)
+@pydantic_dataclass(frozen=True, slots=True, config=ConfigDict(arbitrary_types_allowed=True, extra="forbid"))
 class SchemaBuildContext:
     """Immutable traversal context for Pydantic to IR schema generation."""
 
-    model_counts: Mapping[type[BaseModel], int] = field(default_factory=frozendict)
-    active_aliases: frozenset[object] = field(default_factory=frozenset)
-    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
-    by_alias: bool = False
-    module_ns: Mapping[str, Any] = field(default_factory=frozendict)
-    error_type: type[ConversionError] = ConversionError
-    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
+    model_counts: Mapping[type[BaseModel], StrictInt] = field(default_factory=frozendict)
+    active_aliases: frozenset[Any] = field(default_factory=frozenset)
+    max_recursion_depth: StrictPositiveRecursionDepth = DEFAULT_MAX_RECURSION_DEPTH
+    by_alias: StrictBool = False
+    module_ns: _ModuleNamespace = field(default_factory=frozendict)
+    error_type: type[ConversionError] = field(default_factory=lambda: ConversionError)
+    error_by_code: ErrorCodeMap = field(default_factory=frozendict)
 
     def raise_err(self, code: str, msg: str, *, cause: BaseException | None = None) -> NoReturn:
         """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.
@@ -64,14 +88,11 @@ class SchemaBuildContext:
         """
         mod = sys.modules.get(model.__module__)
         ns = frozendict(vars(mod)) if mod is not None else self.module_ns
-        return type(self)(
+        return replace(
+            self,
             model_counts=frozendict({**self.model_counts, model: self.model_counts.get(model, 0) + 1}),
             active_aliases=frozenset(),
-            max_recursion_depth=self.max_recursion_depth,
-            by_alias=self.by_alias,
             module_ns=ns,
-            error_type=self.error_type,
-            error_by_code=self.error_by_code,
         )
 
     def with_alias(self, alias_obj: object) -> Self:
@@ -82,27 +103,19 @@ class SchemaBuildContext:
         :return: Updated traversal context.
         :rtype: Self
         """
-        return type(self)(
-            model_counts=self.model_counts,
-            active_aliases=self.active_aliases | {alias_obj},
-            max_recursion_depth=self.max_recursion_depth,
-            by_alias=self.by_alias,
-            module_ns=self.module_ns,
-            error_type=self.error_type,
-            error_by_code=self.error_by_code,
-        )
+        return replace(self, active_aliases=self.active_aliases | {alias_obj})
 
 
-@dataclass(frozen=True, slots=True)
+@pydantic_dataclass(frozen=True, slots=True, config=ConfigDict(extra="forbid"))
 class ModelFieldSpec:
     """Internal specification of an active field extracted from a ``BaseModel``."""
 
-    output_name: str
-    annotation: object
-    field_info: FieldInfo | None
-    description: str | None
-    required_non_null: bool
-    context: SchemaBuildContext
+    output_name: StrictStr
+    annotation: Any
+    field_info: InstanceOf[FieldInfo] | None
+    description: StrictStr | None
+    required_non_null: StrictBool
+    context: InstanceOf[SchemaBuildContext]
 
 
 def ensure_model_complete(model: type[BaseModel], ctx: SchemaBuildContext | None = None) -> None:

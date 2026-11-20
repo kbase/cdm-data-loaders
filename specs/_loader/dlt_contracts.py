@@ -1,6 +1,5 @@
 """Static PyArrow probe schemas and dlt normalization contracts shared by docs macros and tests."""
 
-from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -8,6 +7,7 @@ from typing import Any, Final
 
 import pyarrow as pa
 from frozendict import frozendict
+from pydantic import BaseModel, ConfigDict
 from pyiceberg.schema import Schema as IcebergSchema
 from pyiceberg.types import (
     BooleanType,
@@ -845,9 +845,10 @@ EXPECTED_DEEP_NESTED_ICEBERG_SCAN_ARROW_SCHEMA: Final[pa.Schema] = pa.schema(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class ShapeExpectation:
+class ShapeExpectation(BaseModel):
     """Input schema, rows, and per-layer expectations for one ``TableShape``."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
     input_arrow_schema: pa.Schema
     table_metadata: dict[str, str]

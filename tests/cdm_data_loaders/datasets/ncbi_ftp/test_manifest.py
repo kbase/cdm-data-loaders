@@ -681,21 +681,35 @@ def test_filter_unpromoted_manifest_lines_exact_version_and_unparseable() -> Non
     ]
 
 
+@pytest.mark.parametrize(
+    ("database", "expected_ids"),
+    [
+        pytest.param(Source.REFSEQ, ["GCF_000001215.4"], id="refseq"),
+        pytest.param(Source.GENBANK, ["GCA_012345678.1"], id="genbank"),
+    ],
+)
 @patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
-def test_scan_store_filters_by_database_and_rejects_unknown_database(mock_list_objects: MagicMock) -> None:
-    """Scan store filters by GCA_ prefix for genbank and raises ValueError on unknown database."""
+def test_scan_store_filters_by_database(
+    mock_list_objects: MagicMock,
+    database: Source,
+    expected_ids: list[str],
+) -> None:
+    """Filter S3 object keys by database accession prefix when scanning synthetic summary."""
     mock_list_objects.return_value = [
         {"Key": "prefix/GCF_000001215.4_Release_6/file.gz", "LastModified": datetime(2024, 1, 1, tzinfo=UTC)},
         {"Key": "prefix/GCA_012345678.1_ASM123v1/file.gz", "LastModified": datetime(2024, 1, 2, tzinfo=UTC)},
     ]
-    genbank_records = scan_store_to_synthetic_summary(
+    records = scan_store_to_synthetic_summary(
         PurePosixPath("test-bucket"),
         PurePosixPath("prefix"),
         "2024/01/31",
-        database=Source.GENBANK,
+        database=database,
     )
-    assert list(genbank_records) == ["GCA_012345678.1"]
+    assert list(records) == expected_ids
 
+
+def test_scan_store_rejects_unknown_database() -> None:
+    """Raise ValueError when scanning store with an unsupported database name."""
     with pytest.raises(ValueError, match="Unknown database"):
         scan_store_to_synthetic_summary(
             PurePosixPath("test-bucket"),

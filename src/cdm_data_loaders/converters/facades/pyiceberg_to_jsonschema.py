@@ -17,7 +17,7 @@ def convert_type(
     return cast(
         "dict[str, Any]",
         JsonSchemaEmitter().emit_node(
-            IcebergReader(extension_registry, mapping_target="JSON Schema").read_node(field_type)
+            IcebergReader(extension_registry=extension_registry, mapping_target="JSON Schema").read_node(field_type)
         ),
     )
 
@@ -27,7 +27,7 @@ def convert_field(field: NestedField, *, extension_registry: ExtensionRegistry =
     return cast(
         "dict[str, Any]",
         JsonSchemaEmitter().emit_field(
-            IcebergReader(extension_registry, mapping_target="JSON Schema").read_field(field)
+            IcebergReader(extension_registry=extension_registry, mapping_target="JSON Schema").read_field(field)
         ),
     )
 
@@ -58,6 +58,8 @@ def table_to_json_schema(
     :type schema: dict[str, Any] | None
     :returns: JSON Schema document, or the destination namespace document when ``schema`` is given.
     """
-    document = IcebergReader(extension_registry, mapping_target="JSON Schema").read_table(table, identifier)
+    document = IcebergReader(extension_registry=extension_registry, mapping_target="JSON Schema").read_table(
+        table, identifier
+    )
     emitter = JsonSchemaEmitter()
     return emitter.emit(document) if schema is None else emitter.emit_into(document, schema)
