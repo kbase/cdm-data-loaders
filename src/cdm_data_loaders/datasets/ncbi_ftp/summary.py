@@ -30,7 +30,7 @@ FTP_URL_COL: Final[int] = 19
 MIN_COL: Final[int] = 20
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class AssemblyRecord:
     """Parsed row from an NCBI assembly summary file."""
 
