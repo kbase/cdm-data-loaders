@@ -1,15 +1,16 @@
 """Read PyArrow schemas, fields, and data types into the converter IR."""
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import Any, Final, Never
 
 import pyarrow as pa
 from frozendict import frozendict
+from pydantic import BaseModel, ConfigDict, Field, InstanceOf, StrictBool
 
 from cdm_data_loaders.converters.core.constants import DECIMAL128_BITS, DECIMAL256_BITS
-from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
+from cdm_data_loaders.converters.core.errors import ConversionError, ErrorCodeMap, raise_spec_error
+from cdm_data_loaders.converters.core.extensions import ExtensionRegistry, Extensions, default_extension_registry
 from cdm_data_loaders.converters.core.ir import (
     SPEC_BINARY,
     SPEC_BOOL,
@@ -98,15 +99,16 @@ def _format_path(path: tuple[str | int, ...]) -> str:
     return ".".join(str(part) for part in path) if path else "<root>"
 
 
-@dataclass(frozen=True, slots=True)
-class PyArrowReader:
+class PyArrowReader(BaseModel):
     """Read PyArrow ``pa.Schema``, ``pa.Field``, and ``pa.DataType`` objects into the converter IR."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
+
     source_name: Source = "pyarrow"
-    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
-    include_pyarrow_metadata: bool = True
-    error_type: type[ConversionError] = PyArrowReaderError
-    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
+    extension_registry: InstanceOf[ExtensionRegistry] = Field(default_factory=default_extension_registry)
+    include_pyarrow_metadata: StrictBool = True
+    error_type: type[ConversionError] = Field(default_factory=lambda: PyArrowReaderError)
+    error_by_code: ErrorCodeMap = Field(default_factory=frozendict)
 
     def _raise_error(self, code: str, msg: str) -> Never:
         """Raise the configured exception class for ``code``.
@@ -134,7 +136,7 @@ class PyArrowReader:
         """
         if not self.include_pyarrow_metadata or not payload:
             return frozendict()
-        return Extensions({"x-pyarrow": dict(payload)}, self.extension_registry)
+        return Extensions(payload={"x-pyarrow": dict(payload)}, registry=self.extension_registry)
 
     def _validate_field_list(
         self,
@@ -207,7 +209,7 @@ class PyArrowReader:
             required_names=required_names,
             additional_properties=TypedNode(type="never", nullable=False),
             annotations=annotations,
-            provenance=Provenance(self.source_name, ()),
+            provenance=Provenance(source=self.source_name),
         )
         return SchemaDocument(
             root=root,
@@ -215,7 +217,7 @@ class PyArrowReader:
             identifier=resolved_id,
             annotations=annotations,
             extensions=doc_extensions,
-            provenance=Provenance(self.source_name, ()),
+            provenance=Provenance(source=self.source_name),
         )
 
     def read_field(self, source: pa.Field) -> SchemaField:
@@ -284,7 +286,7 @@ class PyArrowReader:
             required=not pa_field.nullable,
             annotations=annotations,
             extensions=field_extensions,
-            provenance=Provenance(self.source_name, path, prov_meta),
+            provenance=Provenance(source=self.source_name, path=path, metadata=prov_meta),
         )
 
     def _item_node(
@@ -397,7 +399,7 @@ class PyArrowReader:
         """
         meta = decode_field_metadata(metadata)
         prov_meta = {k: meta[k] for k in PROVENANCE_METADATA_KEYS if k in meta}
-        provenance = Provenance(self.source_name, path, prov_meta)
+        provenance = Provenance(source=self.source_name, path=path, metadata=prov_meta)
         loc = _format_path(path)
 
         if pa.types.is_null(dtype):

@@ -58,26 +58,29 @@ def test_read_pass_exact_tree() -> None:
         inferred_type="object",
         properties=(
             Field(
-                "a",
-                TypedNode(
+                name="a",
+                node=TypedNode(
                     type="unknown",
                     nullable=True,
                     declared_type=("string", "null"),
                     source_keywords=("type",),
-                    provenance=Provenance("json-schema", ("properties", "a")),
+                    provenance=Provenance(source="json-schema", path=("properties", "a")),
                 ),
                 required=True,
             ),
             Field(
-                "b", TypedNode(type="never", nullable=False, provenance=Provenance("json-schema", ("properties", "b")))
+                name="b",
+                node=TypedNode(
+                    type="never", nullable=False, provenance=Provenance(source="json-schema", path=("properties", "b"))
+                ),
             ),
         ),
         required_names=("a", "not-declared"),
         additional_properties=TypedNode(
-            type="any", nullable=True, provenance=Provenance("json-schema", ("additionalProperties",))
+            type="any", nullable=True, provenance=Provenance(source="json-schema", path=("additionalProperties",))
         ),
         annotations={"$schema": DIALECT},
-        provenance=Provenance("json-schema"),
+        provenance=Provenance(source="json-schema"),
         source_keywords=("$schema", "type", "required", "properties", "additionalProperties"),
     )
 
@@ -186,9 +189,9 @@ def test_read_fail_document(schema: dict[str, Any] | bool) -> None:
 
 def test_read_pass_custom_registry_and_empty_schemas() -> None:
     """Custom extensions and empty object subschemas need no nonempty required list."""
-    registry = DEFAULT_EXTENSIONS.register(ExtensionSpec("x-owned", {"type": ["array", "null"]}))
+    registry = DEFAULT_EXTENSIONS.register(ExtensionSpec(namespace="x-owned", schema={"type": ["array", "null"]}))
     root = (
-        JsonSchemaReader(registry)
+        JsonSchemaReader(extension_registry=registry)
         .read(
             {
                 "$schema": DIALECT,

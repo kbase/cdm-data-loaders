@@ -3,6 +3,7 @@
 import re
 import threading
 import time
+from collections.abc import Callable
 
 import pytest
 from tqdm import tqdm
@@ -17,10 +18,57 @@ from cdm_data_loaders.utils.progress import (
 """Tests for SynchronizedCallback"""
 
 
-def test_synchronizedcallback_pass_forwards_single_call() -> None:
-    """Calling the wrapper invokes the wrapped callback exactly once with the given argument."""
+def _make_builtin_method_sink() -> tuple[Callable[[int], None], list[int]]:
+    """Return a list.append callback and its recorded argument list."""
     calls: list[int] = []
-    wrapped = SynchronizedCallback(calls.append)
+    return calls.append, calls
+
+
+def _make_named_function_sink() -> tuple[Callable[[int], None], list[int]]:
+    """Return a named function callback and its recorded argument list."""
+    calls: list[int] = []
+
+    def record(amount: int) -> None:
+        calls.append(amount)
+
+    return record, calls
+
+
+def _make_lambda_sink() -> tuple[Callable[[int], None], list[int]]:
+    """Return a lambda callback and its recorded argument list."""
+    calls: list[int] = []
+    return (lambda amount: calls.extend([amount])), calls
+
+
+def _make_bound_method_sink() -> tuple[Callable[[int], None], list[int]]:
+    """Return a bound instance method callback and its recorded argument list."""
+
+    class Accumulator:
+        def __init__(self) -> None:
+            self.calls: list[int] = []
+
+        def add(self, amount: int) -> None:
+            self.calls.append(amount)
+
+    acc = Accumulator()
+    return acc.add, acc.calls
+
+
+@pytest.mark.parametrize(
+    "sink_factory",
+    [
+        pytest.param(_make_builtin_method_sink, id="builtin-method"),
+        pytest.param(_make_named_function_sink, id="named-function"),
+        pytest.param(_make_lambda_sink, id="lambda"),
+        pytest.param(_make_bound_method_sink, id="bound-method"),
+    ],
+)
+def test_synchronizedcallback_pass_forwards_single_call(
+    sink_factory: Callable[[], tuple[Callable[[int], None], list[int]]],
+) -> None:
+    """Calling the wrapper invokes the wrapped callback once across callable kinds."""
+    callback, calls = sink_factory()
+    wrapped = SynchronizedCallback(callback)
     wrapped(42)
     assert calls == [42]
 
@@ -32,36 +80,6 @@ def test_synchronizedcallback_pass_forwards_multiple_calls_in_order() -> None:
     for amount in (1, 2, 3, 4):
         wrapped(amount)
     assert calls == [1, 2, 3, 4]
-
-
-def test_synchronizedcallback_pass_works_with_lambda() -> None:
-    """SynchronizedCallback works with a lambda, not just named functions."""
-    n1 = 5
-    n2 = 7
-    total = {"value": 0}
-    wrapped = SynchronizedCallback(lambda n: total.__setitem__("value", total["value"] + n))
-    wrapped(n1)
-    wrapped(n2)
-    assert total["value"] == n1 + n2
-
-
-def test_synchronizedcallback_pass_works_with_bound_method() -> None:
-    """SynchronizedCallback works with a bound method as the wrapped callable."""
-    n1 = 5
-    n2 = 7
-
-    class Accumulator:
-        def __init__(self) -> None:
-            self.total = 0
-
-        def add(self, amount: int) -> None:
-            self.total += amount
-
-    acc = Accumulator()
-    wrapped = SynchronizedCallback(acc.add)
-    wrapped(n1)
-    wrapped(n2)
-    assert acc.total == n1 + n2
 
 
 def test_synchronizedcallback_pass_thread_safe_concurrent_calls_all_counted() -> None:

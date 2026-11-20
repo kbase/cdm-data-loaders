@@ -65,8 +65,31 @@ def test_settings_date_formats_and_paths(
     assert settings.mod_date == expected_date
     assert settings.mod_date_tag == "20240501"
     assert settings.derived_dir == out_dir / "derived"
-    assert settings.source_dir(Source.REFSEQ) == out_dir / "refseq"
-    assert settings.source_dir(Source.GENBANK) == out_dir / "genbank"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_subdir"),
+    [
+        pytest.param(Source.REFSEQ, "refseq", id="refseq"),
+        pytest.param(Source.GENBANK, "genbank", id="genbank"),
+    ],
+)
+def test_settings_source_dir(
+    input_files: tuple[Path, Path],
+    tmp_path: Path,
+    source: Source,
+    expected_subdir: str,
+) -> None:
+    """Resolve per-source output subdirectory under output_dir."""
+    mod_times, interesting = input_files
+    out_dir = tmp_path / "out"
+    settings = FilterNcbiUpdatesSettings(
+        ftp_mod_times_path=mod_times,
+        assemblies_of_interest_path=interesting,
+        mod_date="2024/05/01",
+        output_dir=out_dir,
+    )
+    assert settings.source_dir(source) == out_dir / expected_subdir
 
 
 @pytest.mark.parametrize(

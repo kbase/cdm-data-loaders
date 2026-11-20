@@ -2,12 +2,15 @@
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Any, Final, Literal
+
+from pydantic import BaseModel, ConfigDict, InstanceOf, StrictBool
+from pydantic import Field as PydanticField
 
 from cdm_data_loaders.converters.core.dlt_normalization import DltTableNode, unflatten_tables
 from cdm_data_loaders.converters.core.errors import ConversionError
-from cdm_data_loaders.converters.core.extensions import DEFAULT_EXTENSIONS, ExtensionRegistry, Extensions
+from cdm_data_loaders.converters.core.extensions import ExtensionRegistry, Extensions, default_extension_registry
 from cdm_data_loaders.converters.core.ir import Field, NodeHints, NodeType, Provenance, SchemaDocument, TypedNode
 
 logger = logging.getLogger(__name__)
@@ -27,23 +30,15 @@ TYPES: Final[dict[str, NodeType]] = {
 }
 
 
-@dataclass(frozen=True, slots=True)
-class DltReader:
+class DltReader(BaseModel):
     """Resolve filtering and ambiguous child-table shape at the reader boundary."""
 
-    include_dlt_columns: bool = False
-    include_variant_columns: bool = False
-    child_table_mode: Literal["object", "array"] = "object"
-    extension_registry: ExtensionRegistry = DEFAULT_EXTENSIONS
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
-    def __post_init__(self) -> None:
-        """Reject invalid policy configuration."""
-        if self.child_table_mode not in {"object", "array"}:
-            msg = "child_table_mode must be 'object' or 'array'"
-            raise ValueError(msg)
-        if type(self.include_dlt_columns) is not bool or type(self.include_variant_columns) is not bool:
-            msg = "Column filters must be booleans"
-            raise TypeError(msg)
+    include_dlt_columns: StrictBool = False
+    include_variant_columns: StrictBool = False
+    child_table_mode: Literal["object", "array"] = "object"
+    extension_registry: InstanceOf[ExtensionRegistry] = PydanticField(default_factory=default_extension_registry)
 
     def read(self, source: Mapping[str, Any]) -> dict[str, SchemaDocument]:
         """Return ordered root documents from stored-schema or plain-table input."""
@@ -111,7 +106,7 @@ class DltReader:
             if required:
                 required_names.append(name)
         annotations = {"description": table.table["description"]} if "description" in table.table else {}
-        provenance = Provenance("dlt", ("tables", table.name), table.table)
+        provenance = Provenance(source="dlt", path=("tables", table.name), metadata=table.table)
         object_node = TypedNode(
             type="object",
             nullable=False,
@@ -140,7 +135,7 @@ class DltReader:
         kind = TYPES.get(data_type, "any" if data_type is None else "unknown")
         if kind == "unknown":
             logger.warning("Unknown dlt data_type %r at %s.%s retained in IR", data_type, table_name, name)
-        provenance = Provenance("dlt", ("tables", table_name, "columns", name), column)
+        provenance = Provenance(source="dlt", path=("tables", table_name, "columns", name), metadata=column)
         nullable = column.get("nullable", True)
         hints = NodeHints(
             logical_type=data_type,
@@ -149,7 +144,7 @@ class DltReader:
             bit_width=column.get("precision") if data_type == "bigint" else None,
             timezone=column.get("timezone"),
         )
-        extensions = Extensions({"x-dlt": dict(column)}, self.extension_registry)
+        extensions = Extensions(payload={"x-dlt": dict(column)}, registry=self.extension_registry)
         node = TypedNode(
             type=kind,
             nullable=nullable,

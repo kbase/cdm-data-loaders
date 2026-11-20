@@ -1,7 +1,6 @@
 """Unit tests for `cdm_data_loaders.core.reporting`."""
 
 import logging
-from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +20,7 @@ from dlt.common.storages.load_package import (
     ParsedLoadJobFileName,
     TPackageJobState,
 )
+from pydantic import ValidationError
 from requests import RequestException
 
 from cdm_data_loaders.core.fields import FILE_LISTING_FILE_NAME, PIPELINE_DIR_NAME, REPORT_FILE_NAME
@@ -442,8 +442,20 @@ def test_pipeline_report_frozen() -> None:
         started_at=MOCK_START_TIME,
         finished_at=MOCK_FINISH_TIME,
     )
-    with pytest.raises(FrozenInstanceError):
+    with pytest.raises(ValidationError):
         report.pipeline_name = "other"  # type: ignore[misc]
+
+
+def test_pipeline_report_fail_invalid_load_info() -> None:
+    """PipelineReport rejects non-LoadInfo values for pipeline_load_info."""
+    with pytest.raises(ValidationError, match="Input should be an instance of LoadInfo"):
+        PipelineReport(
+            pipeline_name=TEST_PIPELINE_NAME,
+            dataset_name="test_dataset",
+            started_at=MOCK_START_TIME,
+            finished_at=MOCK_FINISH_TIME,
+            pipeline_load_info={"loads_ids": ["1.0"]},  # type: ignore[arg-type]
+        )
 
 
 def test_write_pipeline_report_pass_completed_no_errors(tmp_path: Path) -> None:
@@ -454,7 +466,7 @@ def test_write_pipeline_report_pass_completed_no_errors(tmp_path: Path) -> None:
         dataset_name="test_dataset",
         started_at=MOCK_START_TIME,
         finished_at=MOCK_FINISH_TIME,
-        pipeline_load_info=MagicMock(loads_ids=["1700000000.123"]),
+        pipeline_load_info=MagicMock(spec=LoadInfo, loads_ids=["1700000000.123"], load_packages=[]),
     )
 
     write_pipeline_report(report_path, report)
@@ -483,6 +495,7 @@ def test_write_pipeline_report_pass_completed_with_errors_and_unsaved_info(tmp_p
         started_at=MOCK_START_TIME,
         finished_at=MOCK_FINISH_TIME,
         pipeline_load_info=MagicMock(
+            spec=LoadInfo,
             loads_ids=["1.0", "2.0"],
             load_packages=[
                 MagicMock(
@@ -566,7 +579,7 @@ def test_write_pipeline_report_fail_oserror_logged(
         dataset_name="test_dataset",
         started_at=MOCK_START_TIME,
         finished_at=MOCK_FINISH_TIME,
-        pipeline_load_info=MagicMock(loads_ids=["1700000000.123"]),
+        pipeline_load_info=MagicMock(spec=LoadInfo, loads_ids=["1700000000.123"], load_packages=[]),
     )
     monkeypatch.setattr(Path, "open", MagicMock(side_effect=OSError("disk full")))
 
@@ -595,7 +608,7 @@ def test_write_pipeline_report_pass_ingested_files(
         dataset_name="test_dataset",
         started_at=MOCK_START_TIME,
         finished_at=MOCK_FINISH_TIME,
-        pipeline_load_info=MagicMock(loads_ids=["1700000000.123"]),
+        pipeline_load_info=MagicMock(spec=LoadInfo, loads_ids=["1700000000.123"], load_packages=[]),
         ingested_files=ingested_files,
     )
 
@@ -640,7 +653,7 @@ def make_metadata_pipeline_and_load_info(
     else:
         pipeline.run.return_value = save_run_result
 
-    load_info = MagicMock()
+    load_info = MagicMock(spec=LoadInfo)
     load_info.has_failed_jobs = has_failed_jobs
     load_info.loads_ids = ["1700000000.123"] if loads_ids is None else loads_ids
     load_info.started_at = MOCK_LOAD_START_TIME
@@ -984,7 +997,7 @@ def test_write_pipeline_report_pass_preprocess_errors(
         dataset_name=TEST_DATASET_NAME,
         started_at=MOCK_START_TIME,
         finished_at=MOCK_FINISH_TIME,
-        pipeline_load_info=MagicMock(loads_ids=["1700000000.123"], load_packages=load_packages),
+        pipeline_load_info=MagicMock(spec=LoadInfo, loads_ids=["1700000000.123"], load_packages=load_packages),
         preprocess_errors=preprocess_errors,
     )
 
@@ -1085,7 +1098,7 @@ def test_write_pipeline_report_pass_datetime_subclass_without_global_safe_dumper
         dataset_name=TEST_DATASET_NAME,
         started_at=started_at,
         finished_at=finished_at,
-        pipeline_load_info=MagicMock(loads_ids=["1700000000.123"]),
+        pipeline_load_info=MagicMock(spec=LoadInfo, loads_ids=["1700000000.123"], load_packages=[]),
     )
 
     write_pipeline_report(report_path, report)

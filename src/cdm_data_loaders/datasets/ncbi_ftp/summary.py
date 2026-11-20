@@ -2,12 +2,14 @@
 
 import csv
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Final
 from urllib.parse import urlsplit
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from cdm_data_loaders.datasets.ncbi_ftp.constants import ACCESSION_PARTS_REGEX, FTP_HOST, Source
 from cdm_data_loaders.io.ftp_client import ftp_retrieve_text, ftp_session
@@ -28,7 +30,7 @@ FTP_URL_COL: Final[int] = 19
 MIN_COL: Final[int] = 20
 
 
-@dataclass
+@dataclass(slots=True)
 class AssemblyRecord:
     """Parsed row from an NCBI assembly summary file."""
 
@@ -39,14 +41,15 @@ class AssemblyRecord:
     assembly_dir: PurePosixPath
 
 
-@dataclass
-class DiffResult:
+class DiffResult(BaseModel):
     """Result of comparing two NCBI assembly summary states."""
 
-    new: list[str] = field(default_factory=list)
-    updated: list[str] = field(default_factory=list)
-    replaced: list[str] = field(default_factory=list)
-    suppressed: list[str] = field(default_factory=list)
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    new: list[str] = Field(default_factory=list)
+    updated: list[str] = Field(default_factory=list)
+    replaced: list[str] = Field(default_factory=list)
+    suppressed: list[str] = Field(default_factory=list)
 
 
 def ftp_dir_from_url(ftp_url: str, ftp_host: str = FTP_HOST) -> PurePosixPath:

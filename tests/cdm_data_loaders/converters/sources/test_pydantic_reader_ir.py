@@ -7,7 +7,7 @@ from typing import Annotated, Final
 import pyarrow as pa
 import pytest
 from linkml_runtime.linkml_model.meta import SchemaDefinition
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from pyspark.sql.types import StructType
 
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
@@ -153,19 +153,17 @@ def test_pydantic_reader_pass_emit_to_pyarrow_pyspark_dlt_jsonschema_linkml(
 
 
 @pytest.mark.parametrize(
-    ("kwargs", "error_type", "match"),
+    ("kwargs", "match"),
     [
-        ({"max_recursion_depth": 0}, ValueError, "max_recursion_depth"),
-        ({"max_recursion_depth": True}, TypeError, "max_recursion_depth"),
-        ({"by_alias": "yes"}, TypeError, "by_alias"),
+        ({"max_recursion_depth": 0}, "max_recursion_depth"),
+        ({"max_recursion_depth": True}, "max_recursion_depth"),
+        ({"by_alias": "yes"}, "by_alias"),
     ],
     ids=["non-positive-depth", "bool-depth", "non-bool-by-alias"],
 )
-def test_pydantic_reader_fail_invalid_configuration(
-    kwargs: dict[str, object], error_type: type[Exception], match: str
-) -> None:
-    """PydanticReader validates max_recursion_depth and by_alias in __post_init__."""
-    with pytest.raises(error_type, match=match):
+def test_pydantic_reader_fail_invalid_configuration(kwargs: dict[str, object], match: str) -> None:
+    """PydanticReader validates max_recursion_depth and by_alias on construction."""
+    with pytest.raises(ValidationError, match=match):
         PydanticReader(**kwargs)  # type: ignore[arg-type]
 
 

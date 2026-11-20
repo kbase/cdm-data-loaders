@@ -1,14 +1,13 @@
 """Public ``PydanticReader`` lowering Pydantic v2 ``BaseModel`` classes into the converter IR."""
 
 import sys
-from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from typing import NoReturn, get_origin
 
 from frozendict import frozendict
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, StrictBool
 
-from cdm_data_loaders.converters.core.errors import ConversionError, raise_spec_error
+from cdm_data_loaders.converters.core.errors import ConversionError, ErrorCodeMap, raise_spec_error
 from cdm_data_loaders.converters.core.inference import unify_scalar_specs
 from cdm_data_loaders.converters.core.ir import Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.sources.pydantic.annotations import (
@@ -26,11 +25,10 @@ from cdm_data_loaders.converters.sources.pydantic.model_synthesis import (
 )
 from cdm_data_loaders.converters.sources.pydantic.scalars import resolve_parsed_scalar
 from cdm_data_loaders.converters.sources.pydantic.unions import build_merged_models_struct
-from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, validate_max_recursion_depth
+from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH, StrictPositiveRecursionDepth
 
 
-@dataclass(frozen=True, slots=True)
-class PydanticReader:
+class PydanticReader(BaseModel):
     """Build typed converter IR documents from Pydantic v2 ``BaseModel`` classes.
 
     :param max_recursion_depth: Maximum times a recursive ``BaseModel`` may be expanded along an ancestor path.
@@ -40,20 +38,15 @@ class PydanticReader:
     :param error_type: Base exception class raised when a construct cannot be converted.
     :type error_type: type[ConversionError]
     :param error_by_code: Mapping from specification error code (``E1``-``E12``) to exception class.
-    :type error_by_code: Mapping[str, type[ConversionError]]
+    :type error_by_code: ErrorCodeMap
     """
 
-    max_recursion_depth: int = DEFAULT_MAX_RECURSION_DEPTH
-    by_alias: bool = False
-    error_type: type[ConversionError] = ConversionError
-    error_by_code: Mapping[str, type[ConversionError]] = field(default_factory=frozendict)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid", frozen=True)
 
-    def __post_init__(self) -> None:
-        """Validate reader configuration."""
-        validate_max_recursion_depth(self.max_recursion_depth)
-        if type(self.by_alias) is not bool:
-            msg = "by_alias must be a boolean"
-            raise TypeError(msg)
+    max_recursion_depth: StrictPositiveRecursionDepth = DEFAULT_MAX_RECURSION_DEPTH
+    by_alias: StrictBool = False
+    error_type: type[ConversionError] = Field(default_factory=lambda: ConversionError)
+    error_by_code: ErrorCodeMap = Field(default_factory=frozendict)
 
     def _raise_err(self, code: str, msg: str) -> NoReturn:
         """Raise the configured exception subclass for ``code`` or fall back to ``error_type``.
@@ -130,7 +123,7 @@ class PydanticReader:
             name=source.__name__,
             identifier=f"urn:pydantic:{source.__module__}.{qualname}",
             annotations=annotations,
-            provenance=Provenance("pydantic", (source.__name__,)),
+            provenance=Provenance(source="pydantic", path=(source.__name__,)),
         )
 
     def read_scalar_annotation(self, annotation: object) -> TypedNode:
@@ -163,5 +156,5 @@ class PydanticReader:
             type=node_type,
             nullable=allows_null(annotation, ctx),
             hints=hints,
-            provenance=Provenance("pydantic", (), {"pydantic_type": pyd_type}),
+            provenance=Provenance(source="pydantic", path=(), metadata={"pydantic_type": pyd_type}),
         )

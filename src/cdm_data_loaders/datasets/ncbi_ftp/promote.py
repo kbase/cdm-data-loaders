@@ -4,13 +4,13 @@ import contextlib
 import tempfile
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from logging import Logger, getLogger
 from pathlib import Path, PurePosixPath
 from typing import Any, Final, TypedDict, Unpack
 
 import tqdm
+from pydantic import BaseModel, ConfigDict
 
 from cdm_data_loaders.datasets.ncbi_ftp.assembly import (
     build_accession_path,
@@ -47,9 +47,10 @@ MAX_DRY_RUN_LOGS: Final[int] = 10
 MAX_TRANSFER_WORKERS: Final[int] = 32
 
 
-@dataclass(frozen=True, slots=True)
-class _PromoteTargets:
+class _PromoteTargets(BaseModel):
     """Source staging and destination Lakehouse S3 bucket/prefix configuration."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     staging_bucket: PurePosixPath
     staging_prefix: PurePosixPath

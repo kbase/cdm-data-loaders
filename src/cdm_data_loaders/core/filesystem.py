@@ -99,14 +99,14 @@ def _collect_relative_paths(fs_resources: Iterable[DltResource]) -> list[str]:
     :return: sorted unique POSIX relative file paths
     :rtype: list[str]
     """
-    paths: set[str] = set()
-    for fs_resource in fs_resources:
-        for yielded in fs_resource:
-            batch = [yielded] if isinstance(yielded, dict) else yielded
-            for item in batch:
-                if isinstance(item, dict) and "relative_path" in item:
-                    paths.add(str(item["relative_path"]))
-    return sorted(paths)
+    return sorted(
+        {
+            str(item["relative_path"])
+            for fs_resource in fs_resources
+            for item in fs_resource
+            if isinstance(item, dict) and "relative_path" in item
+        }
+    )
 
 
 def list_input_dir_files(fs_resource: DltResource, input_dir: str) -> list[str]:

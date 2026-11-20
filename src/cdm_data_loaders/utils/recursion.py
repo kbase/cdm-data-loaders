@@ -2,7 +2,7 @@
 
 from typing import Annotated, Final
 
-from pydantic import BeforeValidator
+from pydantic import Field, PositiveInt
 
 DEFAULT_MAX_RECURSION_DEPTH: Final[int] = 2
 
@@ -41,19 +41,4 @@ def validate_max_recursion_depth(depth: int) -> int:
     return validate_positive_int_param(depth, "max_recursion_depth")
 
 
-def _pydantic_positive_recursion_depth(value: object) -> int:
-    """Validate ``value`` for Pydantic fields, converting ``TypeError`` into ``ValueError``.
-
-    :param value: Candidate recursion depth value supplied to a Pydantic model.
-    :type value: object
-    :return: Validated integer recursion depth ``>= 1``.
-    :rtype: int
-    :raises ValueError: If ``value`` is a ``bool``, non-integer, or less than ``1``.
-    """
-    try:
-        return validate_max_recursion_depth(value)  # type: ignore[arg-type]
-    except TypeError as exc:
-        raise ValueError(str(exc)) from exc
-
-
-StrictPositiveRecursionDepth = Annotated[int, BeforeValidator(_pydantic_positive_recursion_depth)]
+StrictPositiveRecursionDepth = Annotated[PositiveInt, Field(strict=True)]

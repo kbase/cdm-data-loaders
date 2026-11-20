@@ -2,16 +2,16 @@
 
 `cdm-data-loaders` provides `dlt` pipelines for ingesting UniProt Knowledgebase (UniProtKB) and UniRef XML datasets (`*.xml` and `*.xml.gz`) as well as tabular UniProt ID mapping releases (`*.dat` and `*.dat.gz`), along with parsers for UniProt release metadata.
 
-| Pipeline CLI        | Mode                          | Source Module                                         | Bundled Schema / Dataset Module               | Default Dataset / Table                              |
-| :------------------ | :---------------------------- | :---------------------------------------------------- | :-------------------------------------------- | :--------------------------------------------------- |
-| `uniprot`           | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`      | `cdm_data_loaders/schemas/uniprot/uniprot.xsd` | `uniprot` / `entry`                                  |
-| `uniref50`          | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`      | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref50` / `entry`                                 |
-| `uniref90`          | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`      | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref90` / `entry`                                 |
-| `uniref100`         | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`      | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref100` / `entry`                                |
-| `uniprot_cdm`       | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`      | `cdm_data_loaders.datasets.uniprot.kb`         | `uniprot_cdm` (multi-table)                          |
-| `uniref50_cdm`      | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`      | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref50_cdm` (multi-table)                         |
-| `uniref90_cdm`      | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`      | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref90_cdm` (multi-table)                         |
-| `uniref100_cdm`     | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`      | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref100_cdm` (multi-table)                        |
+| Pipeline CLI        | Mode                          | Source Module                                          | Bundled Schema / Dataset Module                | Default Dataset / Table                              |
+| :------------------ | :---------------------------- | :----------------------------------------------------- | :--------------------------------------------- | :--------------------------------------------------- |
+| `uniprot`           | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`       | `cdm_data_loaders/schemas/uniprot/uniprot.xsd` | `uniprot` / `entry`                                  |
+| `uniref50`          | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`       | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref50` / `entry`                                 |
+| `uniref90`          | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`       | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref90` / `entry`                                 |
+| `uniref100`         | XSD-to-PyArrow (single table) | `cdm_data_loaders.pipelines.presets.uniprot_xml`       | `cdm_data_loaders/schemas/uniref/uniref.xsd`   | `uniref100` / `entry`                                |
+| `uniprot_cdm`       | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`       | `cdm_data_loaders.datasets.uniprot.uniprot_kb` | `uniprot_cdm` (multi-table)                          |
+| `uniref50_cdm`      | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`       | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref50_cdm` (multi-table)                         |
+| `uniref90_cdm`      | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`       | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref90_cdm` (multi-table)                         |
+| `uniref100_cdm`     | CDM-normalized (multi-table)  | `cdm_data_loaders.pipelines.presets.uniprot_cdm`       | `cdm_data_loaders.datasets.uniprot.uniref`     | `uniref100_cdm` (multi-table)                        |
 | `uniprot_idmapping` | XSV preset (dual-table)       | `cdm_data_loaders.pipelines.presets.uniprot_idmapping` | `cdm_data_loaders.datasets.uniprot.idmapping`  | `uniprot_idmapping` (`raw_id_mapping`, `id_mapping`) |
 
 ---
@@ -45,7 +45,7 @@ When loading directly into the KBase Common Data Model (CDM) relational table st
 
 ### `uniprot_cdm`
 
-[`uniprot_cdm`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/presets/uniprot_cdm.py) converts each `{https://uniprot.org/uniprot}entry` element against [`uniprot.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/uniprot.xsd) and routes rows via [`datasets/uniprot/kb.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/uniprot/kb.py) into normalized tables under dataset `uniprot_cdm`:
+[`uniprot_cdm`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/pipelines/presets/uniprot_cdm.py) converts each `{https://uniprot.org/uniprot}entry` element against [`uniprot.xsd`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/schemas/uniprot/uniprot.xsd) and routes rows via [`datasets/uniprot/uniprot_kb.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/uniprot/uniprot_kb.py) into normalized tables under dataset `uniprot_cdm`:
 
 | Table Name             | Contents                                                                                                                                                                                                                                                             |
 | :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

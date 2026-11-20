@@ -16,6 +16,7 @@ from pydantic_settings import CliApp
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.filesystem import (
     FilesystemTracker,
+    _collect_relative_paths,
     attach_file_collector,
     build_file_ingest_kwargs,
     build_filesystem_resource,
@@ -126,6 +127,41 @@ def test_find_filesystem_resources_pass_deduplicates_shared_roots(
         found = find_filesystem_resources([plain, fs_a | trans_a1, fs_a | trans_a2, fs_b])
 
     assert [[item["relative_path"] for item in res] for res in found] == expected_paths
+
+
+@pytest.mark.parametrize(
+    ("resource_batches", "expected"),
+    [
+        pytest.param([], [], id="empty_resources"),
+        pytest.param(
+            [
+                [{"relative_path": "z.txt"}, {"relative_path": "a.txt"}],
+                [{"relative_path": "a.txt"}, {"relative_path": "m.txt"}],
+            ],
+            ["a.txt", "m.txt", "z.txt"],
+            id="deduplicates_and_sorts_across_resources",
+        ),
+        pytest.param(
+            [
+                [
+                    "plain_string",
+                    42,
+                    {"file_url": "file:///tmp/ignored.xml"},
+                    {"relative_path": "kept.xml"},
+                ]
+            ],
+            ["kept.xml"],
+            id="ignores_non_dicts_and_missing_relative_path",
+        ),
+    ],
+)
+def test_collect_relative_paths_pass(
+    resource_batches: list[list[Any]],
+    expected: list[str],
+) -> None:
+    """_collect_relative_paths returns sorted unique relative_path values and ignores non-matching items."""
+    resources = [dlt.resource(batch, name=f"fs_{idx}") for idx, batch in enumerate(resource_batches)]
+    assert _collect_relative_paths(resources) == expected
 
 
 @pytest.mark.parametrize(
