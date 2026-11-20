@@ -51,6 +51,7 @@ jobs:
           - name: pipelines
             args: tests/cdm_data_loaders/pipelines/
           - name: e2e
+            markers: "not requires_ceph"
             args: --ignore=tests/e2e/ncbi_ftp/ --ignore=tests/e2e/reference/ tests/e2e/
           - name: ncbi_ftp_e2e
             args: tests/e2e/ncbi_ftp/
