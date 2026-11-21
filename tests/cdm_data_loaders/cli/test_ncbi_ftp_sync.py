@@ -1,6 +1,8 @@
 """Tests for cli.ncbi_ftp_sync — settings and CLI shortcuts."""
 
+import logging
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -8,6 +10,7 @@ from pydantic_settings import CliApp
 
 from cdm_data_loaders.cli.ncbi_ftp_sync import (
     DownloadSettings,
+    run_download,
 )
 from cdm_data_loaders.core.fields import INPUT_MOUNT, OUTPUT_MOUNT
 from cdm_data_loaders.datasets.ncbi_ftp.constants import FTP_HOST
@@ -105,3 +108,46 @@ def test_settings_threads_boundaries_accepted(threads: int) -> None:
     """Boundary thread counts (1 and 32) are accepted."""
     s = DownloadSettings(threads=threads)  # pyright: ignore[reportCallIssue]
     assert s.threads == threads
+
+
+@pytest.mark.parametrize(
+    ("failed_count", "expected_messages"),
+    [
+        pytest.param(0, [], id="no-failures"),
+        pytest.param(1, ["Download completed with 1 failures"], id="single-failure"),
+        pytest.param(2, ["Download completed with 2 failures"], id="multiple-failures"),
+    ],
+)
+def test_run_download_forwards_settings_and_logs_failures(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    failed_count: int,
+    expected_messages: list[str],
+) -> None:
+    """run_download forwards all DownloadSettings fields to download_batch and logs failures > 0."""
+    manifest = tmp_path / "manifest.txt"
+    out_dir = tmp_path / "out"
+    settings = DownloadSettings(
+        manifest=manifest,
+        output_dir=out_dir,
+        threads=CUSTOM_THREADS,
+        ftp_host="ftp.example.org",
+        limit=CUSTOM_LIMIT,
+    )
+    with (
+        patch(
+            "cdm_data_loaders.cli.ncbi_ftp_sync.download_batch",
+            return_value={"failed": failed_count},
+        ) as mock_batch,
+        caplog.at_level(logging.ERROR, logger="cdm_data_loaders.cli.ncbi_ftp_sync"),
+    ):
+        run_download(settings)
+
+    mock_batch.assert_called_once_with(
+        manifest_path=manifest,
+        output_dir=out_dir,
+        threads=CUSTOM_THREADS,
+        ftp_host="ftp.example.org",
+        limit=CUSTOM_LIMIT,
+    )
+    assert caplog.messages == expected_messages

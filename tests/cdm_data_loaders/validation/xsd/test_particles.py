@@ -170,3 +170,190 @@ def test_validate_group_particles_rejects_unsupported_constructs(body_xml: str, 
         assert any(is_any_element(item) for item in group.content)
     with pytest.raises(ValueError, match=expected_match):
         validate_group_particles(schema, group)
+
+
+GROUP_REF_XSD: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:group name="BadGroup">
+    <xs:sequence><xs:any processContents="skip"/></xs:sequence>
+  </xs:group>
+  <xs:element name="root">
+    <xs:complexType><xs:sequence><xs:group ref="BadGroup"/></xs:sequence></xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+
+NESTED_GROUPS_XSD: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="AbsType" abstract="true">
+    <xs:sequence><xs:element name="x" type="xs:string"/></xs:sequence>
+  </xs:complexType>
+  <xs:element name="absEl" type="xs:string" abstract="true"/>
+  <xs:element name="headEl" type="xs:string"/>
+  <xs:element name="subEl" type="xs:string" substitutionGroup="headEl"/>
+  <xs:element name="nestedAbs">
+    <xs:complexType><xs:sequence><xs:sequence><xs:element ref="absEl"/></xs:sequence></xs:sequence></xs:complexType>
+  </xs:element>
+  <xs:element name="nestedSub">
+    <xs:complexType><xs:sequence><xs:sequence><xs:element ref="headEl"/></xs:sequence></xs:sequence></xs:complexType>
+  </xs:element>
+  <xs:element name="nestedAbsType">
+    <xs:complexType><xs:sequence><xs:sequence><xs:element name="it" type="AbsType"/></xs:sequence></xs:sequence></xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+
+GROUP_OCCURS_EDGE_XSD: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="optGroup">
+    <xs:complexType>
+      <xs:sequence minOccurs="0" maxOccurs="1">
+        <xs:element name="a" type="xs:string" minOccurs="1"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="zeroMaxGroup">
+    <xs:complexType>
+      <xs:sequence minOccurs="0" maxOccurs="0">
+        <xs:element name="a" type="xs:string" minOccurs="1" maxOccurs="1"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="emptyGroup">
+    <xs:complexType><xs:sequence/></xs:complexType>
+  </xs:element>
+  <xs:element name="unboundedGroup">
+    <xs:complexType>
+      <xs:sequence maxOccurs="unbounded">
+        <xs:element name="a" type="xs:string"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+
+
+class CustomFallbackError(Exception):
+    """Test-local fallback exception class."""
+
+
+class CustomCodeError(Exception):
+    """Test-local code-mapped exception class."""
+
+
+@pytest.mark.parametrize(
+    ("xsd_text", "element_tag", "error_by_code", "expected_exc", "expected_match"),
+    [
+        pytest.param(
+            GROUP_REF_XSD,
+            "root",
+            {},
+            CustomFallbackError,
+            "xs:any wildcard element is not supported",
+            id="group-ref-fallback",
+        ),
+        pytest.param(
+            GROUP_REF_XSD,
+            "root",
+            {"E4": CustomCodeError},
+            CustomCodeError,
+            "xs:any wildcard element is not supported",
+            id="group-ref-mapped-e4",
+        ),
+        pytest.param(
+            NESTED_GROUPS_XSD,
+            "nestedAbs",
+            {},
+            CustomFallbackError,
+            "abstract element 'absEl' is not supported",
+            id="nested-abstract-element-fallback",
+        ),
+        pytest.param(
+            NESTED_GROUPS_XSD,
+            "nestedAbs",
+            {"E6": CustomCodeError},
+            CustomCodeError,
+            "abstract element 'absEl' is not supported",
+            id="nested-abstract-element-mapped-e6",
+        ),
+        pytest.param(
+            NESTED_GROUPS_XSD,
+            "nestedSub",
+            {},
+            CustomFallbackError,
+            "substitutionGroup on element 'headEl' is not supported",
+            id="nested-substitution-group-fallback",
+        ),
+        pytest.param(
+            NESTED_GROUPS_XSD,
+            "nestedSub",
+            {"E7": CustomCodeError},
+            CustomCodeError,
+            "substitutionGroup on element 'headEl' is not supported",
+            id="nested-substitution-group-mapped-e7",
+        ),
+        pytest.param(
+            NESTED_GROUPS_XSD,
+            "nestedAbsType",
+            {},
+            CustomFallbackError,
+            "abstract type 'AbsType' is not supported",
+            id="nested-abstract-type-fallback",
+        ),
+        pytest.param(
+            NESTED_GROUPS_XSD,
+            "nestedAbsType",
+            {"E6": CustomCodeError},
+            CustomCodeError,
+            "abstract type 'AbsType' is not supported",
+            id="nested-abstract-type-mapped-e6",
+        ),
+    ],
+)
+def test_validate_group_particles_fail_group_ref_and_nested_error_forwarding(
+    xsd_text: str,
+    element_tag: str,
+    error_by_code: dict[str, type[Exception]],
+    expected_exc: type[Exception],
+    expected_match: str,
+) -> None:
+    """validate_group_particles resolves xs:group refs, recurses into nested groups, and forwards error classes."""
+    schema = xmlschema.XMLSchema(xsd_text)
+    group = schema.elements[element_tag].type.model_group  # type: ignore[union-attr]
+    assert isinstance(group, XsdGroup)
+    with pytest.raises(expected_exc, match=expected_match):
+        validate_group_particles(schema, group, error_type=CustomFallbackError, error_by_code=error_by_code)
+
+
+@pytest.mark.parametrize(
+    ("element_tag", "expected_min"),
+    [
+        pytest.param("optGroup", 0, id="min-occurs-zero-group"),
+        pytest.param("emptyGroup", 0, id="empty-group"),
+    ],
+)
+def test_group_min_occurs_by_name_pass_zero_and_empty(element_tag: str, expected_min: int) -> None:
+    """group_min_occurs_by_name returns 0 for minOccurs=0 and empty model groups."""
+    schema = xmlschema.XMLSchema(GROUP_OCCURS_EDGE_XSD)
+    group = schema.elements[element_tag].type.model_group  # type: ignore[union-attr]
+    assert isinstance(group, XsdGroup)
+    assert group_min_occurs_by_name(group, "a") == expected_min
+
+
+@pytest.mark.parametrize(
+    ("element_tag", "expected_max"),
+    [
+        pytest.param("zeroMaxGroup", 0, id="max-occurs-zero-group"),
+        pytest.param("emptyGroup", 0, id="empty-group"),
+        pytest.param("unboundedGroup", None, id="unbounded-group"),
+    ],
+)
+def test_group_max_occurs_by_name_pass_zero_empty_and_unbounded(
+    element_tag: str,
+    expected_max: int | None,
+) -> None:
+    """group_max_occurs_by_name handles maxOccurs=0, empty groups, and unbounded groups."""
+    schema = xmlschema.XMLSchema(GROUP_OCCURS_EDGE_XSD)
+    group = schema.elements[element_tag].type.model_group  # type: ignore[union-attr]
+    assert isinstance(group, XsdGroup)
+    assert group_max_occurs_by_name(group, "a") == expected_max

@@ -5,9 +5,15 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from lxml.etree import XMLSyntaxError, tostring
+from lxml.etree import XMLSyntaxError, fromstring, tostring
 
-from cdm_data_loaders.readers.xml import stream_xml_file, stream_xml_file_at_level
+from cdm_data_loaders.readers.xml import (
+    clear_xml_element,
+    resolve_stream_tag,
+    stream_elements,
+    stream_xml_file,
+    stream_xml_file_at_level,
+)
 from tests.helpers.fs_backends import FsBackend
 from tests.helpers.xml_samples import SIMPLE_LIBRARY_XML, XML_OPEN_ERROR_CASES, prepare_xml_error_path
 
@@ -336,3 +342,110 @@ def test_stream_xml_file_at_level_fail_negative_level(xml_path_factory: Callable
     path = xml_path_factory(SIMPLE_LIBRARY_XML)
     with pytest.raises(ValueError, match="level must be >= 0"):
         list(stream_xml_file_at_level(path, -1))
+
+
+def test_clear_xml_element_pass_prunes_preceding_siblings() -> None:
+    """clear_xml_element clears the target element and removes its preceding siblings."""
+    root = fromstring(b"<root><a/><b>text</b><c/></root>")
+    b_elem = root[1]
+    clear_xml_element(b_elem)
+    assert [child.tag for child in root] == ["b", "c"]
+    assert b_elem.text is None
+
+
+def test_clear_xml_element_pass_ignores_non_element() -> None:
+    """clear_xml_element ignores values that are not lxml elements."""
+    clear_xml_element("not-an-element")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("xml", "filename", "tag", "expected", "expect_unread"),
+    [
+        pytest.param(
+            NAMESPACED_SIMPLE_XML,
+            "ns.xml",
+            f"{{{NAMESPACE_URI}}}book",
+            f"{{{NAMESPACE_URI}}}book",
+            True,
+            id="already-qualified",
+        ),
+        pytest.param(
+            NAMESPACED_SIMPLE_XML,
+            "ns.xml",
+            "book",
+            f"{{{NAMESPACE_URI}}}book",
+            False,
+            id="default-namespace-unprefixed",
+        ),
+        pytest.param(
+            SIMPLE_LIBRARY_XML,
+            "plain.xml",
+            "book",
+            "book",
+            False,
+            id="no-namespace-unprefixed",
+        ),
+    ],
+)
+def test_resolve_stream_tag_pass_default_namespace(
+    xml_path_factory: Callable[..., Path],
+    xml: str,
+    filename: str,
+    tag: str,
+    expected: str,
+    expect_unread: bool,
+) -> None:
+    """resolve_stream_tag qualifies unprefixed tags from the default namespace without reading pre-qualified tags."""
+    path = xml_path_factory(xml, filename=filename)
+    with path.open("rb") as fh:
+        assert resolve_stream_tag(fh, tag) == expected
+        if expect_unread:
+            assert fh.tell() == 0
+
+
+@pytest.mark.parametrize(
+    ("tag", "resolve_default_ns", "expected"),
+    [
+        pytest.param(
+            "book",
+            True,
+            [(f"{{{NAMESPACE_URI}}}book", "1"), (f"{{{NAMESPACE_URI}}}book", "2"), (f"{{{NAMESPACE_URI}}}book", "3")],
+            id="unprefixed-resolve-enabled",
+        ),
+        pytest.param("book", False, [], id="unprefixed-resolve-disabled"),
+        pytest.param(
+            f"{{{NAMESPACE_URI}}}book",
+            True,
+            [(f"{{{NAMESPACE_URI}}}book", "1"), (f"{{{NAMESPACE_URI}}}book", "2"), (f"{{{NAMESPACE_URI}}}book", "3")],
+            id="qualified-resolve-enabled",
+        ),
+    ],
+)
+def test_stream_elements_pass_default_namespace_resolution(
+    xml_path_factory: Callable[..., Path],
+    tag: str,
+    resolve_default_ns: bool,
+    expected: list[tuple[str, str | None]],
+) -> None:
+    """stream_elements resolves unprefixed tags against the default namespace only when resolve_default_ns is True."""
+    ns_path = xml_path_factory(NAMESPACED_SIMPLE_XML, filename="ns.xml")
+    actual = [(el.tag, el.get("id")) for el in stream_elements(ns_path, tag, resolve_default_ns=resolve_default_ns)]
+    assert actual == expected
+
+
+def test_stream_xml_file_at_level_pass_prunes_intermediate_ancestors(
+    xml_path_factory: Callable[..., Path],
+) -> None:
+    """stream_xml_file_at_level yields target depth elements while clearing intermediate ancestors."""
+    path = xml_path_factory("<root>\n  <a>\n    <b>1</b>\n    <c>2</c>\n  </a>\n</root>")
+    elems = list(stream_xml_file_at_level(path, 2))
+    assert [el.tag for el in elems] == ["b", "c"]
+
+
+def test_stream_xml_file_at_level_pass_removes_blank_text(
+    xml_path_factory: Callable[..., Path],
+) -> None:
+    """stream_xml_file_at_level strips indentation whitespace between child elements."""
+    path = xml_path_factory(SIMPLE_LIBRARY_XML)
+    first_book = next(stream_xml_file_at_level(path, 1))
+    assert first_book.text is None

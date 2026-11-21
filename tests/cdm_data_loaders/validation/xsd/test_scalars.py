@@ -181,3 +181,55 @@ def test_extract_doc_comment_pass_ref_fallback_and_missing(
     child = children[child_name]
     fallback_type = None if child_name == "globalRef" else child.type
     assert extract_doc_comment(child, fallback_type) == expected_doc
+
+
+def test_extract_doc_comment_pass_whitespace_only_without_ref() -> None:
+    """extract_doc_comment returns None for whitespace-only documentation on a component without ref."""
+    no_ref = SimpleNamespace(annotation=SimpleNamespace(documentation=[SimpleNamespace(text="   \n")]))
+    assert extract_doc_comment(no_ref) is None
+
+
+def test_builtin_xsd_name_pass_missing_attributes() -> None:
+    """builtin_xsd_name falls back to xs:string when name and base_type attributes are absent."""
+    no_name = SimpleNamespace()
+    assert builtin_xsd_name(no_name) == "xs:string"  # type: ignore[arg-type]
+
+
+def _return_false() -> bool:
+    """Return False for stub XSD type predicates.
+
+    :return: Always ``False``.
+    :rtype: bool
+    """
+    return False
+
+
+def _return_true() -> bool:
+    """Return True for stub XSD type predicates.
+
+    :return: Always ``True``.
+    :rtype: bool
+    """
+    return True
+
+
+def test_resolve_xsd_scalar_kind_pass_unknown_xsd_name() -> None:
+    """resolve_xsd_scalar_kind falls back to string for an unknown XSD scalar name."""
+    unknown_type = SimpleNamespace(
+        is_union=_return_false,
+        name="{http://www.w3.org/2001/XMLSchema}unknownCustom",
+        local_name="unknownCustom",
+        base_type=None,
+    )
+    assert resolve_xsd_scalar_kind(unknown_type) == ("string", "xs:unknownCustom")  # type: ignore[arg-type]
+
+
+def test_iter_simple_builtin_names_pass_list_without_item_type() -> None:
+    """iter_simple_builtin_names falls back to xs:string for a list type missing item_type."""
+    broken_list = SimpleNamespace(
+        name=None,
+        base_type=None,
+        is_list=_return_true,
+        is_union=_return_false,
+    )
+    assert iter_simple_builtin_names(broken_list) == ["xs:string"]  # type: ignore[arg-type]

@@ -166,7 +166,7 @@ class TableNameModel(BaseModel):
 def test_table_name_fail_reserved_rejected_table_name() -> None:
     """TableName rejects the reserved _rejected table name."""
     assert REJECTED_TABLE_NAME == "_rejected"
-    with pytest.raises(ValidationError, match=REJECTED_TABLE_NAME):
+    with pytest.raises(ValidationError, match=f"Table name {REJECTED_TABLE_NAME!r} is reserved"):
         TableNameModel.model_validate({"table_name": REJECTED_TABLE_NAME})
 
 
@@ -261,6 +261,11 @@ def test_file_glob_fail_empty_string() -> None:
             "Glob pattern for XML files.",
             f"Glob pattern for XML files. {CTS_GLOB_WILDCARDS_DESCRIPTION}",
             id="with_trailing_period",
+        ),
+        pytest.param(
+            "Glob pattern for suffix X.",
+            f"Glob pattern for suffix X. {CTS_GLOB_WILDCARDS_DESCRIPTION}",
+            id="preserves_non_period_trailing_chars",
         ),
     ],
 )

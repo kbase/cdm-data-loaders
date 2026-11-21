@@ -114,6 +114,12 @@ def test_check_aliases_pass_valid_names(
             id="alias_is_other_field_name",
         ),
         pytest.param(
+            {"alpha": Field("a", alias="beta", validation_alias="gamma"), "beta": "b"},
+            None,
+            "MySettingsClass: CLI name 'beta' is claimed by both 'alpha' and 'beta'",
+            id="alias_distinct_from_validation_alias_collides",
+        ),
+        pytest.param(
             {"output_dir": "x"},
             {"output-dir": "output-dir"},
             "MySettingsClass: CLI name 'output-dir' is claimed twice by 'output_dir'",
@@ -151,8 +157,8 @@ def test_check_aliases_pass_valid_names(
         ),
         pytest.param(
             {"alpha": "a"},
-            {"alpha": ["-a", "h"], "nope": "n"},
-            "MySettingsClass: invalid shortcut '-a' for 'alpha'; omit the leading dashes\nMySettingsClass: CLI name 'h' for 'alpha' is reserved by argparse\nMySettingsClass: cli_shortcuts target 'nope' does not match any CLI argument",
+            {"nope": "n", "alpha": ["-a", "h"]},
+            "MySettingsClass: cli_shortcuts target 'nope' does not match any CLI argument\nMySettingsClass: invalid shortcut '-a' for 'alpha'; omit the leading dashes\nMySettingsClass: CLI name 'h' for 'alpha' is reserved by argparse",
             id="all_errors_reported",
         ),
     ],

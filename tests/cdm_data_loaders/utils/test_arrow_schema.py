@@ -42,7 +42,7 @@ def test_assemble_pyarrow_schema_pass_from_struct_and_sequence(
 
 def test_assemble_pyarrow_schema_rejects_empty_component() -> None:
     """Raise ``ValueError`` when assembling a schema with zero fields."""
-    with pytest.raises(ValueError, match="Cannot assemble a PyArrow schema from an empty component"):
+    with pytest.raises(ValueError, match=r"^Cannot assemble a PyArrow schema from an empty component$"):
         assemble_pyarrow_schema([])
 
 

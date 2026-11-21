@@ -1,7 +1,7 @@
 """Tests for target-independent type inference."""
 
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
@@ -15,8 +15,53 @@ from cdm_data_loaders.converters.core.inference import (
     infer_implicit_type,
     is_unconstrained_node,
     json_type_from_enum,
+    nodes_same_shape,
+    unify_scalar_specs,
 )
-from cdm_data_loaders.converters.core.ir import TypedNode
+from cdm_data_loaders.converters.core.ir import (
+    SPEC_FLOAT64,
+    SPEC_STRING,
+    SPEC_TS_UTC,
+    Field,
+    NodeHints,
+    TypedNode,
+)
+
+DEC_10_2: Final[tuple[str, NodeHints, str]] = (
+    "number",
+    NodeHints(logical_type="decimal", precision=10, scale=2),
+    "Decimal(10, 2)",
+)
+DEC_12_4: Final[tuple[str, NodeHints, str]] = (
+    "number",
+    NodeHints(logical_type="decimal", precision=12, scale=4),
+    "Decimal(12, 4)",
+)
+DEC_38_0: Final[tuple[str, NodeHints, str]] = (
+    "number",
+    NodeHints(logical_type="decimal", precision=38, scale=0),
+    "Decimal(38, 0)",
+)
+LONG_SPEC: Final[tuple[str, NodeHints, str]] = ("integer", NodeHints(logical_type="long", bit_width=64), "int")
+TS_TZ_SPEC: Final[tuple[str, NodeHints, str]] = (
+    "string",
+    NodeHints(logical_type="timestamp-with-tz", timezone=True),
+    "AwareDT",
+)
+TS_NAIVE_SPEC: Final[tuple[str, NodeHints, str]] = (
+    "string",
+    NodeHints(logical_type="timestamp-without-tz", timezone=False),
+    "NaiveDT",
+)
+BOOL_SPEC: Final[tuple[str, NodeHints, str]] = ("boolean", NodeHints(logical_type="boolean"), "bool")
+
+STR_NODE: Final[TypedNode] = TypedNode("string")
+NULLABLE_STR_NODE: Final[TypedNode] = TypedNode("string", nullable=True)
+INT_NODE: Final[TypedNode] = TypedNode("integer")
+DATE_STR_NODE: Final[TypedNode] = TypedNode("string", hints=NodeHints(logical_type="date"))
+ARRAY_STR_NODE: Final[TypedNode] = TypedNode("array", items=STR_NODE)
+MAP_STR_INT_NODE: Final[TypedNode] = TypedNode("map", key_type=STR_NODE, value_type=INT_NODE)
+OBJ_X_REQ_NODE: Final[TypedNode] = TypedNode("object", properties=(Field("x", STR_NODE, required=True),))
 
 
 @pytest.mark.parametrize(
@@ -178,11 +223,119 @@ def test_decimal_places_pass_scale(value: float | Decimal, expected: int) -> Non
     ("precision", "scale", "expected"),
     [
         (10, 2, r"^-?\d{1,8}(\.\d{1,2})?$"),
+        (5, 2, r"^-?\d{1,3}(\.\d{1,2})?$"),
         (2, 2, r"^-?0(\.\d{1,2})?$"),
         (10, 0, r"^-?\d{1,10}$"),
+        (4, 0, r"^-?\d{1,4}$"),
     ],
-    ids=["standard", "zero-before-decimal", "no-scale"],
+    ids=["standard", "small-standard", "zero-before-decimal", "no-scale", "small-no-scale"],
 )
 def test_decimal_pattern_pass_regex(precision: int, scale: int, expected: str) -> None:
     """Build precise regex patterns for decimal constraints."""
     assert decimal_pattern(precision, scale) == expected
+
+
+@pytest.mark.parametrize(
+    ("specs", "expected"),
+    [
+        pytest.param([DEC_10_2, DEC_10_2], ("number", DEC_10_2[1], "Decimal(10, 2)"), id="identical-decimals"),
+        pytest.param(
+            [DEC_10_2, DEC_12_4],
+            ("number", NodeHints(logical_type="decimal", precision=12, scale=4), "Decimal(10, 2) | Decimal(12, 4)"),
+            id="widened-decimals",
+        ),
+        pytest.param(
+            [DEC_38_0, DEC_12_4],
+            (*SPEC_FLOAT64, "Decimal(38, 0) | Decimal(12, 4)"),
+            id="decimal-precision-overflow",
+        ),
+        pytest.param([LONG_SPEC, DEC_10_2], (*SPEC_FLOAT64, "int | Decimal(10, 2)"), id="integer-and-decimal"),
+        pytest.param([TS_TZ_SPEC, TS_NAIVE_SPEC], (*SPEC_TS_UTC, "AwareDT | NaiveDT"), id="mixed-timestamps"),
+        pytest.param([LONG_SPEC, BOOL_SPEC], (*SPEC_STRING, "int | bool"), id="incompatible-fallback"),
+    ],
+)
+def test_unify_scalar_specs_pass(
+    specs: list[tuple[str, NodeHints, str]],
+    expected: tuple[str, NodeHints, str],
+) -> None:
+    """unify_scalar_specs unifies identical specs, decimals, numeric or timestamp groups, and fallbacks."""
+    assert unify_scalar_specs(specs) == expected
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        pytest.param(STR_NODE, NULLABLE_STR_NODE, True, id="scalar-ignores-nullability"),
+        pytest.param(STR_NODE, INT_NODE, False, id="scalar-different-type"),
+        pytest.param(STR_NODE, DATE_STR_NODE, False, id="scalar-different-hints"),
+        pytest.param(ARRAY_STR_NODE, TypedNode("array", items=STR_NODE), True, id="array-same-items"),
+        pytest.param(ARRAY_STR_NODE, TypedNode("array", items=NULLABLE_STR_NODE), False, id="array-item-nullability"),
+        pytest.param(ARRAY_STR_NODE, TypedNode("array", items=INT_NODE), False, id="array-item-type"),
+        pytest.param(ARRAY_STR_NODE, TypedNode("array", items=None), False, id="array-missing-items"),
+        pytest.param(ARRAY_STR_NODE, TypedNode("array", items=(STR_NODE,)), False, id="array-tuple-items"),
+        pytest.param(
+            MAP_STR_INT_NODE,
+            TypedNode("map", key_type=STR_NODE, value_type=INT_NODE),
+            True,
+            id="map-same-types",
+        ),
+        pytest.param(
+            MAP_STR_INT_NODE,
+            TypedNode("map", key_type=None, value_type=INT_NODE),
+            False,
+            id="map-missing-key",
+        ),
+        pytest.param(
+            MAP_STR_INT_NODE,
+            TypedNode("map", key_type=STR_NODE, value_type=None),
+            False,
+            id="map-missing-value",
+        ),
+        pytest.param(
+            MAP_STR_INT_NODE,
+            TypedNode("map", key_type=INT_NODE, value_type=INT_NODE),
+            False,
+            id="map-different-key",
+        ),
+        pytest.param(
+            MAP_STR_INT_NODE,
+            TypedNode("map", key_type=STR_NODE, value_type=STR_NODE),
+            False,
+            id="map-different-value",
+        ),
+        pytest.param(
+            MAP_STR_INT_NODE,
+            TypedNode("map", key_type=STR_NODE, value_type=TypedNode("integer", nullable=True)),
+            False,
+            id="map-value-nullability",
+        ),
+        pytest.param(
+            OBJ_X_REQ_NODE,
+            TypedNode("object", properties=(Field("x", STR_NODE, required=True),)),
+            True,
+            id="object-same-properties",
+        ),
+        pytest.param(OBJ_X_REQ_NODE, TypedNode("object", properties=()), False, id="object-property-count"),
+        pytest.param(
+            OBJ_X_REQ_NODE,
+            TypedNode("object", properties=(Field("y", STR_NODE, required=True),)),
+            False,
+            id="object-property-name",
+        ),
+        pytest.param(
+            OBJ_X_REQ_NODE,
+            TypedNode("object", properties=(Field("x", STR_NODE, required=False),)),
+            False,
+            id="object-property-required",
+        ),
+        pytest.param(
+            OBJ_X_REQ_NODE,
+            TypedNode("object", properties=(Field("x", INT_NODE, required=True),)),
+            False,
+            id="object-property-type",
+        ),
+    ],
+)
+def test_nodes_same_shape_pass(left: TypedNode, right: TypedNode, *, expected: bool) -> None:
+    """nodes_same_shape compares types, hints, arrays, maps, and objects recursively."""
+    assert nodes_same_shape(left, right) is expected
