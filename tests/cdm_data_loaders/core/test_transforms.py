@@ -1401,6 +1401,7 @@ def test_unwrap_partial_target_unwraps_nested_partials() -> None:
     [
         pytest.param("nested_partial", id="nested-partial"),
         pytest.param("callable_object", id="callable-object"),
+        pytest.param("callable_object_with_attrs", id="callable-object-with-attrs"),
         pytest.param("unresolvable_annotation", id="unresolvable-annotation"),
     ],
 )
@@ -1422,6 +1423,16 @@ def test_safe_type_hints_handles_callables_and_errors(case: str) -> None:
                 return {}
 
         assert _safe_type_hints(_CallableObj())["table"] is pa.Table
+    elif case == "callable_object_with_attrs":
+
+        class _CallableWithAttrs:
+            label: str = "x"
+
+            def __call__(self, table: pa.Table, ctx: TransformContext | None = None) -> dict[str, Any]:
+                del table, ctx
+                return {}
+
+        assert _safe_type_hints(_CallableWithAttrs())["table"] is pa.Table
     else:
 
         def bad_hint_fn(_x: object) -> dict[str, Any]:

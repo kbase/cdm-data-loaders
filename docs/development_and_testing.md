@@ -5,7 +5,7 @@ This guide covers local development setup, linting and code generation checks, S
 - **Project dependencies, lint rules, and `pytest` markers**: [`pyproject.toml`](https://github.com/kbase/cdm-data-loaders/blob/develop/pyproject.toml)
 - **Container entrypoint (`test` and `ceph_integration_test` modes)**: [`scripts/entrypoint.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/entrypoint.sh)
 - **Spark container test runner**: [`scripts/dev/run_tests.sh`](https://github.com/kbase/cdm-data-loaders/blob/develop/scripts/dev/run_tests.sh)
-- **Ceph RGW integration Compose configuration**: [`docker-compose.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.yml)
+- **Lakehouse integration Compose configuration**: [`docker-compose.lakehouse.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.lakehouse.yml)
 
 ---
 
@@ -134,17 +134,15 @@ Tests marked with `@pytest.mark.requires_ceph` exercise real S3 transfers, bucke
 
 ### Docker Compose Workflow (Recommended)
 
-[`docker-compose.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.yml) starts the Ceph RGW container, waits for its OSD and HTTP listener healthcheck, and runs the `ceph_integration_test` entrypoint mode (`pytest -m "requires_ceph" -v`):
+[`docker-compose.lakehouse.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.lakehouse.yml) starts the lakehouse stack (Ceph RGW, Polaris, Auth2, Spark Master/Worker/Connect, and the `cdm-data-loaders` container), waits for healthchecks, and lets you run `pytest -m "requires_ceph" -v` inside `cdm-data-loaders`:
 
 ```sh
-# build the image, start Ceph RGW, and run all requires_ceph integration tests
-docker compose up \
-  --build \
-  --abort-on-container-exit \
-  --exit-code-from integration-tests
+# build and start the lakehouse stack, then run all requires_ceph integration tests
+docker compose -f docker-compose.lakehouse.yml up -d --build
+docker compose -f docker-compose.lakehouse.yml exec -T cdm-data-loaders pytest -m "requires_ceph" -v
 
 # stop containers and remove temporary volumes when finished
-docker compose down --volumes
+docker compose -f docker-compose.lakehouse.yml down --volumes
 ```
 
 ### Running Against a Local Ceph Container from the Host
