@@ -3,6 +3,7 @@
 import hashlib
 import logging
 from pathlib import Path
+from typing import BinaryIO, Self
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -38,7 +39,8 @@ async def test_download_to_file_system_success(
 ) -> None:
     """Simple happy path test of a successful download."""
 
-    def handler(_: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
         return httpx.Response(
             200,
             content=sample_content,
@@ -59,20 +61,48 @@ async def test_download_to_file_system_success(
 
 
 @pytest.mark.asyncio
-async def test_chunked_streaming(tmp_path: Path, downloader_adapter: DownloaderAdapter) -> None:
-    """Ensure that chunked downloads work correctly."""
+async def test_chunked_streaming(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, downloader_adapter: DownloaderAdapter
+) -> None:
+    """Ensure that chunked downloads respect the configured chunk size."""
     content = b"a" * 10_000
+    chunk_size = 1024
+    written_sizes: list[int] = []
+    real_open = Path.open
 
-    def handler(_: httpx.Request) -> httpx.Response:
+    class TrackingWriter:
+        def __init__(self, fh: BinaryIO) -> None:
+            self._fh = fh
+
+        def write(self, data: bytes) -> int:
+            written_sizes.append(len(data))
+            return self._fh.write(data)
+
+        def __enter__(self) -> Self:
+            self._fh.__enter__()
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            self._fh.__exit__(*args)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
         return httpx.Response(200, content=content)
 
-    downloader = downloader_adapter.make_downloader(handler, chunk_size=1024)
-
+    downloader = downloader_adapter.make_downloader(handler, chunk_size=chunk_size)
     destination = tmp_path / "file.txt"
+
+    def tracking_open(self: Path, mode: str = "r", *args: object, **kwargs: object) -> object:
+        fh = real_open(self, mode, *args, **kwargs)  # type: ignore[call-overload]
+        if self == destination and mode == "wb":
+            return TrackingWriter(fh)
+        return fh
+
+    monkeypatch.setattr(Path, "open", tracking_open)
     await downloader_adapter.download(downloader, DOWNLOAD_URL, destination)
 
-    # TODO: add in count of number of times fh.write is called by _download_once?
     assert destination.read_bytes() == content
+    assert written_sizes == [chunk_size] * 9 + [len(content) - chunk_size * 9]
 
 
 @pytest.mark.parametrize(
@@ -212,7 +242,7 @@ async def test_checksum_invalid_downloader(
 
 @pytest.mark.asyncio
 async def test_checksum_mismatch(tmp_path: Path, sample_content: bytes, downloader_adapter: DownloaderAdapter) -> None:
-    """Test checksum checking!"""
+    """Test checksum mismatch raises ChecksumMismatchError."""
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=sample_content)

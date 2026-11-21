@@ -1,6 +1,9 @@
 """Tests for the page buffer in cdm_data_loaders.core.buffer."""
 
+import json
 from collections.abc import Iterator
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Final
 
 import dlt
@@ -15,6 +18,7 @@ from cdm_data_loaders.core.buffer import (
     DictBuffer,
     format_rejected_records,
     make_rejected_row,
+    make_rejected_table_result,
     resolve_destination_schema,
 )
 from cdm_data_loaders.core.fields import REJECTED_TABLE_NAME
@@ -447,18 +451,67 @@ def test_resolve_destination_schema_resolves_rejected_and_mapped_tables(
     assert resolve_destination_schema(table_name, schema_map) == expected_schema
 
 
-@pytest.mark.parametrize("use_pyarrow", [True, False], ids=["pyarrow-page", "dict-list-page"])
-def test_format_rejected_records_formats_pyarrow_and_dict_pages(use_pyarrow: bool) -> None:
+@pytest.mark.parametrize(
+    "use_pyarrow",
+    [
+        pytest.param(None, id="default-pyarrow-page"),
+        pytest.param(True, id="pyarrow-page"),
+        pytest.param(False, id="dict-list-page"),
+    ],
+)
+def test_format_rejected_records_formats_pyarrow_and_dict_pages(use_pyarrow: bool | None) -> None:
     """format_rejected_records wraps rejected rows with _rejected table metadata as PyArrow or list pages."""
     rows = [
         make_rejected_row("people", "bad row", source_file="people.csv", line_no=2, raw_record="x"),
     ]
-    item = format_rejected_records(rows, use_pyarrow=use_pyarrow)
+    item = (
+        format_rejected_records(rows) if use_pyarrow is None else format_rejected_records(rows, use_pyarrow=use_pyarrow)
+    )
 
     assert item.meta.table_name == REJECTED_TABLE_NAME
-    if use_pyarrow:
+    if use_pyarrow is False:
+        assert item.data == rows
+    else:
         assert isinstance(item.data, pa.Table)
         assert item.data.schema.equals(REJECTED_PYARROW_SCHEMA)
         assert item.data.to_pylist() == rows
-    else:
-        assert item.data == rows
+
+
+def test_make_rejected_table_result_serializes_non_json_values() -> None:
+    """make_rejected_table_result serializes non-JSON values via str and wraps the row under _rejected."""
+    expected_line_no = 42
+    result = make_rejected_table_result(
+        "people",
+        {"p": Path("a.txt")},
+        "bad",
+        source_file="f.jsonl",
+        line_no=expected_line_no,
+    )
+
+    assert result == {
+        REJECTED_TABLE_NAME: [
+            {
+                "table_name": "people",
+                "source_file": "f.jsonl",
+                "line_no": expected_line_no,
+                "raw_record": json.dumps({"p": "a.txt"}),
+                "error_detail": "bad",
+            }
+        ]
+    }
+
+
+def test_dict_buffer_from_settings_preserves_subclass_and_defaults() -> None:
+    """DictBuffer.from_settings instantiates the subclass and defaults missing optional settings."""
+
+    class _SubDictBuffer(DictBuffer):
+        pass
+
+    expected_max_items = 5
+    minimal_settings = SimpleNamespace(buffer_size=expected_max_items)
+    sub_buf = _SubDictBuffer.from_settings(minimal_settings)  # type: ignore[arg-type]
+
+    assert isinstance(sub_buf, _SubDictBuffer)
+    assert sub_buf.max_items == expected_max_items
+    assert sub_buf.schema_map is None
+    assert sub_buf.use_pyarrow is True

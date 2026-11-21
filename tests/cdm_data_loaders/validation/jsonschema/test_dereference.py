@@ -13,6 +13,7 @@ from cdm_data_loaders.validation.jsonschema.dereference import (
     RefSiblingMode,
     _dereference,
     _merge_all_of,
+    _merge_schema_pair,
     _resolve_ref_and_all_of,
     _should_apply_ref_siblings,
     dereference_schema,
@@ -874,3 +875,131 @@ def test_dereference_schema_fail_invalid_max_ref_depth(bad_depth: int, exc_cls: 
     """Reject non-positive or boolean max_ref_depth values."""
     with pytest.raises(exc_cls, match="max_ref_depth"):
         dereference_schema({"type": "object"}, max_ref_depth=bad_depth)
+
+
+def _build_ref_chain_schema(hops: int) -> dict[str, Any]:
+    """Build a Draft 2020-12 schema with a linear $ref chain of `hops` hops."""
+    defs: dict[str, Any] = {f"D{i}": {"$ref": f"#/$defs/D{i + 1}"} for i in range(hops - 1)}
+    defs[f"D{hops - 1}"] = {"type": "string"}
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": "#/$defs/D0",
+        "$defs": defs,
+    }
+
+
+def test_dereference_schema_pass_default_max_ref_depth_allows_fifty_hops() -> None:
+    """Default max_ref_depth allows a 50-hop $ref chain."""
+    assert dereference_schema(_build_ref_chain_schema(50)) == {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string",
+    }
+
+
+def test_dereference_schema_fail_default_max_ref_depth_rejects_fifty_one_hops() -> None:
+    """Default max_ref_depth rejects a 51-hop $ref chain."""
+    with pytest.raises(DereferencingError, match=r"exceeded max depth \(50\)"):
+        dereference_schema(_build_ref_chain_schema(51))
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        pytest.param(
+            {"$ref": "#/$defs/Mid", "title": "Code"},
+            {"type": "string", "minLength": 1, "title": "Code"},
+            id="chained-ref-with-siblings",
+        ),
+        pytest.param(
+            {"allOf": [{"type": "object", "properties": {"a": {"type": "integer"}}}]},
+            {"type": "object", "properties": {"a": {"type": "integer"}}},
+            id="allof-resolution",
+        ),
+    ],
+)
+def test_resolve_ref_and_all_of_pass_siblings_chaining_and_allof(
+    schema: dict[str, Any],
+    expected: dict[str, Any],
+) -> None:
+    """_resolve_ref_and_all_of resolves chained $ref siblings and allOf and cleans up active state."""
+    root = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+            "Leaf": {"type": "string"},
+            "Mid": {"$ref": "#/$defs/Leaf", "minLength": 1},
+        },
+    }
+    ctx = _make_ctx(root)
+    assert _resolve_ref_and_all_of(schema, ctx) == expected
+    assert ctx.active_refs == set()
+    assert ctx.active_target_ids == set()
+
+
+@pytest.mark.parametrize(
+    ("ref_schema", "expected_warning"),
+    [
+        pytest.param(
+            {"$ref": "#/definitions/Leaf", "title": "T", "description": "D"},
+            "Ignoring keyword(s) ['description', 'title'] declared alongside $ref '#/definitions/Leaf'",
+            id="with-siblings-logs-warning",
+        ),
+        pytest.param(
+            {"$ref": "#/definitions/Leaf"},
+            None,
+            id="without-siblings-no-warning",
+        ),
+    ],
+)
+def test_resolve_ref_and_all_of_pass_draft7_sibling_warning(
+    caplog: pytest.LogCaptureFixture,
+    ref_schema: dict[str, Any],
+    expected_warning: str | None,
+) -> None:
+    """_resolve_ref_and_all_of logs ignored Draft-07 $ref siblings only when siblings are present."""
+    draft7_root = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {"Leaf": {"type": "string"}},
+    }
+    ctx = _make_ctx(draft7_root, spec=DRAFT7)
+    with caplog.at_level("WARNING"):
+        result = _resolve_ref_and_all_of(ref_schema, ctx)
+    assert result == {"type": "string"}
+    if expected_warning is None:
+        assert "Ignoring keyword" not in caplog.text
+    else:
+        assert expected_warning in caplog.text
+
+
+def test_merge_all_of_fail_non_list_all_of() -> None:
+    """_merge_all_of raises DereferencingError when allOf is not a list."""
+    ctx = _make_ctx({})
+    with pytest.raises(DereferencingError, match=r"'allOf' must be a list of schemas, got \{'type': 'string'\}\."):
+        _merge_all_of({"allOf": {"type": "string"}}, ctx)
+
+
+def test_merge_schema_pair_pass_concatenates_all_of_lists() -> None:
+    """_merge_schema_pair concatenates allOf lists from both schemas."""
+    merged = _merge_schema_pair({"allOf": [{"type": "string"}]}, {"allOf": [{"minLength": 2}]})
+    assert merged == {"allOf": [{"type": "string"}, {"minLength": 2}]}
+
+
+def test_dereference_schema_pass_dependencies_and_non_schema_single_keyword() -> None:
+    """dereference_schema resolves dict and bool dependencies and preserves list dependencies and non-schema values."""
+    schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "dependencies": {
+            "a": ["b"],
+            "c": {"$ref": "#/definitions/Req"},
+            "d": True,
+        },
+        "not": "non-schema-passthrough",
+        "definitions": {"Req": {"required": ["e"]}},
+    }
+    result = dereference_schema(schema)
+    assert result["dependencies"] == {
+        "a": ["b"],
+        "c": {"required": ["e"]},
+        "d": True,
+    }
+    assert result["not"] == "non-schema-passthrough"

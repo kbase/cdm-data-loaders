@@ -139,16 +139,22 @@ def test_settings_missing_sync_attrs_pass_fixture_shape(
     ],
 )
 def test_run_pipeline_fail_invalid_destination_config(
-    config: dict[str, Any], use_destination: str, tmp_path: Path
+    config: dict[str, Any], use_destination: str, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Invalid destination configs cause the pipeline to fail with an 'Invalid destination config' message."""
     settings = CtsSettings(input_dir=tmp_path, output_dir=tmp_path, use_destination=use_destination)  # pyright: ignore[reportCallIssue]
+    expected_msg = f"Invalid destination configuration for {use_destination}"
 
     with (
         isolated_dlt_config(config),
-        pytest.raises(ValueError, match=f"Invalid destination configuration for {use_destination}"),
+        pytest.raises(ValueError, match=expected_msg),
     ):
         run_pipeline(settings, [])
+
+    error_records = [r for r in caplog.records if r.name == core.__name__ and r.levelno == logging.ERROR]
+    assert len(error_records) == 1
+    assert error_records[0].getMessage() == expected_msg
+    assert error_records[0].exc_info is not None
 
 
 @pytest.mark.parametrize(
@@ -240,12 +246,16 @@ def test_run_pipeline_no_slack_env_var_when_vars_missing(
 
 
 # run_pipeline tests
-def test_run_pipeline_minimal(dlt_test_settings: CtsSettings, destination_bucket: Path) -> None:
+def test_run_pipeline_minimal(
+    dlt_test_settings: CtsSettings, destination_bucket: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """A tiny pipeline loads its records into the destination bucket, not into output_dir."""
+    caplog.set_level(logging.INFO)
     load_info = run_pipeline(dlt_test_settings, tiny_resource())
 
     assert load_info is not None
     assert not load_info.has_failed_jobs
+    assert str(load_info) in caplog.messages
     assert read_output_jsonl_records(destination_bucket) == TINY_RESOURCE_DATA
     assert read_destination_rows(Path(dlt_test_settings.output_dir), TINY_TABLE_NAME) == []
 

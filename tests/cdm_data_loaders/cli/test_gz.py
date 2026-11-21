@@ -69,6 +69,17 @@ def test_cli_directory_with_glob(tmp_path: Path, source_flag: str, glob_flag: st
     assert not (sub_dir / "b.log.gz").exists()
 
 
+def test_main_directory_default_glob(tmp_path: Path) -> None:
+    """Compress all files in a directory using ``*`` when ``--file-glob`` is omitted."""
+    sub_dir = tmp_path / "sub"
+    sub_dir.mkdir()
+    for name in ("a.txt", "b.log"):
+        (sub_dir / name).write_text(name, encoding="utf-8")
+    main(["--source", str(sub_dir)])
+    assert (sub_dir / "a.txt.gz").exists()
+    assert (sub_dir / "b.log.gz").exists()
+
+
 def test_cli_main_nonexistent_source(tmp_path: Path) -> None:
     """Raise ``RuntimeError`` when ``--source`` points to a missing path."""
     missing = tmp_path / "doesnotexist"

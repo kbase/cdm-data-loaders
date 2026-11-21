@@ -627,3 +627,31 @@ def test_file_downloader_pass_parallelized_transformer_runs_on_worker_threads(
     assert mock_download_client.download.call_count == len(batches)
     assert main_tid not in download_threads
     assert len(download_threads) > 1
+
+
+def test_osf_file_downloader_pass_tags_downloaded_files_table(
+    test_settings: AtbSettings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """osf_file_downloader tags yielded items with the downloaded_files table name."""
+    monkeypatch.setattr(all_the_bacteria, "download_osf_files", lambda _dir, _files: [{"file_id": "f1"}])
+    items = list(osf_file_downloader(test_settings, []))
+    assert len(items) == 1
+    assert items[0].meta.table_name == "downloaded_files"
+
+
+def test_run_atb_pipeline_pass_passes_dataset_name(
+    test_settings: AtbSettings,
+) -> None:
+    """run_atb_pipeline forwards test settings and DATASET_NAME to build_file_ingest_kwargs."""
+    with (
+        patch.object(
+            all_the_bacteria,
+            "build_file_ingest_kwargs",
+            wraps=all_the_bacteria.build_file_ingest_kwargs,
+        ) as mock_kwargs,
+        patch.object(all_the_bacteria, "run_pipeline", return_value=None),
+    ):
+        run_atb_pipeline(test_settings)
+
+    assert mock_kwargs.call_args.args == (test_settings, DATASET_NAME)

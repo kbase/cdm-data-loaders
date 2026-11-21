@@ -36,15 +36,17 @@ def _safe_type_hints(fn: Callable[..., Any]) -> dict[str, Any]:
     :return: mapping of parameter names to resolved annotations
     :rtype: dict[str, Any]
     """
-    target = _unwrap_partial_target(fn)
     try:
+        target = inspect.unwrap(_unwrap_partial_target(fn))
+        if (
+            not inspect.isfunction(target)
+            and not inspect.ismethod(target)
+            and not inspect.isclass(target)
+            and callable(target)
+        ):
+            target = type(target).__call__
         return get_type_hints(target)
     except (TypeError, NameError, AttributeError, ValueError):
-        if not inspect.isfunction(target) and not inspect.ismethod(target) and callable(target):
-            try:
-                return get_type_hints(type(target).__call__)
-            except (TypeError, NameError, AttributeError, ValueError):
-                return {}
         return {}
 
 

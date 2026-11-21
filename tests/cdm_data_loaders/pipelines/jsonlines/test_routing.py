@@ -410,6 +410,51 @@ PREPROCESS_REJECTED_ROW: Final[dict[str, Any]] = {
             {"_rejected": [PREPROCESS_REJECTED_ROW]},
             id="preprocessor-rejected-dict",
         ),
+        pytest.param(
+            [
+                PREPROCESS_REJECTED_ROW,
+                make_item(
+                    record={"widget_id": "ok", "count": 1}, raw_record='{"widget_id": "ok", "count": 1}', line_no=1
+                ),
+            ],
+            {
+                "widget": [{"widget_id": "ok", "count": 1}],
+                "_rejected": [PREPROCESS_REJECTED_ROW],
+            },
+            id="pre-rejected-followed-by-valid",
+        ),
+        pytest.param(
+            [
+                {
+                    **make_item(
+                        record={"widget_id": "w2", "count": 2}, raw_record='{"widget_id": "w2", "count": 2}', line_no=2
+                    ),
+                    "error_detail": "ignored",
+                },
+            ],
+            {"widget": [{"widget_id": "w2", "count": 2}]},
+            id="valid-with-extra-error-detail-key",
+        ),
+        pytest.param(
+            [
+                {
+                    **make_item(record=None, raw_record="{bad", parse_error="boom", line_no=3),
+                    "error_detail": "unrelated",
+                },
+            ],
+            {
+                "_rejected": [
+                    {
+                        "table_name": "widget",
+                        "source_file": "file.jsonl",
+                        "line_no": 3,
+                        "raw_record": "{bad",
+                        "error_detail": "boom",
+                    }
+                ],
+            },
+            id="parse-error-precedes-error-detail-key",
+        ),
     ],
 )
 def test_make_page_router_pass_use_pyarrow_false_yields_lists_of_dicts(
@@ -426,3 +471,24 @@ def test_make_page_router_pass_use_pyarrow_false_yields_lists_of_dicts(
     assert len(results) == len(expected_pages)
     assert all(isinstance(page_data, list) for page_data in by_table.values())
     assert by_table == expected_pages
+
+
+def test_route_jsonl_lines_coerces_types_via_schema_map(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """route_jsonl_lines passes settings.schema_map to make_record_router so scalar types are coerced before Arrow buffering."""
+    directory = tmp_path / "widget"
+    directory.mkdir()
+    (directory / "data.jsonl").write_text('{"widget_id": 123}\n', encoding="utf-8")
+    mod_name = register_temp_module(
+        monkeypatch,
+        "_test_route_jsonl_lines_coercion",
+        OUTPUT_SCHEMAS={"widget": pa.schema([pa.field("widget_id", pa.string())])},
+    )
+    settings = make_extract_settings(tmp_path, output_schemas_module=mod_name)
+
+    pages = list(route_jsonl_lines(iter(read_items(directory)), settings))
+    assert len(pages) == 1
+    assert isinstance(pages[0].data, pa.Table)
+    assert pages[0].data.to_pylist() == [{"widget_id": "123"}]

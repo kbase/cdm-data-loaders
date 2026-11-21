@@ -1,5 +1,6 @@
 """Integration tests for build_entity_resource: file reading, validation, and dlt wiring together."""
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -7,12 +8,14 @@ from typing import Any
 import dlt
 import pyarrow as pa
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
 from cdm_data_loaders.core.buffer import REJECTED_PYARROW_SCHEMA
 from cdm_data_loaders.core.preprocessors import FilePreprocessError
 from cdm_data_loaders.pipelines.jsonlines.pydantic import (
+    PYDANTIC_PIPELINE_NAME,
+    _make_validator_callbacks,
     build_entity_resource,
     run_jsonlines_with_validation_pipeline,
 )
@@ -426,20 +429,87 @@ def test_build_entity_resource_pass_per_table_preprocessors_route_failed_files_t
     assert row["error_detail"] == "corrupt file header"
 
 
-def test_run_jsonlines_with_validation_pipeline_uses_subclass_cli_prog_name(
+@pytest.mark.parametrize(
+    ("cli_prog_name", "expected_pipeline_name"),
+    [
+        pytest.param("preset_pydantic", "preset_pydantic", id="subclass-cli-prog-name"),
+        pytest.param(None, PYDANTIC_PIPELINE_NAME, id="default-pipeline-name"),
+    ],
+)
+def test_run_jsonlines_with_validation_pipeline_resolves_pipeline_name(
     scenario_input_dir: Callable[[str], str],
     settings_factory: Callable[..., JsonlPydanticIngestSettings],
     tmp_path: Path,
+    cli_prog_name: str | None,
+    expected_pipeline_name: str,
 ) -> None:
-    """run_jsonlines_with_validation_pipeline uses a preset subclass cli_prog_name as pipeline_name."""
+    """run_jsonlines_with_validation_pipeline uses subclass cli_prog_name or defaults to PYDANTIC_PIPELINE_NAME."""
+    settings = settings_factory(input_dir=scenario_input_dir("happy_path"), output_dir=str(tmp_path / "out"))
+    if cli_prog_name is not None:
 
-    class PresetPydanticSettings(JsonlPydanticIngestSettings, cli_prog_name="preset_pydantic"):
-        pass
+        class PresetPydanticSettings(JsonlPydanticIngestSettings, cli_prog_name=cli_prog_name):
+            pass
 
-    base_settings = settings_factory(input_dir=scenario_input_dir("happy_path"), output_dir=str(tmp_path / "out"))
-    preset_settings = PresetPydanticSettings.model_validate(
-        base_settings.model_dump(exclude=set(JsonlPydanticIngestSettings.model_computed_fields))
-    )
-    load_info = assert_run_ok(run_jsonlines_with_validation_pipeline(preset_settings))
+        settings = PresetPydanticSettings.model_validate(
+            settings.model_dump(exclude=set(JsonlPydanticIngestSettings.model_computed_fields))
+        )
 
-    assert load_info.pipeline.pipeline_name == "preset_pydantic"
+    load_info = assert_run_ok(run_jsonlines_with_validation_pipeline(settings))
+
+    assert load_info.pipeline.pipeline_name == expected_pipeline_name
+
+
+class AliasWidget(BaseModel):
+    """Test model with aliased field and custom count validator."""
+
+    widget_id: str = Field(alias="widgetId")
+    count: int
+
+    @field_validator("count")
+    @classmethod
+    def _must_be_positive(cls, value: int) -> int:
+        if value < 0:
+            msg = "count must be non-negative"
+            raise ValueError(msg)
+        return value
+
+
+def test_make_validator_callbacks_caches_valid_model_and_serializes_errors() -> None:
+    """_make_validator_callbacks caches validated models, handles uncached dicts, and serializes non-JSON error contexts."""
+    resolve_error, extract = _make_validator_callbacks(AliasWidget)
+    record: dict[str, Any] = {"widgetId": "w1", "count": 2}
+    assert resolve_error(record) is None
+    extracted_model = extract(record)
+    assert isinstance(extracted_model, AliasWidget)
+    assert extracted_model.widget_id == "w1"
+
+    # different dict identity triggers fresh validation without relying on stale cache
+    extracted_uncached = extract({"widgetId": "w2", "count": 3})
+    assert isinstance(extracted_uncached, AliasWidget)
+    assert extracted_uncached.widget_id == "w2"
+
+    # validation error with ValueError in ctx serializes via default=str and clears cached state
+    assert resolve_error(record) is None
+    error_json = resolve_error({"widgetId": "w_bad", "count": -1})
+    assert error_json is not None
+    parsed_errors = json.loads(error_json)
+    assert "count must be non-negative" in parsed_errors[0]["msg"]
+
+
+@pytest.mark.parametrize(
+    ("extra_kwargs", "record", "expected"),
+    [
+        pytest.param({}, {"widgetId": "w3", "count": 4}, {"widget_id": "w3", "count": 4}, id="default-by-alias-false"),
+        pytest.param(
+            {"by_alias": True}, {"widgetId": "w4", "count": 5}, {"widgetId": "w4", "count": 5}, id="by-alias-true"
+        ),
+    ],
+)
+def test_make_validator_callbacks_dump_to_dict_respects_by_alias(
+    extra_kwargs: dict[str, Any],
+    record: dict[str, Any],
+    expected: dict[str, Any],
+) -> None:
+    """_make_validator_callbacks with dump_to_dict=True uses Python field names by default and aliases when by_alias=True."""
+    _, extract = _make_validator_callbacks(AliasWidget, dump_to_dict=True, **extra_kwargs)
+    assert extract(record) == expected

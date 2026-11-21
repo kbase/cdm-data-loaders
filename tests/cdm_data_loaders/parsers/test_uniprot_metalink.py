@@ -1,11 +1,13 @@
 """Tests for UniProt metalink file parser."""
 
 import logging
+import re
 from pathlib import Path
+from xml.etree.ElementTree import ElementTree
 
 import pytest
 
-from cdm_data_loaders.parsers.uniprot_metalink import generate_data_source_table, get_files
+from cdm_data_loaders.parsers.uniprot_metalink import generate_data_source_table, get_files, parse_metalink
 
 
 def test_generate_data_source_table(test_data_dir: Path) -> None:
@@ -31,16 +33,39 @@ def test_generate_data_source_table(test_data_dir: Path) -> None:
         ("missing", ["license", "publisher"]),
     ],
 )
-def test_generate_data_source_error_missing_fields(test_data_dir: Path, file: str, missing: list[str]) -> None:
+def test_generate_data_source_error_missing_fields(
+    test_data_dir: Path, file: str, missing: list[str], caplog: pytest.LogCaptureFixture
+) -> None:
     """Test the parsing of the data source table."""
     metalink_path = test_data_dir / "uniprot" / "metalink" / "invalid" / f"{file}_metalink.xml"
 
     missing_fields = ", ".join(missing)
+    expected_msg = f"Missing required elements from metalink file: {missing_fields}"
     with pytest.raises(
         RuntimeError,
-        match=f"Missing required elements from metalink file: {missing_fields}",
+        match=f"^{re.escape(expected_msg)}$",
     ):
         generate_data_source_table(str(metalink_path))
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.ERROR
+    assert caplog.records[0].getMessage() == expected_msg
+
+
+def test_parse_metalink_missing_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log and raise RuntimeError when the parsed XML document has no root element."""
+    metalink_path = tmp_path / "empty.xml"
+    monkeypatch.setattr("cdm_data_loaders.parsers.uniprot_metalink.parse", lambda _path: ElementTree())
+
+    expected_msg = f"Could not find root in metalink file: {metalink_path}"
+    with pytest.raises(RuntimeError, match=f"^{re.escape(expected_msg)}$"):
+        parse_metalink(metalink_path)
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelno == logging.ERROR
+    assert caplog.records[0].getMessage() == expected_msg
 
 
 UNIPROT_METALINK_DATA = {
@@ -152,3 +177,32 @@ def test_get_files(
         assert caplog.records[0].getMessage() == msg
     else:
         assert not caplog.records
+
+
+def test_get_files_without_verification(tmp_path: Path) -> None:
+    """Return None for checksum fields when a file entry has no verification hash."""
+    metalink_path = tmp_path / "no_hash.xml"
+    metalink_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<metalink xmlns="http://www.metalinker.org/">\n'
+        "  <files>\n"
+        '    <file name="no_hash.txt">\n'
+        "      <size>42</size>\n"
+        "      <resources>\n"
+        '        <url location="us">https://example.org/no_hash.txt</url>\n'
+        "      </resources>\n"
+        "    </file>\n"
+        "  </files>\n"
+        "</metalink>\n",
+        encoding="utf-8",
+    )
+
+    assert get_files(metalink_path) == {
+        "no_hash.txt": {
+            "name": "no_hash.txt",
+            "size": "42",
+            "checksum": None,
+            "checksum_fn": None,
+            "url": "https://example.org/no_hash.txt",
+        }
+    }

@@ -1,8 +1,11 @@
 """Tests for the FileItemDict helpers in cdm_data_loaders.core.file_items."""
 
+import errno
 import gzip
 import io
+import os
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Final
 
 import fsspec
@@ -95,13 +98,19 @@ def test_as_file_item_fail_missing_file(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match="No such file or directory") as exc_info:
         as_file_item(missing)
 
+    assert exc_info.value.errno == errno.ENOENT
+    assert exc_info.value.strerror == os.strerror(errno.ENOENT)
     assert exc_info.value.filename == str(missing)
 
 
 def test_as_file_item_fail_directory(tmp_path: Path) -> None:
-    """Verify a directory raises IsADirectoryError."""
-    with pytest.raises(IsADirectoryError):
+    """Verify a directory raises IsADirectoryError with errno, strerror, and filename."""
+    with pytest.raises(IsADirectoryError) as exc_info:
         as_file_item(tmp_path)
+
+    assert exc_info.value.errno == errno.EISDIR
+    assert exc_info.value.strerror == os.strerror(errno.EISDIR)
+    assert exc_info.value.filename == str(tmp_path)
 
 
 """join_url"""
@@ -169,6 +178,24 @@ def test_source_url_pass_file_item(fs_backend: FsBackend) -> None:
     assert source_url(item) == item["file_url"]
 
 
+@pytest.mark.parametrize(
+    "named_handle",
+    [
+        pytest.param(True, id="named-file-handle"),
+        pytest.param(False, id="unnamed-bytes-io"),
+    ],
+)
+def test_source_url_pass_open_handle(tmp_path: Path, named_handle: bool) -> None:
+    """Verify source_url uses .name on a file handle and falls back to str(handle) when unnamed."""
+    if named_handle:
+        path = _write(tmp_path, "open.tsv", CONTENT)
+        with path.open("rb") as fh:
+            assert source_url(fh) == str(path)
+    else:
+        buf = io.BytesIO(CONTENT)
+        assert source_url(buf) == str(buf)
+
+
 """open_binary"""
 
 
@@ -215,6 +242,16 @@ def test_is_local_pass_matches_backend(fs_backend: FsBackend) -> None:
     fs_backend.put("data.tsv", CONTENT)
 
     assert is_local(fs_backend.file_item("data.tsv")) is fs_backend.is_local
+
+
+def test_is_local_pass_string_protocol() -> None:
+    """Verify is_local handles filesystems whose protocol attribute is a plain string."""
+    item = FileItemDict(
+        {"file_name": "a.tsv", "relative_path": "a.tsv", "file_url": "file:///a.tsv", "mime_type": "text/tsv"},
+        SimpleNamespace(protocol="file"),  # type: ignore[arg-type]
+    )
+
+    assert is_local(item) is True
 
 
 """local_copy"""

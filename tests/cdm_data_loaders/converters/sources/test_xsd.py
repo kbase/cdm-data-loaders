@@ -3,7 +3,7 @@
 import functools
 from collections.abc import Callable
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 import pyarrow as pa
 import pytest
@@ -11,6 +11,7 @@ import xmlschema
 from pydantic import ValidationError
 from pyspark.sql.types import StructType
 
+from cdm_data_loaders.converters.core.ir import Provenance, TypedNode
 from cdm_data_loaders.converters.emitters.dlt import DltEmitter
 from cdm_data_loaders.converters.emitters.json_schema.emitter import JsonSchemaEmitter
 from cdm_data_loaders.converters.emitters.pyarrow import PyArrowEmitter
@@ -21,7 +22,12 @@ from cdm_data_loaders.converters.exceptions.facades.xsd_to_pyarrow import (
     XsdToPyArrowError,
 )
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import XsdToPyArrow
-from cdm_data_loaders.converters.sources.xsd import XsdReader
+from cdm_data_loaders.converters.sources.xsd import (
+    XsdReader,
+    _string_ir_node,
+    _wrap_truncated_leaf_ir_field,
+    simple_type_to_ir_node,
+)
 from cdm_data_loaders.schemas.uniref.schema import SCHEMAS as UNIREF_SCHEMAS
 from cdm_data_loaders.utils.xml_utils import local_name
 from cdm_data_loaders.validation.xsd.traversal import (
@@ -308,3 +314,180 @@ def test_xsd_reader_fail_invalid_options(
     """XsdReader validates max_recursion_depth and requires xml_tag when multiple roots exist."""
     with pytest.raises(error_type, match=match):
         call()
+
+
+IR_HELPERS_XSD: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:test:ir" xmlns="urn:test:ir">
+  <xs:simpleType name="DocIntList">
+    <xs:annotation><xs:documentation>List of ints</xs:documentation></xs:annotation>
+    <xs:list itemType="xs:integer"/>
+  </xs:simpleType>
+  <xs:complexType name="DocRecType">
+    <xs:annotation><xs:documentation>Recursive type doc</xs:documentation></xs:annotation>
+    <xs:sequence>
+      <xs:element name="val" type="xs:string"/>
+      <xs:element name="child" type="DocRecType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="root">
+    <xs:annotation><xs:documentation>Root element doc</xs:documentation></xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="ints" type="DocIntList"/>
+        <xs:element name="rec" type="DocRecType" minOccurs="0"/>
+      </xs:sequence>
+      <xs:attribute name="req_attr" type="xs:NMTOKENS" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+
+READER_IR_XSD: Final[str] = """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" targetNamespace="urn:test:ir" xmlns="urn:test:ir">
+  <xs:simpleType name="DocIntList">
+    <xs:annotation><xs:documentation>List of ints</xs:documentation></xs:annotation>
+    <xs:list itemType="xs:integer"/>
+  </xs:simpleType>
+  <xs:element name="root">
+    <xs:annotation><xs:documentation>Root element doc</xs:documentation></xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="ints" type="DocIntList"/>
+        <xs:element name="val" type="xs:string"/>
+      </xs:sequence>
+      <xs:attribute name="req_attr" type="xs:NMTOKENS" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+"""
+
+
+@pytest.fixture
+def ir_helpers_schema(tmp_path: Path) -> xmlschema.XMLSchema:
+    """Compile the XSD schema fixture used by IR helper tests."""
+    xsd_path = tmp_path / "ir_helpers.xsd"
+    xsd_path.write_text(IR_HELPERS_XSD, encoding="utf-8")
+    return xmlschema.XMLSchema(str(xsd_path))
+
+
+@pytest.fixture
+def reader_ir_schema(tmp_path: Path) -> xmlschema.XMLSchema:
+    """Compile the XSD schema fixture used by XsdReader provenance tests."""
+    xsd_path = tmp_path / "reader_ir.xsd"
+    xsd_path.write_text(READER_IR_XSD, encoding="utf-8")
+    return xmlschema.XMLSchema(str(xsd_path))
+
+
+@pytest.mark.parametrize(
+    ("path", "nullable", "metadata", "expected_metadata"),
+    [
+        pytest.param(("a",), True, {"k": "v"}, {"k": "v"}, id="nullable-with-metadata"),
+        pytest.param(("b",), False, None, {}, id="non-nullable-default-metadata"),
+    ],
+)
+def test_string_ir_node_pass(
+    path: tuple[str, ...],
+    *,
+    nullable: bool,
+    metadata: dict[str, Any] | None,
+    expected_metadata: dict[str, Any],
+) -> None:
+    """_string_ir_node preserves nullable, provenance path, and metadata."""
+    node = (
+        _string_ir_node(path, nullable=nullable)
+        if metadata is None
+        else _string_ir_node(path, nullable=nullable, metadata=metadata)
+    )
+    assert node.nullable is nullable
+    assert node.provenance == Provenance("xsd", path, expected_metadata)
+
+
+@pytest.mark.parametrize(
+    ("type_kind", "path", "nullable", "expected_item_type", "expected_xsd_type"),
+    [
+        pytest.param("builtin", ("attr",), False, "string", "xs:NMTOKEN", id="builtin-nmtokens"),
+        pytest.param("custom", ("ints",), True, "integer", "xs:integer", id="custom-int-list"),
+    ],
+)
+def test_simple_type_to_ir_node_pass_list_types(
+    ir_helpers_schema: xmlschema.XMLSchema,
+    type_kind: str,
+    path: tuple[str, ...],
+    *,
+    nullable: bool,
+    expected_item_type: str,
+    expected_xsd_type: str,
+) -> None:
+    """simple_type_to_ir_node maps built-in and custom XSD list types with item provenance."""
+    xsd_type = (
+        ir_helpers_schema.elements["root"].type.attributes["req_attr"].type
+        if type_kind == "builtin"
+        else ir_helpers_schema.types["DocIntList"]
+    )
+    node = simple_type_to_ir_node(xsd_type, path, nullable=nullable)
+    assert node.type == "array"
+    assert node.nullable is nullable
+    assert node.provenance == Provenance("xsd", path)
+    assert node.items is not None
+    assert node.items.type == expected_item_type
+    assert node.items.nullable is True
+    assert node.items.provenance == Provenance("xsd", (*path, "item"), {"xsd_type": expected_xsd_type})
+
+
+@pytest.mark.parametrize(
+    ("is_list", "nullable", "expected_required", "expected_node_type"),
+    [
+        pytest.param(True, True, False, "array", id="list-nullable"),
+        pytest.param(False, False, True, "string", id="scalar-required"),
+    ],
+)
+def test_wrap_truncated_leaf_ir_field_pass(
+    ir_helpers_schema: xmlschema.XMLSchema,
+    *,
+    is_list: bool,
+    nullable: bool,
+    expected_required: bool,
+    expected_node_type: str,
+) -> None:
+    """_wrap_truncated_leaf_ir_field attaches type documentation and truncated_component_id provenance."""
+    rec_elem = ir_helpers_schema.elements["root"].type.content[1]
+    child_elem = rec_elem.type.content[1]
+    expected_meta = {"truncated_component_id": id(child_elem.type)}
+
+    field = _wrap_truncated_leaf_ir_field(child_elem, ("rec", "child"), is_list=is_list, nullable=nullable)
+    assert field.name == "child"
+    assert field.required is expected_required
+    assert field.annotations == {"description": "Recursive type doc"}
+    assert field.provenance == Provenance("xsd", ("rec", "child"), expected_meta)
+    assert field.node.type == expected_node_type
+    assert field.node.nullable is nullable
+    assert field.node.provenance == Provenance("xsd", ("rec", "child"), expected_meta)
+    if is_list:
+        assert field.node.items is not None
+        assert field.node.items.nullable is True
+        assert field.node.items.provenance == Provenance("xsd", ("rec", "child", "item"), expected_meta)
+
+
+def test_xsd_reader_read_pass_annotations_namespace_and_cache(reader_ir_schema: xmlschema.XMLSchema) -> None:
+    """XsdReader.read attaches element annotations, targetNamespace, provenance, and leaves struct_cache empty."""
+    cache: dict[tuple[int, bool], TypedNode] = {}
+    doc = XsdReader(max_recursion_depth=1).read(reader_ir_schema, struct_cache=cache)
+    assert doc.name == "root"
+    assert doc.identifier == "urn:test:ir"
+    assert doc.annotations == {"description": "Root element doc"}
+    assert doc.root.annotations == {"description": "Root element doc"}
+    assert doc.provenance == Provenance("xsd", ("root",))
+    fields_by_name = {f.name: f for f in doc.root.properties}
+    assert fields_by_name["_req_attr"].required is True
+    assert fields_by_name["ints"].annotations == {"description": "List of ints"}
+    assert fields_by_name["ints"].provenance == Provenance("xsd", ("ints",))
+    assert fields_by_name["val"].provenance == Provenance("xsd", ("val",), {"xsd_type": "xs:string"})
+    assert cache == {}
+
+
+def test_xsd_reader_read_at_level_pass_scalar_leaf_provenance(reader_ir_schema: xmlschema.XMLSchema) -> None:
+    """XsdReader.read_at_level marks scalar leaf tables with scalar_leaf_table provenance and #text property."""
+    level_docs = XsdReader().read_at_level(reader_ir_schema, 1, root_tag="root")
+    assert "val" in level_docs
+    assert level_docs["val"].root.provenance == Provenance("xsd", (), {"scalar_leaf_table": True})
+    assert level_docs["val"].root.properties[0].name == "#text"

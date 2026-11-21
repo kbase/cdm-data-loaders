@@ -1,9 +1,12 @@
 """Unit and integration tests for cdm_data_loaders.cli.polaris_schema_definitions."""
 
 import json
+import logging
 from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Final
+from unittest.mock import patch
 
 import dlt
 import pyarrow as pa
@@ -16,7 +19,9 @@ from pyiceberg.types import LongType, NestedField, StringType
 from pyiceberg.utils.config import Config
 
 from cdm_data_loaders.cli.polaris_schema_definitions import (
+    PolarisSchemaDefinitionsSettings,
     load_pyarrow_schema,
+    run_from_settings,
 )
 from cdm_data_loaders.cli.polaris_schema_definitions import (
     main as cli_main,
@@ -722,3 +727,118 @@ def test_cli_main_applies_definitions_and_prints_json_report(
         updated_tbl = verify_cat.load_table((NAMESPACE, "id_mapping"))
         assert updated_tbl.properties["comment"] == "Standardised mapping data from UniProt"
         assert collect_iceberg_docs(updated_tbl.schema()) == parsed_stdout["updated_fields"]
+
+
+def test_load_pyarrow_schema_blank_description_returns_none(tmp_path: Path) -> None:
+    """load_pyarrow_schema produces no metadata definition for whitespace-only descriptions."""
+    json_path = tmp_path / "blank_desc.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "description": "   ",
+                "properties": {"id": {"type": "string"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_pyarrow_schema(str(json_path))
+    assert extract_metadata_definition(loaded.metadata) is None
+
+
+@pytest.mark.parametrize(
+    ("dry_run", "expected_verb"),
+    [
+        pytest.param(True, "Planned", id="dry-run"),
+        pytest.param(False, "Applied", id="apply"),
+    ],
+)
+def test_run_from_settings_forwards_all_options_and_logs(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    *,
+    dry_run: bool,
+    expected_verb: str,
+) -> None:
+    """run_from_settings forwards catalog and sync options and logs Planned or Applied."""
+    json_path = tmp_path / "schema.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {"id": {"type": "string"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured_cfg: list[PolarisCatalogConfig] = []
+    captured_opts: list[DefinitionSyncOptions] = []
+
+    @contextmanager
+    def fake_connect(cfg: PolarisCatalogConfig) -> Generator[object]:
+        captured_cfg.append(cfg)
+        yield object()
+
+    def fake_apply(
+        _cat: object,
+        _table: str,
+        _schema: pa.Schema,
+        *,
+        options: DefinitionSyncOptions,
+    ) -> SchemaDefinitionsReport:
+        captured_opts.append(options)
+        return SchemaDefinitionsReport(
+            table_identifier=("ns", "tbl"),
+            dry_run=options.dry_run,
+            table_comment_applied="desc",
+            updated_fields={"a": "b"},
+            unchanged_fields=["c"],
+        )
+
+    bearer_val = "tok"
+    settings = PolarisSchemaDefinitionsSettings(
+        catalog="mycat",
+        table="ns.tbl",
+        schema_source=str(json_path),
+        table_description="override desc",
+        uri="http://polaris:8181/api/catalog",
+        warehouse="wh",
+        credential="cid:csec",
+        token=bearer_val,
+        scope="ROLE:ALL",
+        metadata_keys=("doc",),
+        normalize_root_names=False,
+        strict=True,
+        dry_run=dry_run,
+    )
+    with (
+        patch("cdm_data_loaders.cli.polaris_schema_definitions.connect_polaris_catalog", fake_connect),
+        patch("cdm_data_loaders.cli.polaris_schema_definitions.apply_schema_definitions", fake_apply),
+        caplog.at_level(logging.INFO, logger="cdm_data_loaders.cli.polaris_schema_definitions"),
+    ):
+        report = run_from_settings(settings)
+
+    assert report.dry_run is dry_run
+    assert captured_cfg == [
+        PolarisCatalogConfig(
+            catalog="mycat",
+            uri="http://polaris:8181/api/catalog",
+            warehouse="wh",
+            credential="cid:csec",
+            token=bearer_val,
+            scope="ROLE:ALL",
+        )
+    ]
+    assert captured_opts == [
+        DefinitionSyncOptions(
+            table_description="override desc",
+            metadata_keys=("doc",),
+            normalize_root_names=False,
+            strict=True,
+            dry_run=dry_run,
+        )
+    ]
+    assert f"{expected_verb} definitions on ns.tbl" in caplog.text

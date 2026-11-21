@@ -1,18 +1,21 @@
 """Unit tests for ``cdm_data_loaders.core.md5_preprocessor``."""
 
 import gzip
+from pathlib import Path
 from typing import Final
 from unittest.mock import patch
 
 import pytest
 
+from cdm_data_loaders.core import md5_preprocessor
+from cdm_data_loaders.core.file_items import as_file_item
 from cdm_data_loaders.core.md5_preprocessor import (
     FILE_PREPROCESSORS,
     parse_md5_sidecar,
     validate_md5_sidecar,
 )
 from cdm_data_loaders.core.preprocessors import FilePreprocessError
-from cdm_data_loaders.utils.checksums import new_hasher
+from cdm_data_loaders.utils.checksums import HASH_CHUNK_BYTES, new_hasher
 from tests.helpers.fs_backends import FsBackend
 
 SAMPLE_DIGEST: Final[str] = "d41d8cd98f00b204e9800998ecf8427e"
@@ -150,3 +153,27 @@ def test_validate_md5_sidecar_fail_oserror_reading_sidecar(fs_backend: FsBackend
         ),
     ):
         validate_md5_sidecar(file_item)
+
+
+def test_validate_md5_sidecar_forwards_open_and_checksum_arguments(tmp_path: Path) -> None:
+    """validate_md5_sidecar opens sidecar as UTF-8 text, raw stream binary uncompressed, and passes HASH_CHUNK_BYTES."""
+    gz_path = tmp_path / "sample.xml.gz"
+    raw = gzip.compress(b"<root/>", mtime=0)
+    gz_path.write_bytes(raw)
+    (tmp_path / "sample.xml.gz.md5").write_text(f"{_md5_hex(raw)}  sample.xml.gz\n", encoding="utf-8")
+    file_item = as_file_item(gz_path)
+
+    with (
+        patch.object(file_item.fsspec, "open", wraps=file_item.fsspec.open) as mock_fs_open,
+        patch.object(file_item, "open", wraps=file_item.open) as mock_item_open,
+        patch.object(
+            md5_preprocessor,
+            "compute_stream_checksum",
+            wraps=md5_preprocessor.compute_stream_checksum,
+        ) as mock_checksum,
+    ):
+        validate_md5_sidecar(file_item)
+
+    assert mock_fs_open.call_args_list[0].kwargs == {"mode": "rt", "encoding": "utf-8"}
+    assert mock_item_open.call_args.kwargs == {"mode": "rb", "compression": "disable"}
+    assert mock_checksum.call_args.kwargs["chunk_size"] == HASH_CHUNK_BYTES

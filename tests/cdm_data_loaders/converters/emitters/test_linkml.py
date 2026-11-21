@@ -8,9 +8,13 @@ from linkml_runtime.dumpers import yaml_dumper
 from linkml_runtime.linkml_model.meta import ClassDefinition, EnumDefinition, SchemaDefinition, SlotDefinition
 from linkml_runtime.loaders import yaml_loader
 
-from cdm_data_loaders.converters.core.ir import Field, SchemaDocument, TypedNode
+from cdm_data_loaders.converters.core.ir import Field, NodeHints, Provenance, SchemaDocument, TypedNode
 from cdm_data_loaders.converters.emitters.linkml import LinkMLEmitter
-from cdm_data_loaders.converters.exceptions.emitters.linkml import LinkMLEmitterError
+from cdm_data_loaders.converters.exceptions.emitters.linkml import (
+    EmptyLinkMLSlotNameError,
+    LinkMLEmitterError,
+    NestedLinkMLMultivaluedError,
+)
 from cdm_data_loaders.converters.sources.json_schema.permissive import JsonSchemaReader
 
 
@@ -262,3 +266,116 @@ def test_emit_into_fail_preserves_destination(root: TypedNode) -> None:
         "good": ClassDefinition(name="good"),
     }
     assert schema.enums == {}
+
+
+def test_emit_field_fail_blank_name() -> None:
+    """emit_field rejects whitespace-only slot names with EmptyLinkMLSlotNameError."""
+    with pytest.raises(EmptyLinkMLSlotNameError, match="non-empty"):
+        LinkMLEmitter().emit_field(Field("   ", TypedNode("string")))
+
+
+def test_emit_field_pass_node_description() -> None:
+    """emit_field falls back to the node description when the field has no annotation."""
+    slot = LinkMLEmitter().emit_field(Field("col", TypedNode("string", annotations={"description": "from node"})))
+    assert slot.description == "from node"
+
+
+@pytest.mark.parametrize(
+    ("node", "error_type", "match"),
+    [
+        pytest.param(
+            TypedNode("array", items=TypedNode("array", items=TypedNode("string"))),
+            NestedLinkMLMultivaluedError,
+            None,
+            id="nested-array",
+        ),
+        pytest.param(
+            TypedNode("array", items=TypedNode("map", key_type=TypedNode("string"), value_type=TypedNode("string"))),
+            NestedLinkMLMultivaluedError,
+            None,
+            id="array-of-map",
+        ),
+        pytest.param(
+            TypedNode("map", key_type=None, value_type=TypedNode("string")),
+            LinkMLEmitterError,
+            "key and value",
+            id="map-missing-key",
+        ),
+    ],
+)
+def test_emit_node_fail_invalid_multivalued_and_map(
+    node: TypedNode,
+    error_type: type[Exception],
+    match: str | None,
+) -> None:
+    """emit_node rejects nested multivalued nodes and incomplete map nodes."""
+    with pytest.raises(error_type, match=match):
+        LinkMLEmitter().emit_node(node)
+
+
+def test_emit_pass_pyarrow_bounds_fixed_list_and_map() -> None:
+    """LinkMLEmitter uses document title and emits PyArrow bounds, fixed-size lists, and maps."""
+    pa_prov = Provenance("pyarrow", ())
+    pa_doc = SchemaDocument(
+        annotations={"title": "MyTitle"},
+        root=TypedNode(
+            "object",
+            properties=(
+                Field(
+                    "u8_list",
+                    TypedNode(
+                        "array",
+                        hints=NodeHints(logical_type="fixed-size-list", length=4),
+                        items=TypedNode(
+                            "integer",
+                            hints=NodeHints(logical_type="uint8", bit_width=8),
+                            provenance=pa_prov,
+                        ),
+                        provenance=pa_prov,
+                    ),
+                ),
+                Field(
+                    "i16",
+                    TypedNode(
+                        "integer",
+                        hints=NodeHints(logical_type="int16", bit_width=16),
+                        provenance=pa_prov,
+                    ),
+                ),
+                Field(
+                    "pa_map",
+                    TypedNode(
+                        "map",
+                        key_type=TypedNode("string", provenance=pa_prov),
+                        value_type=TypedNode("integer", nullable=False, provenance=pa_prov),
+                        provenance=pa_prov,
+                    ),
+                ),
+            ),
+        ),
+    )
+    out = LinkMLEmitter().emit(pa_doc)
+    assert out.name == "MyTitle"
+    assert "MyTitle" in out.classes
+    attrs = out.classes["MyTitle"].attributes
+    u8_list = attrs["u8_list"]
+    expected_len = 4
+    assert u8_list.minimum_value is None
+    assert u8_list.maximum_value is None
+    assert u8_list.minimum_cardinality == expected_len
+    assert u8_list.maximum_cardinality == expected_len
+    min_i16 = -32768
+    max_i16 = 32767
+    assert attrs["i16"].minimum_value == min_i16
+    assert attrs["i16"].maximum_value == max_i16
+    map_cls = out.classes["MyTitle_pa_map_map"]
+    assert map_cls.attributes["key"].required is True
+    assert map_cls.attributes["value"].required is True
+
+
+def test_emit_into_pass_avoids_enum_name_collision_and_unnamed_root() -> None:
+    """emit_into avoids collisions with existing enum names and handles unnamed root documents."""
+    target = SchemaDefinition(id="urn:test:ns", name="ns", enums={"Root": EnumDefinition(name="Root")})
+    LinkMLEmitter().emit_into(SchemaDocument(root=TypedNode("object")), target)
+    assert "Root_2" in target.classes
+    assert target.classes["Root_2"].description is None

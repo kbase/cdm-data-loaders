@@ -34,6 +34,7 @@ from pyiceberg.types import (
 )
 
 from cdm_data_loaders.converters.core.errors import ConversionError
+from cdm_data_loaders.converters.core.ir import TypedNode
 from cdm_data_loaders.converters.sources.iceberg import IcebergReader, iceberg_value
 from tests.helpers.iceberg_catalog import make_iceberg_table as make_table
 
@@ -153,6 +154,20 @@ def test_read_pass_empty_schema() -> None:
             "identifier",
             id="empty-table-identifier",
         ),
+        pytest.param(
+            functools.partial(IcebergReader().read_table, make_table(("ns", "table"), Schema()), ("", "t")),
+            "nonempty strings",
+            id="empty-identifier-part",
+        ),
+        pytest.param(
+            functools.partial(
+                IcebergReader().read_table,
+                make_table(("ns", "table"), Schema()),
+                (123, "t"),  # type: ignore[arg-type]
+            ),
+            "nonempty strings",
+            id="non-string-identifier-part",
+        ),
     ],
 )
 def test_read_fail_invalid_source_and_identifier(
@@ -207,3 +222,60 @@ def test_read_fail_unsupported_type_and_metadata(
     """Unmapped Iceberg types and arbitrary Python defaults are not guessed."""
     with pytest.raises(error_type, match=match):
         call()
+
+
+def test_read_pass_provenance_and_extensions() -> None:
+    """IcebergReader.read preserves schema provenance paths, x-iceberg metadata, and closed root additional_properties."""
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=True, doc="primary id"),
+        NestedField(2, "nested", StructType(NestedField(3, "inner", StringType()))),
+        schema_id=7,
+        identifier_field_ids=[1],
+    )
+    doc = IcebergReader().read(schema)
+    expected_schema_id = 7
+    assert doc.extensions["x-iceberg"] == {"schema_id": expected_schema_id, "identifier_field_ids": (1,)}
+    assert doc.provenance is not None
+    assert doc.provenance.source == "iceberg"
+    assert doc.provenance.metadata["schema-id"] == expected_schema_id
+    assert doc.root.additional_properties == TypedNode(type="never", nullable=False)
+    id_field, nested_field = doc.root.properties
+    assert id_field.annotations == {"description": "primary id"}
+    assert id_field.provenance is not None
+    assert id_field.provenance.path == ("id",)
+    assert nested_field.node.properties[0].provenance is not None
+    assert nested_field.node.properties[0].provenance.path == ("nested", "inner")
+
+
+def test_read_node_pass_standalone_list_provenance() -> None:
+    """read_node attaches empty root provenance and element path for standalone lists."""
+    standalone_node = IcebergReader().read_node(ListType(10, StringType(), element_required=False))
+    assert standalone_node.provenance is not None
+    assert standalone_node.provenance.path == ()
+    assert standalone_node.items is not None
+    assert standalone_node.items.provenance is not None
+    assert standalone_node.items.provenance.path == ("element",)
+
+
+def test_read_field_pass_standalone_map_provenance() -> None:
+    """read_field attaches field, key, and value provenance paths for standalone maps."""
+    standalone_field = IcebergReader().read_field(NestedField(11, "col", MapType(12, StringType(), 13, IntegerType())))
+    assert standalone_field.provenance is not None
+    assert standalone_field.provenance.path == ("col",)
+    assert standalone_field.annotations == {"description": None}
+    assert standalone_field.node.key_type is not None
+    assert standalone_field.node.key_type.provenance is not None
+    assert standalone_field.node.key_type.provenance.path == ("col", "key")
+    assert standalone_field.node.value_type is not None
+    assert standalone_field.node.value_type.provenance is not None
+    assert standalone_field.node.value_type.provenance.path == ("col", "value")
+
+
+def test_read_table_pass_without_comment() -> None:
+    """read_table leaves annotations empty and records identifier and format version when no comment is set."""
+    table_no_comment = make_table(("ns", "plain"), Schema(NestedField(1, "id", LongType(), required=True)))
+    table_doc = IcebergReader().read_table(table_no_comment, ("ns", "plain"))
+    assert table_doc.annotations == {}
+    assert table_doc.provenance is not None
+    assert table_doc.provenance.path == ("ns", "plain")
+    assert "format-version" in table_doc.provenance.metadata
