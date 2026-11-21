@@ -4,7 +4,7 @@ import functools
 from collections.abc import Iterable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, Union
 
 import pyarrow as pa
 import pytest
@@ -23,14 +23,21 @@ from cdm_data_loaders.core.registry import (
     TransformRegistry,
 )
 from cdm_data_loaders.core.transforms.introspection import (
+    _annotation_capabilities,
+    _annotation_is_transform_context,
+    _safe_type_hints,
+    _unwrap_partial_target,
     accepts_pyarrow_table,
     accepts_record_dict,
+    inspect_transform_signature,
 )
 from cdm_data_loaders.core.transforms.routing import (
     align_and_cast_table,
     compose_transforms,
     emit_raw_table,
+    invoke_transform,
     make_record_router,
+    merge_routed_outputs,
     resolve_schema_map,
     route_and_coerce_record,
     route_and_coerce_table,
@@ -38,6 +45,7 @@ from cdm_data_loaders.core.transforms.routing import (
 )
 from cdm_data_loaders.core.transforms.settings_mixin import (
     LockedTransformHooksMixin,
+    TransformSettingsMixin,
     reconcile_multi_table_schema_map,
     validate_table_transforms,
 )
@@ -860,7 +868,7 @@ def test_emit_raw_table_pass_arrow_and_dict(
 def test_emit_raw_table_fail_empty_prefix() -> None:
     """emit_raw_table raises ValueError when prefix is empty."""
     ctx = TransformContext.for_source("id_mapping", "dir/sample.dat")
-    with pytest.raises(ValueError, match="prefix must be a non-empty string"):
+    with pytest.raises(ValueError, match=r"^prefix must be a non-empty string$"):
         emit_raw_table({"id": "1"}, ctx, prefix="")
 
 
@@ -1280,35 +1288,78 @@ def test_locked_transform_hooks_mixin_locks_transforms_and_output_schemas_off_cl
 
 
 @pytest.mark.parametrize(
-    ("use_pyarrow", "transformed_tables", "explicit_schemas", "expected_built", "expected_tables"),
+    (
+        "use_pyarrow",
+        "transformed_tables",
+        "explicit_schemas",
+        "none_default_tables",
+        "expected_built",
+        "expected_registry",
+    ),
     [
-        pytest.param(False, (), {}, [], None, id="use-pyarrow-false"),
-        pytest.param(True, (), {}, ["alpha", "beta"], {"alpha", "beta"}, id="all-defaults"),
-        pytest.param(True, ("alpha",), {}, ["beta"], {"beta"}, id="skips-transformed-without-explicit-schema"),
+        pytest.param(False, (), {}, (), [], None, id="use-pyarrow-false"),
+        pytest.param(
+            True,
+            (),
+            {},
+            (),
+            ["alpha", "beta"],
+            {"alpha": ITEMS_SCHEMA, "beta": ITEMS_SCHEMA},
+            id="all-defaults",
+        ),
+        pytest.param(
+            True,
+            ("alpha",),
+            {},
+            (),
+            ["beta"],
+            {"beta": ITEMS_SCHEMA},
+            id="skips-transformed-without-explicit-schema",
+        ),
         pytest.param(
             True,
             ("alpha",),
             {"alpha_out": SOURCED_ITEMS_SCHEMA},
+            (),
             ["beta"],
-            {"alpha_out", "beta"},
+            {"alpha_out": SOURCED_ITEMS_SCHEMA, "beta": ITEMS_SCHEMA},
             id="merges-explicit-fanout-and-untransformed-default",
         ),
-        pytest.param(True, ("alpha", "beta"), {}, [], None, id="all-transformed-unschematized"),
+        pytest.param(
+            True,
+            (),
+            {"alpha": OVERRIDE_SCHEMA},
+            (),
+            ["beta"],
+            {"alpha": OVERRIDE_SCHEMA, "beta": ITEMS_SCHEMA},
+            id="explicit-source-table-override-skips-default-builder",
+        ),
+        pytest.param(
+            True,
+            (),
+            {},
+            ("alpha",),
+            ["alpha", "beta"],
+            {"beta": ITEMS_SCHEMA},
+            id="skips-none-default-schema",
+        ),
+        pytest.param(True, ("alpha", "beta"), {}, (), [], None, id="all-transformed-unschematized"),
     ],
 )
 def test_reconcile_multi_table_schema_map_reconciles_defaults_and_overrides(
     use_pyarrow: bool,
     transformed_tables: tuple[str, ...],
     explicit_schemas: dict[str, pa.Schema],
+    none_default_tables: tuple[str, ...],
     expected_built: list[str],
-    expected_tables: set[str] | None,
+    expected_registry: dict[str, pa.Schema] | None,
 ) -> None:
     """reconcile_multi_table_schema_map builds defaults only for untransformed unmapped tables and merges explicit schemas."""
     built: list[str] = []
 
     def _build_default(table_name: str) -> pa.Schema | None:
         built.append(table_name)
-        return ITEMS_SCHEMA
+        return None if table_name in none_default_tables else ITEMS_SCHEMA
 
     transforms = (
         TransformRegistry(registry=dict.fromkeys(transformed_tables, _identity_items_transform))
@@ -1326,8 +1377,313 @@ def test_reconcile_multi_table_schema_map_reconciles_defaults_and_overrides(
     )
 
     assert built == expected_built
-    if expected_tables is None:
-        assert result is None
+    expected = ArrowSchemaRegistry(registry=expected_registry) if expected_registry is not None else None
+    assert result == expected
+
+
+type _CtxAlias = TransformContext
+
+
+def test_unwrap_partial_target_unwraps_nested_partials() -> None:
+    """_unwrap_partial_target unwraps arbitrarily nested functools.partial wrappers."""
+
+    def base_fn(table: pa.Table, *, _flag: bool = False) -> dict[str, Any]:
+        del table, _flag
+        return {}
+
+    nested = functools.partial(functools.partial(base_fn, _flag=True))
+    assert _unwrap_partial_target(nested) is base_fn
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param("nested_partial", id="nested-partial"),
+        pytest.param("callable_object", id="callable-object"),
+        pytest.param("unresolvable_annotation", id="unresolvable-annotation"),
+    ],
+)
+def test_safe_type_hints_handles_callables_and_errors(case: str) -> None:
+    """_safe_type_hints resolves hints on partials and callable objects and returns empty dict on errors."""
+    if case == "nested_partial":
+
+        def base_fn(table: pa.Table, *, _flag: bool = False) -> dict[str, Any]:
+            del table, _flag
+            return {}
+
+        target: object = functools.partial(functools.partial(base_fn, _flag=True))
+        assert _safe_type_hints(target)["table"] is pa.Table  # type: ignore[arg-type]
+    elif case == "callable_object":
+
+        class _CallableObj:
+            def __call__(self, table: pa.Table, ctx: TransformContext | None = None) -> dict[str, Any]:
+                del table, ctx
+                return {}
+
+        assert _safe_type_hints(_CallableObj())["table"] is pa.Table
     else:
-        assert result is not None
-        assert set(result.registry) == expected_tables
+
+        def bad_hint_fn(_x: object) -> dict[str, Any]:
+            return {}
+
+        bad_hint_fn.__annotations__["_x"] = "MissingLocalType"
+        assert _safe_type_hints(bad_hint_fn) == {}
+
+
+@pytest.mark.parametrize(
+    ("ann", "expected_caps"),
+    [
+        pytest.param(pa.Table, (True, False), id="pa_table"),
+        pytest.param("pa.Table", (True, False), id="str_table"),
+        pytest.param("pa.Table | dict[str, Any]", (True, True), id="str_table_or_dict"),
+        pytest.param("pa.Table | Mapping[str, Any]", (True, True), id="str_table_or_mapping"),
+        pytest.param("dict[str, Any]", (False, True), id="str_dict"),
+        pytest.param(pa.Table | None, (True, False), id="optional_pa_table"),
+        pytest.param(Annotated[pa.Table, "meta"], (True, False), id="annotated_pa_table"),
+        pytest.param(int, (False, True), id="fallback_int"),
+    ],
+)
+def test_annotation_capabilities_classifies_types(ann: object, expected_caps: tuple[bool, bool]) -> None:
+    """_annotation_capabilities classifies table, dict, union, annotated, and string annotations."""
+    assert _annotation_capabilities(ann) == expected_caps
+
+
+@pytest.mark.parametrize(
+    ("ann", "expected"),
+    [
+        pytest.param(TransformContext, True, id="direct"),
+        pytest.param(_CtxAlias, True, id="type_alias"),
+        pytest.param(Annotated[TransformContext, "meta"], True, id="annotated"),
+        pytest.param(Annotated[int, "meta"], False, id="annotated_non_ctx"),
+        pytest.param(Annotated[int, TransformContext], False, id="annotated_ctx_in_metadata_only"),
+        pytest.param(TransformContext | None, True, id="union"),
+        pytest.param(int | None, False, id="union_non_ctx"),
+        pytest.param(Union.__getitem__((TransformContext, None)), True, id="typing_union_ctx"),
+        pytest.param(Union.__getitem__((int, str)), False, id="typing_union_non_ctx"),
+        pytest.param("TransformContext | None", True, id="str_ctx"),
+        pytest.param("dict[str, Any]", False, id="str_non_ctx"),
+        pytest.param(int, False, id="non_ctx"),
+    ],
+)
+def test_annotation_is_transform_context_detects_variants(ann: object, expected: bool) -> None:
+    """_annotation_is_transform_context detects TransformContext across aliases, unions, Annotated, and strings."""
+    assert _annotation_is_transform_context(ann) is expected
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        pytest.param("kwonly_only", (False, True, False), id="kwonly-only"),
+        pytest.param("posonly_arrow", (True, False, True), id="posonly-arrow-and-annotated-ctx"),
+        pytest.param("optional_non_ctx", (False, True, False), id="optional-non-ctx"),
+        pytest.param("required_second_param", (False, True, True), id="required-second-param"),
+        pytest.param("str_annotated", (True, False, True), id="string-annotations"),
+        pytest.param("flagged_attr", (True, True, True), id="accepts-pyarrow-attr"),
+    ],
+)
+def test_inspect_transform_signature_handles_parameter_variants(
+    case: str,
+    expected: tuple[bool, bool, bool],
+) -> None:
+    """inspect_transform_signature classifies kwonly, posonly, optional, string, and flagged callables."""
+    if case == "kwonly_only":
+
+        def fn(*, _flag: bool = False) -> dict[str, Any]:
+            return {}
+
+    elif case == "posonly_arrow":
+
+        def fn(_table: pa.Table, _info: Annotated[TransformContext, "m"] | None = None, /) -> dict[str, Any]:  # type: ignore[misc]
+            return {}
+
+    elif case == "optional_non_ctx":
+
+        def fn(_row: dict[str, Any], _limit: int = 10) -> dict[str, Any]:  # type: ignore[misc]
+            return {}
+
+    elif case == "required_second_param":
+
+        def fn(_row: dict[str, Any], _extra: int) -> dict[str, Any]:  # type: ignore[misc]
+            return {}
+
+    elif case == "str_annotated":
+
+        def fn(_data: "pa.Table", _info: "TransformContext | None" = None) -> dict[str, Any]:  # type: ignore[misc]
+            return {}
+
+    else:
+
+        def fn(_x: object) -> dict[str, Any]:  # type: ignore[misc]
+            return {}
+
+        fn.accepts_pyarrow = True  # type: ignore[attr-defined]
+
+    assert inspect_transform_signature(fn) == expected
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param("table_to_dict_with_ctx", id="table-to-dict-with-ctx"),
+        pytest.param("dict_to_table_with_input_schema", id="dict-to-table-with-input-schema"),
+    ],
+)
+def test_invoke_transform_adapts_input_type(case: str) -> None:
+    """invoke_transform adapts PyArrow tables for dict transforms and dicts for PyArrow transforms."""
+    ctx = TransformContext.for_source("items", "input.json")
+
+    if case == "table_to_dict_with_ctx":
+
+        def _dict_with_ctx(row: dict[str, Any], info: TransformContext) -> dict[str, list[dict[str, Any]]]:
+            return {"items": [{"id": row["id"], "src": info.source_file}]}
+
+        tbl = pa.table({"id": ["1"]})
+        assert invoke_transform(_dict_with_ctx, tbl, ctx) == {"items": [{"id": "1", "src": "input.json"}]}
+    else:
+        arrow_schema = pa.schema([pa.field("id", pa.string()), pa.field("opt", pa.int64(), nullable=True)])
+
+        def _arrow_only(table: pa.Table) -> dict[str, pa.Table]:
+            return {"items": table}
+
+        coerced_out = invoke_transform(_arrow_only, {"id": "1"}, ctx, input_schema=arrow_schema)
+        assert isinstance(coerced_out["items"], pa.Table)
+        assert coerced_out["items"].to_pylist() == [{"id": "1", "opt": None}]
+
+
+@pytest.mark.parametrize(
+    ("initial", "addition", "expect_arrow", "expected_rows"),
+    [
+        pytest.param({}, {"t": [{"a": 1}]}, False, [{"a": 1}], id="new-table-key"),
+        pytest.param(
+            {"t": pa.table({"a": [1]})},
+            {"t": pa.table({"b": [2]})},
+            True,
+            [{"a": 1, "b": None}, {"a": None, "b": 2}],
+            id="arrow-plus-arrow-mismatched-columns",
+        ),
+        pytest.param(
+            {"t": [{"a": 1}]},
+            {"t": [{"a": 2}]},
+            False,
+            [{"a": 1}, {"a": 2}],
+            id="list-plus-list",
+        ),
+        pytest.param(
+            {"t": pa.table({"a": [1]})},
+            {"t": [{"a": 2}]},
+            False,
+            [{"a": 1}, {"a": 2}],
+            id="arrow-plus-list",
+        ),
+        pytest.param(
+            {"t": [{"a": 1}]},
+            {"t": pa.table({"a": [2]})},
+            False,
+            [{"a": 1}, {"a": 2}],
+            id="list-plus-arrow",
+        ),
+    ],
+)
+def test_merge_routed_outputs_pass_merges_tables_lists_and_mixed(
+    initial: dict[str, list[dict[str, Any]] | pa.Table],
+    addition: dict[str, list[dict[str, Any]] | pa.Table],
+    *,
+    expect_arrow: bool,
+    expected_rows: list[dict[str, Any]],
+) -> None:
+    """merge_routed_outputs merges new keys, mismatched PyArrow tables, row lists, and mixed outputs."""
+    merged: dict[str, list[dict[str, Any]] | pa.Table] = dict(initial)
+    merge_routed_outputs(merged, addition)
+
+    result = merged["t"]
+    if expect_arrow:
+        assert isinstance(result, pa.Table)
+        assert result.to_pylist() == expected_rows
+    else:
+        assert isinstance(result, list)
+        assert result == expected_rows
+
+
+def test_align_and_cast_table_preserves_target_schema_metadata() -> None:
+    """align_and_cast_table preserves metadata attached to the target PyArrow schema."""
+    base_tbl = pa.table({"id": pa.array(["1"], type=pa.string())})
+    target_with_meta = pa.schema([pa.field("id", pa.string())], metadata={b"k": b"v"})
+
+    aligned = align_and_cast_table(base_tbl, target_with_meta)
+
+    assert aligned.schema.metadata == {b"k": b"v"}
+
+
+def test_validate_routed_output_drops_empty_zero_column_table() -> None:
+    """validate_routed_output drops zero-row, zero-column PyArrow tables."""
+    assert validate_routed_output({"empty": pa.table({})}) == {}
+
+
+def test_compose_transforms_fail_empty_list() -> None:
+    """compose_transforms raises ValueError when given an empty list."""
+    with pytest.raises(ValueError, match=r"^transforms must contain at least one callable$"):
+        compose_transforms([])
+
+
+def test_route_and_coerce_table_defaults_to_pyarrow_output() -> None:
+    """route_and_coerce_table returns PyArrow tables by default when use_pyarrow is omitted."""
+    base_tbl = pa.table({"id": pa.array(["1"], type=pa.string())})
+
+    default_routed = route_and_coerce_table(base_tbl, "items")
+
+    assert isinstance(default_routed["items"], pa.Table)
+    assert default_routed["items"].to_pylist() == [{"id": "1"}]
+
+
+@pytest.mark.parametrize(
+    ("use_multi_table", "loader_file_format", "expected_keys"),
+    [
+        pytest.param(False, "parquet", {"custom"}, id="no-table-name-parquet"),
+        pytest.param(False, "jsonl", None, id="no-table-name-jsonl"),
+        pytest.param(True, "parquet", {"custom", "other"}, id="multi-table-parquet"),
+        pytest.param(True, "jsonl", None, id="multi-table-jsonl"),
+    ],
+)
+def test_transform_settings_mixin_multi_table_and_no_table_name(
+    monkeypatch: pytest.MonkeyPatch,
+    use_multi_table: bool,
+    loader_file_format: str,
+    expected_keys: set[str] | None,
+) -> None:
+    """TransformSettingsMixin handles multi-table default schema reconciliation and subclasses without table_name."""
+    items_schema = ITEMS_SCHEMA
+    other_schema = pa.schema([pa.field("other_id", pa.string())])
+    mod_name = register_temp_module(
+        monkeypatch,
+        "_test_settings_mixin_multi_and_none",
+        TABLE_TRANSFORMS={"items": _identity_items_transform},
+        OUTPUT_SCHEMAS={"custom": items_schema},
+    )
+
+    class _NoTableNameSettings(TransformSettingsMixin, BaseModel):
+        loader_file_format: str = "parquet"
+
+    class _MultiTableSettings(_NoTableNameSettings):
+        def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
+            del default_pyarrow_schema
+            self._resolve_multi_table_schema_map({"items": items_schema, "other": other_schema})
+
+    if use_multi_table:
+        settings: TransformSettingsMixin = _MultiTableSettings(
+            loader_file_format=loader_file_format,
+            transforms_module=mod_name,
+            output_schemas_module=mod_name,
+        )
+    else:
+        settings = _NoTableNameSettings(
+            loader_file_format=loader_file_format,
+            output_schemas_module=mod_name,
+        )
+
+    if expected_keys is None:
+        assert settings.schema_map is None
+    else:
+        expected_registry = {"custom": items_schema}
+        if "other" in expected_keys:
+            expected_registry["other"] = other_schema
+        assert settings.schema_map == ArrowSchemaRegistry(registry=expected_registry)

@@ -1966,3 +1966,62 @@ def test_clean_validate_file_pass_end_to_end_dereferences_ref_and_allof_integer_
     assert "$defs" not in written_qsv_schema
     assert written_qsv_schema["properties"]["reads"]["type"] == ["integer", "null"]
     assert parse_xsv((args.validated_file_dir_path / result).read_text()) == [["gene_id", "reads"], *rows]
+
+
+@pytest.mark.parametrize("use_env", [False, True], ids=["from-path", "from-qsv-bin-env"])
+def test_qsv_check_pass_resolves_binary_from_path_or_env(
+    monkeypatch: pytest.MonkeyPatch,
+    qsv_cmd: str,
+    use_env: bool,
+) -> None:
+    """qsv_check resolves the binary from PATH or falls back to QSV_BIN."""
+    if use_env:
+        monkeypatch.setattr(shutil, "which", lambda _name: None)
+        monkeypatch.setenv("QSV_BIN", qsv_cmd)
+    assert qsv_check() == qsv_cmd
+
+
+@pytest.mark.parametrize(
+    ("qsv_bin", "match"),
+    [
+        pytest.param(None, "Could not locate the qsv binary", id="missing-qsv-bin"),
+        pytest.param("/nonexistent/qsv-binary", "Cannot perform validation with qsv:", id="nonexistent-qsv-bin"),
+    ],
+)
+def test_qsv_check_fail_missing_or_invalid_qsv_bin(
+    monkeypatch: pytest.MonkeyPatch,
+    qsv_bin: str | None,
+    match: str,
+) -> None:
+    """qsv_check raises RuntimeError when the binary is absent or fails to execute."""
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    if qsv_bin is None:
+        monkeypatch.delenv("QSV_BIN", raising=False)
+    else:
+        monkeypatch.setenv("QSV_BIN", qsv_bin)
+    with pytest.raises(RuntimeError, match=match):
+        qsv_check()
+
+
+def test_run_qsv_validate_pass_preserves_non_xsv_schema_dialect(
+    make_args: Callable[..., CleanerValidatorArgs],
+    write_source_file: WriteFile,
+    write_working_file: WriteFile,
+) -> None:
+    """run_qsv_validate preserves standard $schema URIs when has_xsv_metaschema is False."""
+    draft7_uri = "http://json-schema.org/draft-07/schema#"
+    draft7_schema = ValidatedXsvSchema(
+        jsonschema={
+            "$schema": draft7_uri,
+            "type": "object",
+            "required": ["gene_id"],
+            "properties": {"gene_id": {"type": "string"}},
+        }
+    )
+    source = write_source_file("gene_id\nG0001\n", "genes.tsv")
+    args = make_args(source, first_pass_schema_override=draft7_schema)
+    input_name = _write_validator_input_file(args, write_working_file, [["G0001"]], "-with-headers")
+    run_qsv_validate(args, input_name, draft7_schema, first_pass=True)
+    files = generate_qsv_validate_file_names(args, input_name, first_pass=True)
+    written = json.loads(files.schema.read_text(encoding="utf-8"))
+    assert written["$schema"] == draft7_uri

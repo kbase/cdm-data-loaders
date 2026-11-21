@@ -294,7 +294,7 @@ def test_collect_file_listing_fail_without_filesystem_resource(
     )
     with pytest.raises(
         ValueError,
-        match="loader_file_format='file_listing' requires at least one dlt filesystem resource",
+        match=r"^loader_file_format='file_listing' requires at least one dlt filesystem resource\.$",
     ):
         collect_file_listing(settings, invalid_resource)
 
@@ -365,6 +365,22 @@ def test_attach_file_collector_pass_rebinds_existing_tracker(input_dir: Path, ou
     assert list(resource) == []
     assert collector.ingested_files == ["only.txt"]
     assert collector.preprocess_errors == []
+
+
+def test_attach_file_collector_pass_repeated_attach_on_plain_filesystem_rebinds_tracker(tmp_path: Path) -> None:
+    """Calling attach_file_collector twice on a plain filesystem resource rebinds the tracker without double-mapping."""
+    (tmp_path / "only.txt").write_text("hello", encoding="utf-8")
+    fs_resource = filesystem(bucket_url=str(tmp_path), file_glob="*.txt")
+
+    first_collector = attach_file_collector(fs_resource)
+    second_collector = attach_file_collector(fs_resource)
+
+    items = list(fs_resource)
+    assert [item["relative_path"] for item in items] == ["only.txt"]
+    assert first_collector.ingested_files == []
+    assert first_collector.preprocess_errors == []
+    assert second_collector.ingested_files == ["only.txt"]
+    assert second_collector.preprocess_errors == []
 
 
 def test_build_filesystem_resource_pass_default_glob_and_callable_transformer(
@@ -842,3 +858,28 @@ def test_build_file_ingest_kwargs_prefers_subclass_cli_prog_name(tmp_path: Path)
         },
         "pipeline_run_kwargs": {"loader_file_format": "parquet"},
     }
+
+
+def test_build_file_ingest_kwargs_defaults_fallback_dataset_name_to_false(tmp_path: Path) -> None:
+    """build_file_ingest_kwargs defaults fallback_dataset_name to False and preserves dataset_name=None."""
+    settings = make_cts_settings(
+        FileFormatIngestSettings,
+        tmp_path,
+        dataset_name="unused_ds",
+        loader_file_format="parquet",
+    ).model_copy(update={"dataset_name": None})
+
+    result = build_file_ingest_kwargs(settings, TINY_PIPELINE_NAME)
+
+    assert result == {
+        "pipeline_kwargs": {
+            "pipeline_name": TINY_PIPELINE_NAME,
+            "dataset_name": None,
+        },
+        "pipeline_run_kwargs": {"loader_file_format": "parquet"},
+    }
+
+
+def test_collect_relative_paths_flattens_batched_lists() -> None:
+    """_collect_relative_paths extracts relative_path values from list-batched file items."""
+    assert _collect_relative_paths([[{"relative_path": "a.txt"}, {"relative_path": "b.txt"}]]) == ["a.txt", "b.txt"]

@@ -17,6 +17,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from linkml_runtime.linkml_model.meta import SchemaDefinition
 from linkml_runtime.loaders import yaml_loader
 from pyiceberg.catalog import Catalog
+from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import BinaryType, NestedField
 
@@ -47,17 +48,17 @@ class CatalogDumpTarget:
     settings_cls: type[IcebergCatalogDumpSettings]
     dump_fn: Callable[[Any], None]
     suffix: str
-    create_bad_table: Callable[[Catalog, Schema], None]
+    create_bad_table: Callable[[Catalog, Schema, str], None]
     assert_table_written: Callable[[Path, str, bool], None]
 
 
-def _create_bad_jsonschema_table(catalog: Catalog, _simple_schema: Schema) -> None:
+def _create_bad_jsonschema_table(catalog: Catalog, _simple_schema: Schema, table_name: str) -> None:
     unsupported_schema = Schema(NestedField(1, "value", BinaryType(), required=True))
-    catalog.create_table(("ns", "bad"), schema=unsupported_schema)
+    catalog.create_table(("ns", table_name), schema=unsupported_schema)
 
 
-def _create_bad_linkml_table(catalog: Catalog, simple_schema: Schema) -> None:
-    bad_table = catalog.create_table(("ns", "bad"), schema=simple_schema)
+def _create_bad_linkml_table(catalog: Catalog, simple_schema: Schema, table_name: str) -> None:
+    bad_table = catalog.create_table(("ns", table_name), schema=simple_schema)
     bad_table.io.delete(bad_table.metadata_location)
 
 
@@ -98,7 +99,12 @@ CATALOG_DUMP_TARGETS = [
 
 @pytest.mark.parametrize("group_by_namespace", [False, True], ids=["per-table", "per-namespace"])
 def test_end_to_end_dump_catalog_schemas_writes_valid_docs(
-    catalog: Catalog, catalog_env: Path, simple_schema: Schema, wide_schema: Schema, group_by_namespace: bool
+    catalog: Catalog,
+    catalog_env: Path,
+    simple_schema: Schema,
+    wide_schema: Schema,
+    caplog: pytest.LogCaptureFixture,
+    group_by_namespace: bool,
 ) -> None:
     """dump_catalog_schemas loads the catalog by name and writes valid schema docs, per table or per namespace."""
     catalog.create_namespace("ns")
@@ -109,12 +115,18 @@ def test_end_to_end_dump_catalog_schemas_writes_valid_docs(
     settings = IcebergToJsonSchemaSettings(  # pyright: ignore[reportCallIssue]
         catalog=CATALOG_NAME, output_dir=str(out_dir), group_by_namespace=group_by_namespace
     )
-    dump_catalog_schemas(settings)
+    with caplog.at_level(logging.INFO, logger="cdm_data_loaders.cli.pyiceberg_to_jsonschema"):
+        dump_catalog_schemas(settings)
+
+    assert caplog.messages[0] == f"Dumping schemas for 1 namespace(s) from catalog {CATALOG_NAME!r}"
 
     files = sorted(out_dir.iterdir())
     assert [f.name for f in files] == (
         ["ns.schema.json"] if group_by_namespace else ["ns.simple.schema.json", "ns.wide.schema.json"]
     )
+    for file_path in files:
+        raw_text = file_path.read_text(encoding="utf-8")
+        assert raw_text == json.dumps(json.loads(raw_text), indent=2)
 
     if group_by_namespace:
         namespace_doc = json.loads(files[0].read_text())
@@ -205,9 +217,10 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
     group_by_namespace: bool,
     include_good: bool,
 ) -> None:
-    """A table that fails to convert is logged and skipped; other tables still succeed."""
+    """Tables that fail to convert are logged, counted, and skipped; other tables still succeed."""
     catalog.create_namespace("ns")
-    target.create_bad_table(catalog, simple_schema)
+    target.create_bad_table(catalog, simple_schema, "bad_a")
+    target.create_bad_table(catalog, simple_schema, "bad_b")
     if include_good:
         catalog.create_table(("ns", "good"), schema=simple_schema)
 
@@ -215,15 +228,18 @@ def test_dump_catalog_schemas_pass_skips_failing_table_and_logs(
     settings = target.settings_cls(  # pyright: ignore[reportCallIssue]
         catalog=CATALOG_NAME, output_dir=str(out_dir), group_by_namespace=group_by_namespace
     )
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.WARNING, logger=target.dump_fn.__module__):
         target.dump_fn(settings)
 
     expected_files = [f"ns{target.suffix}" if group_by_namespace else f"ns.good{target.suffix}"] if include_good else []
     assert [f.name for f in sorted(out_dir.iterdir())] == expected_files
     if include_good:
         target.assert_table_written(out_dir / expected_files[0], "good", group_by_namespace)
-    assert "Failed to convert table ('ns', 'bad'); skipping" in caplog.text
-    assert "Completed with 1 table(s) skipped due to conversion failures" in caplog.text
+    assert caplog.messages == [
+        "Failed to convert table ('ns', 'bad_a'); skipping",
+        "Failed to convert table ('ns', 'bad_b'); skipping",
+        "Completed with 2 table(s) skipped due to conversion failures",
+    ]
 
 
 @pytest.mark.parametrize("target", CATALOG_DUMP_TARGETS)
@@ -281,6 +297,27 @@ def test_dump_catalog_schemas_pass_namespace_isolation(
         assert document["$defs"]["record"]["description"] == "Table description."
         Draft202012Validator.check_schema(document["$defs"]["record"])
     assert first["x-iceberg"]["generated_at"] == second["x-iceberg"]["generated_at"]
+
+
+def test_dump_catalog_schemas_pass_multilevel_namespace(
+    catalog: Catalog, catalog_env: Path, simple_schema: Schema, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Multi-level namespace tuples are dot-joined for grouped filenames and schema metadata."""
+    catalog.create_namespace(("parent", "child"))
+    catalog.create_table(("parent", "child", "record"), schema=simple_schema)
+    monkeypatch.setattr(SqlCatalog, "list_namespaces", lambda _self, _namespace=(): [("parent", "child")])
+
+    out_dir = catalog_env / "schemas"
+    settings = IcebergToJsonSchemaSettings(  # pyright: ignore[reportCallIssue]
+        catalog=CATALOG_NAME, output_dir=str(out_dir), group_by_namespace=True
+    )
+    dump_catalog_schemas(settings)
+
+    assert [file.name for file in out_dir.iterdir()] == ["parent.child.schema.json"]
+    document = json.loads((out_dir / "parent.child.schema.json").read_text(encoding="utf-8"))
+    assert document["$id"] == "urn:iceberg:parent.child"
+    assert document["title"] == "parent.child"
+    assert set(document["$defs"]) == {"record"}
 
 
 @pytest.mark.parametrize("target", CATALOG_DUMP_TARGETS)

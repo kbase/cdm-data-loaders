@@ -8,6 +8,7 @@ import pyarrow as pa
 import pytest
 
 from cdm_data_loaders.readers.xsv.duckdb_reader import (
+    _read_header_columns,
     read_validated_rows,
     resolve_duckdb_column_config,
     resolve_xsv_parsing_config,
@@ -247,3 +248,53 @@ def test_read_validated_rows_pass_emits_pyarrow_tables_without_pa_schema(tmp_pat
     assert len(tables) == 1
     assert isinstance(tables[0], pa.Table)
     assert tables[0].to_pylist() == [{"a": "1", "b": "foo"}, {"a": "2", "b": "bar"}]
+
+
+def test_read_validated_rows_pass_defaults_to_tab_and_respects_chunk_size(tmp_path: Path) -> None:
+    """read_validated_rows defaults to tab delimiter and accepts chunk_size in dict mode."""
+    pa_schema = pa.schema(
+        [
+            pa.field("a", pa.int64(), nullable=False),
+            pa.field("b", pa.string(), nullable=False),
+        ]
+    )
+    xsv_path = write_xsv(tmp_path, "a\tb\n1\tfoo\n2\tbar\n", file_name="data.tsv")
+    rows = list(read_validated_rows(xsv_path, pa_schema, chunk_size=1))
+    assert rows == [{"a": 1, "b": "foo"}, {"a": 2, "b": "bar"}]
+
+
+@pytest.mark.parametrize(
+    ("content", "file_name", "delimiter", "quote", "escape", "expected"),
+    [
+        pytest.param(
+            '\n\n"a,1", b \n1,2\n',
+            "quoted.csv",
+            ",",
+            '"',
+            None,
+            {"a,1", "b"},
+            id="blank-lines-quoted-and-padded",
+        ),
+        pytest.param(
+            '"a\\"1",b\n1,2\n',
+            "escaped.csv",
+            ",",
+            '"',
+            "\\",
+            {'a"1', "b"},
+            id="escaped-quote",
+        ),
+    ],
+)
+def test_read_header_columns_pass_quoted_escaped_and_padded(
+    tmp_path: Path,
+    content: str,
+    file_name: str,
+    delimiter: str,
+    quote: str,
+    escape: str | None,
+    expected: set[str],
+) -> None:
+    """_read_header_columns skips blank lines, respects quote and escape, and strips column names."""
+    path = write_xsv(tmp_path, content, file_name=file_name)
+    assert _read_header_columns(path, delimiter, quote, escape) == expected

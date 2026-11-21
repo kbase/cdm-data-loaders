@@ -102,12 +102,6 @@ MOCK_REPORT_SUCCESS: Final[dict[str, Any]] = {
     "dry_run": False,
 }
 
-MOCK_REPORT_WITH_FAILURES: Final[dict[str, Any]] = {
-    **MOCK_REPORT_SUCCESS,
-    "promoted": 3,
-    "failed": 2,
-}
-
 
 def make_settings(**kwargs: str | int | bool | Path | PurePosixPath | None) -> PromoteSettings:
     """Build a validated ``PromoteSettings`` instance with a default ``staging_path``.
@@ -212,28 +206,31 @@ def test_run_promote_calls_promote_from_s3_with_correct_args(tmp_path: Path) -> 
     )
 
 
-def test_run_promote_no_error_on_zero_failures() -> None:
-    """run_promote does not raise when promote_from_s3 reports zero failures."""
+@pytest.mark.parametrize(
+    ("failed_count", "expected_messages"),
+    [
+        pytest.param(0, [], id="zero-failures"),
+        pytest.param(1, ["Promote completed with 1 failures"], id="single-failure"),
+        pytest.param(2, ["Promote completed with 2 failures"], id="multiple-failures"),
+    ],
+)
+def test_run_promote_logs_error_only_when_failures_positive(
+    caplog: pytest.LogCaptureFixture,
+    failed_count: int,
+    expected_messages: list[str],
+) -> None:
+    """run_promote logs an error without raising if and only if promote_from_s3 reports failures > 0."""
     config = make_settings()
-    with patch(
-        "cdm_data_loaders.cli.ncbi_ftp_promote.promote_from_s3",
-        return_value=MOCK_REPORT_SUCCESS,
-    ):
-        run_promote(config)
-
-
-def test_run_promote_logs_error_on_failures(caplog: pytest.LogCaptureFixture) -> None:
-    """run_promote logs an error without raising when promote_from_s3 reports failures."""
-    config = make_settings()
+    report = {**MOCK_REPORT_SUCCESS, "failed": failed_count}
     with (
         patch(
             "cdm_data_loaders.cli.ncbi_ftp_promote.promote_from_s3",
-            return_value=MOCK_REPORT_WITH_FAILURES,
+            return_value=report,
         ),
-        caplog.at_level(logging.ERROR),
+        caplog.at_level(logging.ERROR, logger="cdm_data_loaders.cli.ncbi_ftp_promote"),
     ):
         run_promote(config)
-    assert "Promote completed with 2 failures" in caplog.text
+    assert caplog.messages == expected_messages
 
 
 def test_run_promote_dry_run_forwarded() -> None:

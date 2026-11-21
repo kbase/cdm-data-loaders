@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pyarrow as pa
 import pytest
 import xmlschema
+from lxml import etree
 from pydantic import ValidationError
 from pydantic_settings import CliApp, SettingsError
 
@@ -527,3 +528,121 @@ def test_xmltopyarrow_settings_pass_skips_pyarrow_schema_generation_for_jsonl_fo
     assert settings.pyarrow_schemas == {}
     assert gen_single_spy.call_count == 0
     assert gen_level_spy.call_count == 0
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_message"),
+    [
+        pytest.param(
+            {"xml_level": 1, "xml_tag": "entry"},
+            "xml_level cannot be combined with xml_tag or table_name",
+            id="xml_level_with_xml_tag",
+        ),
+        pytest.param(
+            {"table_name": None, "xml_tag": None},
+            "Missing required field(s) when xml_level is not set: table_name, xml_tag",
+            id="missing_both_table_and_tag",
+        ),
+        pytest.param(
+            {"table_name": "entry", "xml_tag": "entry", "root_tag": "UniRef50"},
+            "root_tag can only be specified when xml_level is set",
+            id="root_tag_without_xml_level",
+        ),
+    ],
+)
+def test_xmltopyarrow_settings_validate_target_selection_exact_messages(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    kwargs: dict[str, Any],
+    expected_message: str,
+) -> None:
+    """Target selection validation raises ValidationError with exact error messages."""
+    with pytest.raises(ValidationError) as exc_info:
+        settings_factory(xsd_file=str(PUBMED_XSD_FILE), **kwargs)
+    assert exc_info.value.errors()[0]["msg"] == f"Value error, {expected_message}"
+
+
+def test_xmltopyarrow_settings_level_mode_with_jsonl_validates_transforms_against_converters(
+    monkeypatch: pytest.MonkeyPatch,
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+) -> None:
+    """In level mode with use_pyarrow=False, table validation uses xml_level_converters keys."""
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_xmltopyarrow_level_jsonl_transforms",
+        TABLE_TRANSFORMS={"PubmedArticle": lambda r: {"PubmedArticle": [r]}},
+    )
+    settings = settings_factory(
+        xsd_file=str(PUBMED_XSD_FILE),
+        xml_level=1,
+        root_tag=PUBMED_ROOT_TAG,
+        loader_file_format="jsonl",
+        transforms_module=transforms_mod,
+    )
+    assert settings.pyarrow_schemas == {}
+    assert "PubmedArticle" in settings.xml_level_converters
+
+
+@pytest.mark.parametrize(
+    ("depth", "type_predicate", "expected_child_type"),
+    [
+        pytest.param(1, pa.types.is_string, str, id="depth-1-string"),
+        pytest.param(2, pa.types.is_struct, dict, id="depth-2-struct"),
+    ],
+)
+def test_xmltopyarrow_settings_level_mode_forwards_max_recursion_depth(
+    tmp_path: Path,
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    depth: int,
+    type_predicate: Callable[[pa.DataType], bool],
+    expected_child_type: type[object],
+) -> None:
+    """In level mode, max_recursion_depth controls both converter and PyArrow schema recursion depth."""
+    recursive_xsd = tmp_path / "recursive.xsd"
+    recursive_xsd.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:complexType name="NodeType">
+    <xs:sequence>
+      <xs:element name="val" type="xs:string"/>
+      <xs:element name="child" type="NodeType" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="root">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="node" type="NodeType"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+""",
+        encoding="utf-8",
+    )
+    settings = settings_factory(xsd_file=str(recursive_xsd), xml_level=1, root_tag="root", max_recursion_depth=depth)
+
+    assert type_predicate(settings.pyarrow_schemas["node"].field("child").type)
+    xml_el = etree.fromstring(b"<node><val>a</val><child><val>b</val></child></node>")
+    row = settings.xml_level_converters["node"](xml_el)
+    assert isinstance(row["child"], expected_child_type)
+
+
+def test_preset_xmltopyarrow_settings_bind_cdm_transform_passes_default_pyarrow_schema(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+    copy_xsd_fixture: Callable[[str], str],
+) -> None:
+    """_bind_cdm_transform_and_schemas and _resolve_settings_schema_map honor default_pyarrow_schema."""
+    custom_schema = pa.schema([pa.field("custom_col", pa.string())])
+
+    class CustomPresetSettings(PresetXmlToPyArrowSettings, cli_prog_name="custom_preset"):
+        PRECOMPUTED_SCHEMA: ClassVar[pa.Schema] = pa.schema([pa.field("entry_col", pa.string())])
+
+        def _resolve_settings_schema_map(self, default_pyarrow_schema: pa.Schema | None = None) -> None:
+            self._bind_cdm_transform_and_schemas(
+                lambda r: {"entry": [r]},
+                ArrowSchemaRegistry(registry={"entry": custom_schema}),
+                default_pyarrow_schema=custom_schema if default_pyarrow_schema is None else default_pyarrow_schema,
+            )
+
+    xsd_path = copy_xsd_fixture(UNIREF_LIKE_XSD)
+    settings = settings_factory(CustomPresetSettings, dataset_name="custom_ds", xsd_file=xsd_path)
+    assert settings.pyarrow_schema is custom_schema

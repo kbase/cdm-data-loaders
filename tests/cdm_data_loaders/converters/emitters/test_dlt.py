@@ -539,3 +539,103 @@ def test_emit_pass_native_empty_table_and_new_child(
         new_child = Field("new", TypedNode("object", properties=(Field("value", TypedNode("string")),)))
         document = replace(document, root=replace(document.root, properties=(new_child,)))
     assert DltEmitter(schema_name="source").emit(document)["tables"] == expected_tables
+
+
+def test_emit_pass_json_unions_and_boolean_warnings(caplog: pytest.LogCaptureFixture) -> None:
+    """DltEmitter approximates multi-type unions, anyOf/oneOf, and boolean schemas with warnings."""
+    source = base_object_schema(
+        properties={
+            "null_only": {"type": ["null"]},
+            "multi_union": {"type": ["string", "integer"]},
+            "nullable_str": {"type": ["string", "null"]},
+            "anyof_bool": {"anyOf": [True, {"type": "integer"}]},
+            "oneof_typed": {"oneOf": [{"type": "integer"}, {"type": "string"}]},
+            "bool_false": False,
+        },
+    )
+    doc = JsonSchemaReader().read(source)
+    with caplog.at_level("WARNING", logger="cdm_data_loaders.converters.emitters.dlt"):
+        tables = DltEmitter(schema_name="u").emit(doc)["tables"]
+    cols = tables["u"]["columns"]
+    assert cols["null_only"]["data_type"] == "text"
+    assert cols["multi_union"]["data_type"] == "text"
+    assert cols["nullable_str"]["data_type"] == "text"
+    assert cols["anyof_bool"]["data_type"] == "text"
+    assert cols["oneof_typed"]["data_type"] == "bigint"
+    assert cols["bool_false"]["data_type"] == "text"
+
+    messages = "\n".join(r.getMessage() for r in caplog.records)
+    assert "Collapsing multi-type union" in messages
+    assert "Approximating 'anyOf'" in messages
+    assert "Approximating 'oneOf'" in messages
+    assert "Boolean schema for property 'bool_false'" in messages
+
+
+def test_emit_pass_column_hints_precision_and_timezone() -> None:
+    """DltEmitter emits precision and timezone column hints for timestamps, fixed lengths, and bit widths."""
+    ts_tz = TypedNode("string", hints=NodeHints(logical_type="timestamp-with-tz", timezone=True))
+    ts_no_tz = TypedNode("string", hints=NodeHints(logical_type="timestamp-without-tz", timezone=False))
+    fixed_len = TypedNode("string", hints=NodeHints(logical_type="fixed", length=16))
+    int_bits = TypedNode("integer", hints=NodeHints(bit_width=32))
+    hints_doc = SchemaDocument(
+        root=TypedNode(
+            "object",
+            properties=(
+                Field("ts_tz", ts_tz),
+                Field("ts_no_tz", ts_no_tz),
+                Field("fixed_len", fixed_len),
+                Field("int_bits", int_bits),
+            ),
+        )
+    )
+    hint_cols = DltEmitter(schema_name="h").emit(hints_doc)["tables"]["h"]["columns"]
+    ts_precision = 6
+    fixed_precision = 16
+    int_precision = 32
+    assert hint_cols["ts_tz"]["precision"] == ts_precision
+    assert hint_cols["ts_tz"]["timezone"] is True
+    assert hint_cols["ts_no_tz"]["precision"] == ts_precision
+    assert hint_cols["ts_no_tz"]["timezone"] is False
+    assert hint_cols["fixed_len"]["precision"] == fixed_precision
+    assert hint_cols["int_bits"]["precision"] == int_precision
+
+
+def test_emit_pass_native_restore_table_and_column_metadata() -> None:
+    """Native dlt provenance restores table and column metadata, nullable/precision None values, and descriptions."""
+    source = {
+        "root": {
+            "name": "root",
+            "description": "old root desc",
+            "columns": {
+                "c_named": {"name": "c_named", "data_type": "text", "nullable": True, "precision": None},
+                "c_any": {"data_type": "text", "nullable": False, "scale": None, "timezone": None},
+                "c_null_none": {"data_type": "bigint", "nullable": False},
+            },
+        },
+        "root__sub": {"name": "root__sub", "parent": "root", "description": "sub desc", "columns": {}},
+    }
+    doc = DltReader().read(source)["root"]
+    # drop root description and override field nullability/type to exercise native metadata restoration
+    root_props = list(doc.root.properties)
+    c_named, c_any, c_null_none, sub_field = root_props
+    c_any_mod = replace(c_any, node=TypedNode("any", nullable=True, extensions=c_any.node.extensions))
+    c_null_none_mod = replace(c_null_none, node=replace(c_null_none.node, nullable=None))
+    doc_mod = replace(
+        doc,
+        root=replace(
+            doc.root,
+            annotations={},
+            properties=(c_named, c_any_mod, c_null_none_mod, sub_field),
+        ),
+    )
+    tables = DltEmitter(schema_name="s").emit(doc_mod)["tables"]
+    assert "description" not in tables["root"]
+    assert tables["root"]["name"] == "root"
+    assert tables["root"]["columns"]["c_named"]["name"] == "c_named"
+    assert tables["root"]["columns"]["c_named"]["precision"] is None
+    assert tables["root"]["columns"]["c_any"]["data_type"] is None
+    assert tables["root"]["columns"]["c_any"]["scale"] is None
+    assert tables["root"]["columns"]["c_any"]["timezone"] is None
+    assert tables["root"]["columns"]["c_null_none"]["nullable"] is None
+    assert tables["root__sub"]["description"] == "sub desc"
+    assert tables["root__sub"]["columns"] == {}

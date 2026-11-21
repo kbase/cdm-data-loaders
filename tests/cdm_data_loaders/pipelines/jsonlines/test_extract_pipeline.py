@@ -288,16 +288,27 @@ def test_run_jsonlines_pipeline_pass_file_listing_skips_preprocessors_parser_and
     }
 
 
-def test_run_jsonlines_pipeline_uses_subclass_cli_prog_name(
+@pytest.mark.parametrize(
+    ("cli_prog_name", "expected_pipeline_name"),
+    [
+        pytest.param("preset_extract", "preset_extract", id="subclass-cli-prog-name"),
+        pytest.param(None, EXTRACT_PIPELINE_NAME, id="unset-cli-prog-name-fallback"),
+    ],
+)
+def test_run_jsonlines_pipeline_resolves_pipeline_name(
     extract_settings_factory: Callable[..., JsonlExtractSettings],
+    cli_prog_name: str | None,
+    expected_pipeline_name: str,
 ) -> None:
-    """run_jsonlines_pipeline forwards a preset subclass cli_prog_name as pipeline_name."""
+    """run_jsonlines_pipeline uses subclass cli_prog_name or falls back to EXTRACT_PIPELINE_NAME."""
 
-    class PresetExtractSettings(JsonlExtractSettings, cli_prog_name="preset_extract"):
+    class CustomExtractSettings(JsonlExtractSettings, cli_prog_name=cli_prog_name):
         pass
 
     base_settings = extract_settings_factory()
-    preset_settings = PresetExtractSettings.model_validate(
+    custom_settings = CustomExtractSettings.model_validate(
         base_settings.model_dump(exclude=set(JsonlExtractSettings.model_computed_fields))
     )
-    assert_core_run_pipeline_args(extract_pipeline_module, run_jsonlines_pipeline, preset_settings, "preset_extract")
+    assert_core_run_pipeline_args(
+        extract_pipeline_module, run_jsonlines_pipeline, custom_settings, expected_pipeline_name
+    )
