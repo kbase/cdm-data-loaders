@@ -32,29 +32,21 @@ jobs:
               env:
                   PYTEST_ADDOPTS: "--durations=0 --durations-min=5"
               run: |
-                  docker compose up \
-                    --build \
-                    --abort-on-container-exit \
-                    --exit-code-from integration-tests
+                  docker compose -f docker-compose.lakehouse.yml up -d --build
+                  docker compose -f docker-compose.lakehouse.yml exec -T cdm-data-loaders pytest -m "requires_ceph" -v
 
             - name: Capture compose diagnostics on failure
               if: failure()
               run: |
                   echo "=== docker compose ps ==="
-                  docker compose ps -a || true
+                  docker compose -f docker-compose.lakehouse.yml ps -a || true
 
                   echo "=== ceph logs ==="
-                  docker logs cdm-data-loaders-ceph-1 || true
+                  docker compose -f docker-compose.lakehouse.yml logs ceph || true
 
-                  echo "=== ceph integration test logs ==="
-                  docker logs cdm-data-loaders-integration-tests-1 || true
-
-                  echo "=== ceph inspect state ==="
-                  docker inspect cdm-data-loaders-ceph-1 --format '{{json .State}}' || true
-
-                  echo "=== ceph health state ==="
-                  docker inspect cdm-data-loaders-ceph-1 --format '{{json .State.Health}}' || true
+                  echo "=== cdm-data-loaders logs ==="
+                  docker compose -f docker-compose.lakehouse.yml logs cdm-data-loaders || true
 
             - name: Tear down
               if: always()
-              run: docker compose down --volumes
+              run: docker compose -f docker-compose.lakehouse.yml down --volumes

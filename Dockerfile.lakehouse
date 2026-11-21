@@ -1,0 +1,46 @@
+ARG SPARK_IMAGE_TAG=main
+FROM ghcr.io/kbasedatalakehouse/kube_spark_manager_image:${SPARK_IMAGE_TAG}
+
+ARG QSV_VERSION="28.0.0"
+ARG XML_FILE_SPLITTER_VERSION="v0.1.4"
+
+USER root
+
+# Install qsv and xml_file_splitter binaries required by cdm-data-loaders readers
+RUN ARCH=$(uname -m) && \
+    curl -fsSL -o /tmp/xml_file_splitter.tar.gz "https://github.com/ialarmedalien/xml_file_splitter/releases/download/${XML_FILE_SPLITTER_VERSION}/xml_file_splitter-${ARCH}-unknown-linux-gnu.tar.gz" && \
+    tar -xf /tmp/xml_file_splitter.tar.gz -C /tmp && \
+    mv /tmp/xml_file_splitter-${ARCH}-unknown-linux-gnu/xml_file_splitter /usr/local/bin/ && \
+    curl -fsSL -o /tmp/qsv.zip "https://github.com/dathere/qsv/releases/download/${QSV_VERSION}/qsv-${QSV_VERSION}-${ARCH}-unknown-linux-gnu.zip" && \
+    unzip -q /tmp/qsv.zip -d /tmp/qsv && \
+    mv /tmp/qsv/qsv /usr/local/bin/ && \
+    chmod +x /usr/local/bin/xml_file_splitter /usr/local/bin/qsv && \
+    rm -rf /tmp/*
+
+# Install uv for fast, locked dependency resolution
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+
+# Install cdm-data-loaders dependencies into the base image's conda environment
+# (--inexact preserves pre-installed packages like berdl_notebook_utils and pyspark).
+ENV UV_PROJECT_ENVIRONMENT=/opt/conda
+ENV UV_COMPILE_BYTECODE=1
+ENV UV_LINK_MODE=copy
+
+COPY pyproject.toml uv.lock README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --inexact --no-install-project --all-groups
+
+COPY src ./src
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python /opt/conda/bin/python --no-deps -e .
+
+ENV PATH="/opt/conda/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+
+# Override kube_spark_manager_image's Spark healthcheck and entrypoint so this
+# container idles for interactive testing (pytest, CLI, Spark Connect client).
+HEALTHCHECK NONE
+ENTRYPOINT ["tini", "--"]
+CMD ["sleep", "infinity"]

@@ -266,9 +266,9 @@ AWS_DEFAULT_REGION = "us-east-1"
 # default to use containerized S3 test store
 AWS_ENDPOINT_URL = { value = "http://localhost:9000", skip_if_set = true }
 AWS_ENDPOINT_URL_S3 = { unset = true }
-S3_ENDPOINT_URL = "http://localhost:9000"
-AWS_ACCESS_KEY_ID = "test_access_key"
-AWS_SECRET_ACCESS_KEY = "test_access_secret"
+S3_ENDPOINT_URL = { value = "http://localhost:9000", skip_if_set = true }
+AWS_ACCESS_KEY_ID = { value = "test_access_key", skip_if_set = true }
+AWS_SECRET_ACCESS_KEY = { value = "test_access_secret", skip_if_set = true }
 # required for KBase Lakehouse env
 USER = "fake_user"
 KBASE_AUTH_TOKEN = "test-token-123"
