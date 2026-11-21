@@ -1,6 +1,7 @@
 """Tests for `cdm_data_loaders.core.transforms` and `TransformSettingsMixin`."""
 
 import functools
+import operator
 from collections.abc import Iterable
 from pathlib import Path
 from types import SimpleNamespace
@@ -1458,8 +1459,8 @@ def test_annotation_capabilities_classifies_types(ann: object, expected_caps: tu
         pytest.param(Annotated[int, TransformContext], False, id="annotated_ctx_in_metadata_only"),
         pytest.param(TransformContext | None, True, id="union"),
         pytest.param(int | None, False, id="union_non_ctx"),
-        pytest.param(Union.__getitem__((TransformContext, None)), True, id="typing_union_ctx"),
-        pytest.param(Union.__getitem__((int, str)), False, id="typing_union_non_ctx"),
+        pytest.param(operator.getitem(Union, (TransformContext, None)), True, id="typing_union_ctx"),
+        pytest.param(operator.getitem(Union, (int, str)), False, id="typing_union_non_ctx"),
         pytest.param("TransformContext | None", True, id="str_ctx"),
         pytest.param("dict[str, Any]", False, id="str_non_ctx"),
         pytest.param(int, False, id="non_ctx"),
