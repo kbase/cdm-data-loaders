@@ -174,7 +174,7 @@ def test_render_pipeline_spec_fail_unknown_name() -> None:
             (
                 "| `BIGINT` | `False` | `pa.int64()` | `False` |",
                 "| `VARCHAR` | `True` | `pa.string()` | `False` |",
-                "| `VARCHAR (auto)` | `False` | `pa.string()` | `True` |",
+                "| `VARCHAR` | `False` | `pa.string()` | `True` |",
             ),
             id="column_type_table",
         ),

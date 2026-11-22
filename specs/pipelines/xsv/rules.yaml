@@ -38,7 +38,10 @@ sections:
       - id: R-XSV-REQUIRED-COLS
         statement: |
           Top-level `required` must be a non-empty list of column header strings declaring the ordered columns
-          of the XSV file; a missing or empty `required` list raises **E2** (`MissingRequiredColumnsError`).
+          of the XSV file, and top-level `properties` must be a non-empty mapping declaring the exact same set
+          of column names as `required`; a missing or empty `required` list raises **E2**
+          (`MissingRequiredColumnsError`), and missing/empty `properties` or a mismatch between `required` and
+          `properties` raises **E3** (`InvalidXsvSchemaDefinitionError`).
       - id: R-XSV-METASCHEMA
         statement: |
           Schemas declaring `"https://kbase.github.io/cdm-data-loaders/schemas/xsv_config/0.1.0/schema.json"` lazily
@@ -67,18 +70,12 @@ sections:
           and a non-struct root or unsupported column construct raises **E5** (`UnsupportedXsvArrowConstructError`).
       - id: R-XSV-COL-ORDER
         statement: |
-          Top-level `pa.Schema` fields are emitted in the exact order of top-level `required`, followed by any
-          extra `properties` not listed in `required` in their declaration order.
-      - id: R-XSV-UNLISTED-COL
-        statement: |
-          Any column listed in top-level `required` that is absent from `properties` defaults to
-          `{"type": ["string", "null"]}` (`pa.field(col, pa.string(), nullable=True)`).
+          Top-level `pa.Schema` fields are emitted in the exact order of top-level `required`.
       - id: R-XSV-NULLABILITY
         statement: |
           Top-level `required` defines the file's column headers, not value non-nullability. A column is
           `nullable=False` in PyArrow if and only if it is in `required` and its property schema does not
-          permit `null` (via `"null"` in `type`, a nullable `anyOf`/`oneOf` branch, or an untyped `{}` schema).
-          Extra `properties` absent from `required` are `nullable=True`.
+          permit `null` (via `"null"` in `type` or a nullable `anyOf`/`oneOf` branch).
       - id: R-XSV-SCALAR-MAP
         statement: |
           Column schemas convert to PyArrow types via `JSONSchemaToPyArrow` per the table below. Every scalar
