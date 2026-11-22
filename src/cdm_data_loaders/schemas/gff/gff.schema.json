@@ -95,7 +95,7 @@
         }
     },
     "required": [
-        "sequid",
+        "seqid",
         "source",
         "type",
         "start",
