@@ -192,5 +192,24 @@
                 "UniProtKB:P12345-2"
             ]
         }
-    }
+    },
+    "required": [
+        "db",
+        "db_object_id",
+        "db_object_symbol",
+        "relation",
+        "go_id",
+        "reference",
+        "evidence_code",
+        "with_or_from",
+        "aspect",
+        "db_object_name",
+        "db_object_synonym",
+        "db_object_type",
+        "taxon",
+        "date",
+        "assigned_by",
+        "annotation_extension",
+        "gene_product_form_id"
+    ]
 }

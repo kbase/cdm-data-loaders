@@ -32,6 +32,12 @@ class ValidatedSchema(BaseModel):
 
     jsonschema: dict[str, Any]
 
+    @computed_field
+    @property
+    def has_xsv_metaschema(self) -> bool:
+        """Return whether ``$schema`` equals ``CUSTOM_META_SCHEMA_URI``."""
+        return self.jsonschema.get("$schema") == CUSTOM_META_SCHEMA_URI
+
     @field_validator("jsonschema", mode="after")
     @classmethod
     def validate_jsonschema(cls, schema: dict[str, Any]) -> dict[str, Any]:
@@ -64,12 +70,6 @@ class ValidatedXsvSchema(ValidatedSchema):
 
     @computed_field
     @property
-    def has_xsv_metaschema(self) -> bool:
-        """Return whether ``$schema`` equals ``CUSTOM_META_SCHEMA_URI``."""
-        return self.jsonschema.get("$schema") == CUSTOM_META_SCHEMA_URI
-
-    @computed_field
-    @property
     def required_cols(self) -> list[str]:
         """Return the ordered column names from the top-level ``required`` list."""
         return self.jsonschema.get("required", [])
@@ -91,6 +91,17 @@ class ValidatedXsvSchema(ValidatedSchema):
         if not isinstance(required_cols, list) or not required_cols:
             err_msg = "Could not find any required cols in schema"
             raise ValueError(err_msg)
+
+        properties = validated_schema.get("properties")
+        if not isinstance(properties, dict) or not properties:
+            err_msg = "Could not find any properties in schema"
+            raise ValueError(err_msg)
+
+        # ensure that the required_cols matches the properties
+        if set(required_cols) != set(properties):
+            err_msg = "XSV schemas must have the same set of properties listed under `required` and in `properties`"
+            raise ValueError(err_msg)
+
         return validated_schema
 
 

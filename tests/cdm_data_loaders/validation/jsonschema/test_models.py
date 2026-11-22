@@ -1,6 +1,7 @@
 """Unit tests for ``cdm_data_loaders.validation.jsonschema.models``."""
 
 import json
+import logging
 import re
 from collections.abc import Callable
 from functools import partial
@@ -16,10 +17,13 @@ from pydantic import ValidationError
 from cdm_data_loaders.readers.xsv.models import SEP_TO_EXT
 from cdm_data_loaders.validation.jsonschema.metaschema import (
     CUSTOM_META_SCHEMA_URI,
+    DRAFT_2020_12_SCHEMA_URI,
+    SUPPORTED_JSONSCHEMA_DRAFT_URIS,
     get_xsv_meta_schema,
     register_xsv_validator,
 )
 from cdm_data_loaders.validation.jsonschema.models import (
+    ValidatedSchema,
     ValidatedXsvSchema,
     generate_first_pass_schema,
     generate_header,
@@ -70,13 +74,17 @@ def make_schema_file(tmp_path: Path) -> Callable[..., Path]:
     return _make
 
 
-INVALID_TOP_LEVEL_SCHEMA_LIST = [
+INVALID_TOP_LEVEL_SCHEMA_LIST: Final[tuple[Any, ...]] = (
     pytest.param(["a", "b"], id="schema-is-a-list"),
+    pytest.param([], id="schema-is-an-empty-list"),
     pytest.param("just a string", id="schema-is-string"),
+    pytest.param("", id="schema-is-empty-string"),
     pytest.param(42, id="schema-is-a-number"),
+    pytest.param(0, id="schema-is-zero"),
+    pytest.param(-1, id="schema-is-negative"),
     pytest.param(None, id="schema-is-null"),
     pytest.param(True, id="schema-is-bool"),
-]
+)
 MISSING_EMPTY_REQUIRED_LIST = [
     pytest.param({}, id="missing-required-key"),
     pytest.param({"required": []}, id="empty-required-list"),
@@ -92,7 +100,11 @@ INVALID_REQUIRED_LIST = [
 def valid_schema() -> ValidatedXsvSchema:
     """Minimal ValidatedXsvSchema object."""
     return ValidatedXsvSchema(
-        jsonschema={"$schema": VALID_SCHEMA_URI, "required": COLUMNS},
+        jsonschema={
+            "$schema": VALID_SCHEMA_URI,
+            "required": COLUMNS,
+            "properties": {col: {"type": "string"} for col in COLUMNS},
+        },
     )
 
 
@@ -224,6 +236,7 @@ def test_get_schema_parsing_metadata_pass_transforms_keys() -> None:
         jsonschema={
             "$schema": VALID_SCHEMA_URI,
             "required": ["a"],
+            "properties": {"a": {"type": "string"}},
             "x-xsv-config": {
                 "x-has-header": True,
                 "x-delimiter": ",",
@@ -254,7 +267,11 @@ def test_get_schema_parsing_metadata_pass_transforms_keys() -> None:
 def test_get_schema_parsing_metadata_fail_no_xsv_config_key() -> None:
     """A schema with no x-xsv-config key raises ValueError."""
     vs = ValidatedXsvSchema(
-        jsonschema={"$schema": VALID_SCHEMA_URI, "required": ["a"]},
+        jsonschema={
+            "$schema": VALID_SCHEMA_URI,
+            "required": ["a"],
+            "properties": {"a": {"type": "string"}},
+        },
     )
 
     with pytest.raises(ValueError, match="No xsv config information found in schema"):
@@ -264,7 +281,12 @@ def test_get_schema_parsing_metadata_fail_no_xsv_config_key() -> None:
 def test_get_schema_parsing_metadata_fail_empty_xsv_config() -> None:
     """A schema with an empty x-xsv-config object raises ValueError."""
     vs = ValidatedXsvSchema(
-        jsonschema={"$schema": VALID_SCHEMA_URI, "required": ["a"], "x-xsv-config": {}},
+        jsonschema={
+            "$schema": VALID_SCHEMA_URI,
+            "required": ["a"],
+            "properties": {"a": {"type": "string"}},
+            "x-xsv-config": {},
+        },
     )
 
     with pytest.raises(ValueError, match="No xsv config information found in schema"):
@@ -319,6 +341,7 @@ def test_custom_xsv_metaschema_pass_accepts_valid_config(
     schema = {
         "$schema": CUSTOM_META_SCHEMA_URI,
         "required": ["a", "b"],
+        "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
         "x-xsv-config": x_xsv_config,
     }
 
@@ -434,14 +457,12 @@ def test_generate_header_fail_empty_header_file_name(tmp_path: Path, valid_schem
     ],
 )
 def test_generate_header_fail_invalid_delimiter_length(
-    tmp_path: Path, make_schema_file: Callable[..., Path], delimiter: str
+    tmp_path: Path, valid_schema: ValidatedXsvSchema, delimiter: str
 ) -> None:
     """A delimiter that isn't exactly one character fails the CharStr constraint."""
-    schema_path = make_schema_file({**SCHEMA_KEY_VALUE, "required": COLUMNS})
     err_msg = re.compile("String should have at (mo|lea)st 1 character")
-    vs = validate_xsv_jsonschema(schema_path)
     with pytest.raises(ValidationError, match=err_msg):
-        generate_header(vs, tmp_path, delimiter=delimiter)
+        generate_header(valid_schema, tmp_path, delimiter=delimiter)
 
 
 """generate_first_pass_schema"""
@@ -458,14 +479,19 @@ def test_generate_first_pass_schema_pass_happy_path(
 
 def test_generate_first_pass_schema_pass_bare_minimum(make_schema_file: Callable[[Any, str], Path]) -> None:
     """Test that a schema can be generated from the very barest of bare minimum JSON schema."""
-    bare_minimum = {"required": ["this", "that"], **SCHEMA_KEY_VALUE}
+    bare_minimum = {
+        "required": ["this", "that"],
+        "properties": {"this": {}, "that": {}},
+        **SCHEMA_KEY_VALUE,
+    }
     type_dict = {"type": ["string", "null"]}
     schema_path = make_schema_file(bare_minimum, "schema.json")
     vs = validate_xsv_jsonschema(schema_path)
 
     validated_schema = generate_first_pass_schema(vs)
     assert validated_schema.jsonschema == {
-        **bare_minimum,
+        **SCHEMA_KEY_VALUE,
+        "required": ["this", "that"],
         "type": "object",
         "properties": {"this": type_dict, "that": type_dict},
     }
@@ -478,6 +504,7 @@ def test_generate_first_pass_schema_pass_custom_xsv_metaschema_uri(
     schema = {
         "$schema": CUSTOM_META_SCHEMA_URI,
         "required": ["a"],
+        "properties": {"a": {"type": "string"}},
         "x-xsv-config": {"x-delimiter": ","},
     }
     schema_path = make_schema_file(schema, "schema.json")
@@ -523,3 +550,556 @@ def test_generate_first_pass_schema_pass_retains_only_allowed_top_level_keys() -
             "b": {"type": ["string", "null"]},
         },
     }
+
+
+@pytest.mark.parametrize(
+    "draft_uri",
+    [pytest.param(uri, id=uri) for uri in SUPPORTED_JSONSCHEMA_DRAFT_URIS],
+)
+def test_validated_schema_pass_supported_drafts(draft_uri: str) -> None:
+    """Accept minimal schemas across every supported JSON Schema draft and compute ``has_xsv_metaschema``."""
+    schema: dict[str, Any] = {"$schema": draft_uri}
+    expected_is_xsv = draft_uri == CUSTOM_META_SCHEMA_URI
+
+    result = ValidatedSchema(jsonschema=schema)
+
+    assert result.jsonschema == schema
+    assert result.has_xsv_metaschema is expected_is_xsv
+    assert result.model_dump() == {
+        "jsonschema": schema,
+        "has_xsv_metaschema": expected_is_xsv,
+    }
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected_is_xsv"),
+    [
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "type": "object"},
+            False,
+            id="missing-required-and-properties",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": [], "properties": {}},
+            False,
+            id="empty-required-and-empty-properties",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a"]},
+            False,
+            id="required-without-properties",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "properties": {"a": {"type": "string"}}},
+            False,
+            id="properties-without-required",
+        ),
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"b": {"type": "string"}},
+            },
+            False,
+            id="mismatched-required-and-properties",
+        ),
+        pytest.param(
+            {
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "type": "object",
+                "x-xsv-config": {"x-delimiter": "\t", "x-has-header": False},
+            },
+            True,
+            id="custom-metaschema-with-valid-xsv-config-without-required",
+        ),
+    ],
+)
+def test_validated_schema_pass_optional_and_mismatched_xsv_fields(
+    schema: dict[str, Any],
+    expected_is_xsv: bool,
+) -> None:
+    """Allow schemas that omit or mismatch ``required`` and ``properties`` when validated as ``ValidatedSchema``."""
+    result = ValidatedSchema(jsonschema=schema)
+
+    assert result.jsonschema == schema
+    assert result.has_xsv_metaschema is expected_is_xsv
+    assert result.model_dump() == {
+        "jsonschema": schema,
+        "has_xsv_metaschema": expected_is_xsv,
+    }
+
+
+def test_validated_schema_fail_missing_jsonschema_field() -> None:
+    """Raise ``ValidationError`` when ``ValidatedSchema`` is instantiated without ``jsonschema``."""
+    with pytest.raises(ValidationError, match="Field required"):
+        ValidatedSchema()  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("bad_input", INVALID_TOP_LEVEL_SCHEMA_LIST)
+def test_validated_schema_fail_non_dict_jsonschema(bad_input: object) -> None:
+    """Raise ``ValidationError`` when ``ValidatedSchema`` receives a non-dict ``jsonschema`` value."""
+    with pytest.raises(ValidationError, match="Input should be a valid dictionary"):
+        ValidatedSchema(jsonschema=bad_input)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("schema", "match"),
+    [
+        pytest.param({}, r"JSON Schema is missing the \$schema keyword", id="empty-dict"),
+        pytest.param({"type": "object"}, r"JSON Schema is missing the \$schema keyword", id="missing-schema-key"),
+        pytest.param({"$schema": None}, r"JSON Schema is missing the \$schema keyword", id="none-schema-uri"),
+        pytest.param({"$schema": 0}, r"JSON Schema is missing the \$schema keyword", id="zero-schema-uri"),
+        pytest.param({"$schema": -1}, r"JSON Schema is missing the \$schema keyword", id="negative-schema-uri"),
+        pytest.param({"$schema": True}, r"JSON Schema is missing the \$schema keyword", id="bool-schema-uri"),
+        pytest.param({"$schema": []}, r"JSON Schema is missing the \$schema keyword", id="list-schema-uri"),
+        pytest.param({"$schema": {}}, r"JSON Schema is missing the \$schema keyword", id="dict-schema-uri"),
+        pytest.param({"$schema": ""}, "Unsupported JSON Schema draft: ", id="empty-string-schema-uri"),
+        pytest.param({"$schema": "   "}, "Unsupported JSON Schema draft:    ", id="whitespace-schema-uri"),
+        pytest.param(
+            {"$schema": "https://example.org/unknown-draft/schema"},
+            r"Unsupported JSON Schema draft: https://example\.org/unknown-draft/schema",
+            id="unknown-schema-uri",
+        ),
+    ],
+)
+def test_validated_schema_fail_invalid_schema_uri(schema: dict[str, Any], match: str) -> None:
+    """Raise ``ValidationError`` for missing, non-string, empty, or unsupported ``$schema`` URIs."""
+    with pytest.raises(ValidationError, match=match):
+        ValidatedSchema(jsonschema=schema)
+
+
+@pytest.mark.parametrize(
+    ("schema", "match"),
+    [
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "type": "not-a-type"},
+            "not-a-type",
+            id="invalid-type-keyword",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": "col_a"},
+            "is not of type 'array'",
+            id="non-list-required",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a", "a"]},
+            "has non-unique elements",
+            id="duplicate-required-entries",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": [1]},
+            "is not of type 'string'",
+            id="non-string-required-item",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "properties": ["a"]},
+            "is not of type 'object'",
+            id="non-dict-properties",
+        ),
+        pytest.param(
+            {"$schema": CUSTOM_META_SCHEMA_URI, "x-xsv-config": {"x-delimiter": "::"}},
+            "is too long",
+            id="invalid-custom-xsv-config",
+        ),
+        pytest.param(
+            {"$schema": CUSTOM_META_SCHEMA_URI, "x-xsv-config": {}},
+            "is not valid under any of the given schemas",
+            id="empty-custom-xsv-config",
+        ),
+    ],
+)
+def test_validated_schema_fail_metaschema_error_logs_and_raises(
+    schema: dict[str, Any],
+    match: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Log an error and raise ``SchemaError`` when ``ValidatedSchema`` fails metaschema validation."""
+    with pytest.raises(jsonschema.exceptions.SchemaError, match=match):
+        ValidatedSchema(jsonschema=schema)
+
+    error_records = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert len(error_records) == 1
+    assert error_records[0].getMessage() == "Error validating JSON Schema"
+
+
+@pytest.mark.parametrize(
+    "draft_uri",
+    [pytest.param(uri, id=uri) for uri in SUPPORTED_JSONSCHEMA_DRAFT_URIS],
+)
+def test_validated_xsv_schema_pass_supported_drafts(draft_uri: str) -> None:
+    """Accept valid XSV schemas across every supported draft and populate all computed fields."""
+    schema: dict[str, Any] = {
+        "$schema": draft_uri,
+        "required": ["id"],
+        "properties": {"id": {"type": "string"}},
+    }
+    expected_is_xsv = draft_uri == CUSTOM_META_SCHEMA_URI
+
+    result = ValidatedXsvSchema(jsonschema=schema)
+
+    assert isinstance(result, ValidatedSchema)
+    assert result.jsonschema == schema
+    assert result.has_xsv_metaschema is expected_is_xsv
+    assert result.has_xsv_parser_config is False
+    assert result.required_cols == ["id"]
+    assert result.model_dump() == {
+        "jsonschema": schema,
+        "has_xsv_metaschema": expected_is_xsv,
+        "has_xsv_parser_config": False,
+        "required_cols": ["id"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected_is_xsv", "expected_has_config", "expected_cols"),
+    [
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"a": {}},
+            },
+            False,
+            False,
+            ["a"],
+            id="single-column-empty-property-subschema",
+        ),
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["col_c", "col_a", "col_b"],
+                "properties": {
+                    "col_a": {"type": "string"},
+                    "col_b": {"type": "integer"},
+                    "col_c": {"type": "boolean"},
+                },
+            },
+            False,
+            False,
+            ["col_c", "col_a", "col_b"],
+            id="required-order-preserved-independent-of-properties-order",
+        ),
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"a": {"type": "string"}},
+                "x-xsv-config": {"x-delimiter": ","},
+            },
+            False,
+            True,
+            ["a"],
+            id="standard-draft-with-non-empty-xsv-config",
+        ),
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"a": {"type": "string"}},
+                "x-xsv-config": {},
+            },
+            False,
+            False,
+            ["a"],
+            id="standard-draft-with-empty-xsv-config",
+        ),
+        pytest.param(
+            {
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "required": ["a", "b"],
+                "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+                "x-xsv-config": {"x-delimiter": "\t", "x-has-header": True},
+            },
+            True,
+            True,
+            ["a", "b"],
+            id="custom-metaschema-with-non-empty-xsv-config",
+        ),
+        pytest.param(
+            {
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"a": {"type": "string"}},
+            },
+            True,
+            False,
+            ["a"],
+            id="custom-metaschema-without-xsv-config",
+        ),
+    ],
+)
+def test_validated_xsv_schema_pass_properties_and_config_variants(
+    schema: dict[str, Any],
+    expected_is_xsv: bool,
+    expected_has_config: bool,
+    expected_cols: list[str],
+) -> None:
+    """Compute ``has_xsv_metaschema``, ``has_xsv_parser_config``, and ``required_cols`` accurately."""
+    result = ValidatedXsvSchema(jsonschema=schema)
+
+    assert result.jsonschema == schema
+    assert result.has_xsv_metaschema is expected_is_xsv
+    assert result.has_xsv_parser_config is expected_has_config
+    assert result.required_cols == expected_cols
+    assert result.model_dump() == {
+        "jsonschema": schema,
+        "has_xsv_metaschema": expected_is_xsv,
+        "has_xsv_parser_config": expected_has_config,
+        "required_cols": expected_cols,
+    }
+
+
+def test_validated_xsv_schema_fail_missing_jsonschema_field() -> None:
+    """Raise ``ValidationError`` when ``ValidatedXsvSchema`` is instantiated without ``jsonschema``."""
+    with pytest.raises(ValidationError, match="Field required"):
+        ValidatedXsvSchema()  # type: ignore[call-arg]
+
+
+@pytest.mark.parametrize("bad_input", INVALID_TOP_LEVEL_SCHEMA_LIST)
+def test_validated_xsv_schema_fail_non_dict_jsonschema(bad_input: object) -> None:
+    """Raise ``ValidationError`` when ``ValidatedXsvSchema`` receives a non-dict ``jsonschema`` value."""
+    with pytest.raises(ValidationError, match="Input should be a valid dictionary"):
+        ValidatedXsvSchema(jsonschema=bad_input)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("schema", "match"),
+    [
+        pytest.param(
+            {"required": ["a"], "properties": {"a": {"type": "string"}}},
+            r"JSON Schema is missing the \$schema keyword",
+            id="missing-schema-uri",
+        ),
+        pytest.param(
+            {"$schema": None, "required": ["a"], "properties": {"a": {"type": "string"}}},
+            r"JSON Schema is missing the \$schema keyword",
+            id="none-schema-uri",
+        ),
+        pytest.param(
+            {"$schema": 0, "required": ["a"], "properties": {"a": {"type": "string"}}},
+            r"JSON Schema is missing the \$schema keyword",
+            id="zero-schema-uri",
+        ),
+        pytest.param(
+            {"$schema": "", "required": ["a"], "properties": {"a": {"type": "string"}}},
+            "Unsupported JSON Schema draft: ",
+            id="empty-string-schema-uri",
+        ),
+        pytest.param(
+            {"$schema": "https://example.org/unsupported", "required": ["a"], "properties": {"a": {"type": "string"}}},
+            r"Unsupported JSON Schema draft: https://example\.org/unsupported",
+            id="unsupported-schema-uri",
+        ),
+    ],
+)
+def test_validated_xsv_schema_fail_invalid_schema_uri(schema: dict[str, Any], match: str) -> None:
+    """Raise ``ValidationError`` when ``ValidatedXsvSchema`` has a missing or unsupported ``$schema``."""
+    with pytest.raises(ValidationError, match=match):
+        ValidatedXsvSchema(jsonschema=schema)
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pytest.param({"$schema": DRAFT_2020_12_SCHEMA_URI}, id="missing-required-and-properties"),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "properties": {"a": {"type": "string"}}},
+            id="missing-required-with-properties",
+        ),
+        pytest.param({"$schema": DRAFT_2020_12_SCHEMA_URI, "required": []}, id="empty-required-no-properties"),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": [], "properties": {}},
+            id="empty-required-and-empty-properties",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": [], "properties": {"a": {"type": "string"}}},
+            id="empty-required-with-properties",
+        ),
+        pytest.param(
+            {"$schema": CUSTOM_META_SCHEMA_URI, "properties": {"a": {"type": "string"}}},
+            id="custom-metaschema-missing-required",
+        ),
+    ],
+)
+def test_validated_xsv_schema_fail_missing_or_empty_required(schema: dict[str, Any]) -> None:
+    """Raise ``ValidationError`` when ``required`` is missing or empty."""
+    with pytest.raises(ValidationError, match="Could not find any required cols in schema"):
+        ValidatedXsvSchema(jsonschema=schema)
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a"]},
+            id="missing-properties",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a"], "properties": {}},
+            id="empty-properties",
+        ),
+        pytest.param(
+            {"$schema": CUSTOM_META_SCHEMA_URI, "required": ["a"]},
+            id="custom-metaschema-missing-properties",
+        ),
+        pytest.param(
+            {"$schema": CUSTOM_META_SCHEMA_URI, "required": ["a"], "properties": {}},
+            id="custom-metaschema-empty-properties",
+        ),
+    ],
+)
+def test_validated_xsv_schema_fail_missing_or_empty_properties(schema: dict[str, Any]) -> None:
+    """Raise ``ValidationError`` when ``properties`` is missing or empty."""
+    with pytest.raises(ValidationError, match="Could not find any properties in schema"):
+        ValidatedXsvSchema(jsonschema=schema)
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["a", "b"],
+                "properties": {"a": {"type": "string"}},
+            },
+            id="required-has-extra-column",
+        ),
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"a": {"type": "string"}, "b": {"type": "string"}},
+            },
+            id="properties-has-extra-column",
+        ),
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"b": {"type": "string"}},
+            },
+            id="disjoint-required-and-properties",
+        ),
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": ["SeqId"],
+                "properties": {"seqid": {"type": "string"}},
+            },
+            id="case-mismatch",
+        ),
+        pytest.param(
+            {
+                "$schema": DRAFT_2020_12_SCHEMA_URI,
+                "required": [""],
+                "properties": {"a": {"type": "string"}},
+            },
+            id="empty-string-required-col-mismatch",
+        ),
+        pytest.param(
+            {
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "required": ["sequid"],
+                "properties": {"seqid": {"type": "string"}},
+            },
+            id="custom-metaschema-typo-mismatch",
+        ),
+    ],
+)
+def test_validated_xsv_schema_fail_required_properties_mismatch(schema: dict[str, Any]) -> None:
+    """Raise ``ValidationError`` when ``required`` and ``properties`` do not contain the exact same column names."""
+    with pytest.raises(
+        ValidationError,
+        match="XSV schemas must have the same set of properties listed under `required` and in `properties`",
+    ):
+        ValidatedXsvSchema(jsonschema=schema)
+
+
+@pytest.mark.parametrize(
+    ("schema", "match"),
+    [
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": "a", "properties": {"a": {"type": "string"}}},
+            "is not of type 'array'",
+            id="required-is-string",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": None, "properties": {"a": {"type": "string"}}},
+            "is not of type 'array'",
+            id="required-is-none",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": 0, "properties": {"a": {"type": "string"}}},
+            "is not of type 'array'",
+            id="required-is-zero",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a", "a"], "properties": {"a": {"type": "string"}}},
+            "has non-unique elements",
+            id="duplicate-required-column",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": [123], "properties": {"a": {"type": "string"}}},
+            "is not of type 'string'",
+            id="non-string-required-column",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a"], "properties": ["a"]},
+            "is not of type 'object'",
+            id="properties-is-list",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a"], "properties": "a"},
+            "is not of type 'object'",
+            id="properties-is-string",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a"], "properties": None},
+            "is not of type 'object'",
+            id="properties-is-none",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a"], "properties": 0},
+            "is not of type 'object'",
+            id="properties-is-zero",
+        ),
+        pytest.param(
+            {"$schema": DRAFT_2020_12_SCHEMA_URI, "required": ["a"], "properties": {"a": {"type": "not-a-type"}}},
+            "not-a-type",
+            id="invalid-property-subschema",
+        ),
+        pytest.param(
+            {
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"a": {"type": "string"}},
+                "x-xsv-config": {"x-delimiter": "::"},
+            },
+            "is too long",
+            id="invalid-xsv-config-under-custom-metaschema",
+        ),
+        pytest.param(
+            {
+                "$schema": CUSTOM_META_SCHEMA_URI,
+                "required": ["a"],
+                "properties": {"a": {"type": "string"}},
+                "x-xsv-config": {},
+            },
+            "is not valid under any of the given schemas",
+            id="empty-xsv-config-under-custom-metaschema",
+        ),
+    ],
+)
+def test_validated_xsv_schema_fail_metaschema_error_logs_and_raises(
+    schema: dict[str, Any],
+    match: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Log an error and raise ``SchemaError`` when ``ValidatedXsvSchema`` fails metaschema validation."""
+    with pytest.raises(jsonschema.exceptions.SchemaError, match=match):
+        ValidatedXsvSchema(jsonschema=schema)
+
+    error_records = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert len(error_records) == 1
+    assert error_records[0].getMessage() == "Error validating JSON Schema"

@@ -27,7 +27,7 @@ from cdm_data_loaders.validation.jsonschema.metaschema import (
     register_xsv_validator,
     resolve_jsonschema_validator,
 )
-from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema
+from cdm_data_loaders.validation.jsonschema.models import ValidatedSchema, ValidatedXsvSchema
 from tests.helpers.paths_and_constants import preserve_xsv_metaschema_state
 
 SCHEMAS_PACKAGE_DIR: Final[Path] = Path(str(importlib.resources.files("cdm_data_loaders.schemas")))
@@ -418,6 +418,12 @@ def test_validated_schema_pass_bundled_schemas(schema_path: Path) -> None:
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     validated = ValidatedSchema(jsonschema=schema)
     assert validated.jsonschema == schema
+    # ensure that all xsv schemas can create ValidatedXsvSchema objects
+    if schema.get("$schema") == CUSTOM_META_SCHEMA_URI:
+        validated_xsv = ValidatedXsvSchema(jsonschema=schema)
+        assert validated_xsv.jsonschema == schema
+        assert validated_xsv.has_xsv_metaschema is True
+        assert len(validated_xsv.required_cols)
 
 
 @pytest.mark.parametrize(
