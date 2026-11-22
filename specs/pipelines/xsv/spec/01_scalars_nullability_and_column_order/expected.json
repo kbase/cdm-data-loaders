@@ -9,9 +9,7 @@
     "created_date": "2025-01-15",
     "updated_at": "2025-01-15T08:30:00Z",
     "status": "active",
-    "opt_note": "first note",
-    "unlisted_tag": "alpha",
-    "extra_col": null
+    "opt_note": "first note"
   },
   {
     "id": "rec-2",
@@ -23,8 +21,6 @@
     "created_date": "2025-02-20",
     "updated_at": "2025-02-20T14:00:00Z",
     "status": "inactive",
-    "opt_note": null,
-    "unlisted_tag": null,
-    "extra_col": null
+    "opt_note": null
   }
 ]

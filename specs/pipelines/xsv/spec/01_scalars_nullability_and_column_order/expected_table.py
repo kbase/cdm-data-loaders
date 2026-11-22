@@ -18,8 +18,6 @@ EXPECTED_TABLE = pa.Table.from_pylist(
             "updated_at": "2025-01-15T08:30:00Z",
             "status": "active",
             "opt_note": "first note",
-            "unlisted_tag": "alpha",
-            "extra_col": None,
         },
         {
             "id": "rec-2",
@@ -32,8 +30,6 @@ EXPECTED_TABLE = pa.Table.from_pylist(
             "updated_at": "2025-02-20T14:00:00Z",
             "status": "inactive",
             "opt_note": None,
-            "unlisted_tag": None,
-            "extra_col": None,
         },
     ],
     schema=EXPECTED_SCHEMA,

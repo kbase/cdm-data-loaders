@@ -24,12 +24,5 @@ EXPECTED_SCHEMA = pa.schema(
         pa.field("updated_at", pa.string(), nullable=False, metadata={"jsonschema_type": "string (date-time)"}),
         pa.field("status", pa.string(), nullable=False, metadata={"jsonschema_type": "string"}),
         pa.field("opt_note", pa.string(), nullable=True, metadata={"jsonschema_type": "string"}),
-        pa.field("unlisted_tag", pa.string(), nullable=True, metadata={"jsonschema_type": "string"}),
-        pa.field(
-            "extra_col",
-            pa.int64(),
-            nullable=True,
-            metadata={"comment": "Extra property omitted from required.", "jsonschema_type": "integer"},
-        ),
     ]
 )

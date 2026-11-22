@@ -120,14 +120,14 @@ def build_xsv_config_rows() -> tuple[XsvConfigRow, ...]:
     return tuple(rows)
 
 
-def _build_xsv_column_probes() -> list[dict[str, Any] | None]:
+def _build_xsv_column_probes() -> list[dict[str, Any]]:
     """Derive XSV column probes from scalar type hints and the XSV specification case schemas.
 
-    :return: Ordered list of distinct column JSON Schema dicts (plus ``None`` for unlisted ``required`` columns).
-    :rtype: list[dict[str, Any] | None]
+    :return: Ordered list of distinct column JSON Schema dicts.
+    :rtype: list[dict[str, Any]]
     """
     seen: set[str] = set()
-    probes: list[dict[str, Any] | None] = []
+    probes: list[dict[str, Any]] = []
 
     def add_probe(probe: dict[str, Any]) -> None:
         """Record ``probe`` if its canonical JSON key has not been seen.
@@ -146,19 +146,14 @@ def _build_xsv_column_probes() -> list[dict[str, Any] | None]:
         add_probe({"type": scalar_type})
         add_probe({"type": [scalar_type, "null"]})
 
-    has_unlisted_required = False
     for case in load_cases(PIPELINE_SPECS_ROOT / "xsv" / "spec"):
         raw_schema = json.loads(case.schema.read_text(encoding="utf-8"))
         deref = dereference_schema(raw_schema)
         props = deref.get("properties", {})
-        if any(col not in props for col in deref.get("required", ())):
-            has_unlisted_required = True
         for prop_schema in props.values():
             cleaned = {k: v for k, v in prop_schema.items() if k not in {"title", "description"}}
             add_probe(cleaned)
 
-    if has_unlisted_required:
-        probes.append(None)
     return probes
 
 
@@ -170,16 +165,15 @@ def build_xsv_column_type_rows() -> tuple[XsvColumnTypeRow, ...]:
     """
     rows: list[XsvColumnTypeRow] = []
     for probe in _build_xsv_column_probes():
-        properties: dict[str, Any] = {"col": dict(probe)} if probe is not None else {}
         raw_schema: dict[str, Any] = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "type": "object",
             "required": ["col"],
-            "properties": properties,
+            "properties": {"col": dict(probe)},
         }
         pa_schema = convert_xsv_schema_to_pyarrow(ValidatedXsvSchema(jsonschema=raw_schema))
         pa_field = pa_schema.field("col")
-        duckdb_cfg = resolve_duckdb_column_config(pa_schema if probe is not None else None)
+        duckdb_cfg = resolve_duckdb_column_config(pa_schema)
         duckdb_dtype = str(duckdb_cfg.get("dtype", {}).get("col", "VARCHAR (auto)"))
         force_not_null = "col" in duckdb_cfg.get("force_not_null", [])
         rows.append(
