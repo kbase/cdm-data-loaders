@@ -378,6 +378,23 @@ def test_init_logger_pass_same_mtime_skipped_unless_forced(tmp_path: Path) -> No
     assert root.handlers[0] not in handlers
 
 
+def test_init_logger_pass_reapplies_when_switching_config_files_with_same_mtime(tmp_path: Path) -> None:
+    """Switching to a different config file with the same mtime reapplies logging configuration."""
+    config_a = write_json_or_yaml(tmp_path / "logging_a.yaml", make_config("INFO"))
+    config_b = write_json_or_yaml(tmp_path / "logging_b.yaml", make_config("DEBUG"))
+    set_mtime(config_b, config_a.stat().st_mtime_ns)
+
+    init_logger(settings_for(config_a))
+    root = logging.getLogger()
+    handlers = list(root.handlers)
+    assert root.level == logging.INFO
+
+    init_logger(settings_for(config_b))
+    assert root.level == logging.DEBUG
+    assert len(root.handlers) == 1
+    assert root.handlers[0] not in handlers
+
+
 def test_init_logger_pass_force_relogs_fallback_warning(capsys: pytest.CaptureFixture[str]) -> None:
     """Forcing the fallback config rebuilds the handler and logs the warning again."""
     init_logger(settings_for(None))

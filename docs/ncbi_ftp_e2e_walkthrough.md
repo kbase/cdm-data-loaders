@@ -26,13 +26,13 @@ Step-by-step instructions for running a full production transfer in the Lakehous
 
 ### Path Formats Used
 
-| Format | Example | Description |
-| --- | --- | --- |
-| **s3:// URI** | `s3://cdm-lake/staging/run1/` | Full URI with scheme, bucket, and key |
-| **bucket name** | `cdm-lake` | Bucket name without scheme |
+| Format            | Example                                         | Description                                 |
+| ----------------- | ----------------------------------------------- | ------------------------------------------- |
+| **s3:// URI**     | `s3://cdm-lake/staging/run1/`                   | Full URI with scheme, bucket, and key       |
+| **bucket name**   | `cdm-lake`                                      | Bucket name without scheme                  |
 | **S3 key prefix** | `tenant-general-warehouse/kbase/datasets/ncbi/` | Path within a bucket (no scheme, no bucket) |
-| **S3 object key** | `staging/transfer_manifest.txt` | Single object key within a bucket |
-| **local path** | `output/removed_manifest.txt` | Filesystem path on the host |
+| **S3 object key** | `staging/transfer_manifest.txt`                 | Single object key within a bucket           |
+| **local path**    | `output/removed_manifest.txt`                   | Filesystem path on the host                 |
 
 ### Lakehouse Object (Final Location)
 
@@ -89,8 +89,6 @@ export AWS_SECRET_ACCESS_KEY=test_access_secret
 export AWS_DEFAULT_REGION=us-east-1
 ```
 
-(A matching service is configured in [`docker-compose.yml`](https://github.com/kbase/cdm-data-loaders/blob/develop/docker-compose.yml) for CI integration workflows.)
-
 Create test buckets from the command line using the AWS CLI:
 
 ```sh
@@ -121,17 +119,17 @@ Open [`notebooks/ncbi_ftp_manifest.ipynb`](https://github.com/kbase/cdm-data-loa
 
 ### Constants to Change (Cell 3)
 
-| Constant | Walkthrough Value | Format | Purpose |
-| --- | --- | --- | --- |
-| `DATABASE` | `"refseq"` | string | Keep as-is |
-| `PREFIX_FROM` | `"900"` | string | High-numbered prefix with few assemblies for fast diffing |
-| `PREFIX_TO` | `"900"` | string | Single prefix bucket |
-| `LIMIT` | `10` | int | Cap to 10 assemblies |
-| `PREVIOUS_SUMMARY_URI` | `None` | s3:// URI | First run — treat every assembly as new |
-| `SNAPSHOT_UPLOAD_URI` | `None` | s3:// URI | Skip S3 upload for local testing |
-| `LAKEHOUSE_BUCKET` | `"cdm-lake"` (or `None`) | bucket name | Prune assemblies already present in the Lakehouse |
-| `STORE_KEY_PREFIX` | `"tenant-general-warehouse/kbase/datasets/ncbi/"` | S3 key prefix | Default Lakehouse path prefix |
-| `OUTPUT_DIR` | `Path("output")` | local path | Local manifest output directory |
+| Constant               | Walkthrough Value                                 | Format        | Purpose                                                   |
+| ---------------------- | ------------------------------------------------- | ------------- | --------------------------------------------------------- |
+| `DATABASE`             | `"refseq"`                                        | string        | Keep as-is                                                |
+| `PREFIX_FROM`          | `"900"`                                           | string        | High-numbered prefix with few assemblies for fast diffing |
+| `PREFIX_TO`            | `"900"`                                           | string        | Single prefix bucket                                      |
+| `LIMIT`                | `10`                                              | int           | Cap to 10 assemblies                                      |
+| `PREVIOUS_SUMMARY_URI` | `None`                                            | s3:// URI     | First run — treat every assembly as new                   |
+| `SNAPSHOT_UPLOAD_URI`  | `None`                                            | s3:// URI     | Skip S3 upload for local testing                          |
+| `LAKEHOUSE_BUCKET`     | `"cdm-lake"` (or `None`)                          | bucket name   | Prune assemblies already present in the Lakehouse         |
+| `STORE_KEY_PREFIX`     | `"tenant-general-warehouse/kbase/datasets/ncbi/"` | S3 key prefix | Default Lakehouse path prefix                             |
+| `OUTPUT_DIR`           | `Path("output")`                                  | local path    | Local manifest output directory                           |
 
 ### Initialize the S3 Client for CEPH
 
@@ -373,12 +371,12 @@ rm -rf staging/ output/
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| `connect_ftp() timeout` | NCBI FTP may be slow or rate-limited | Retry and reduce `--threads` to 1 |
-| Phase 3 shows 0 promoted | Staging prefix or bucket mismatch | Verify `--staging-path` matches the S3 upload path from Step 3d |
-| Phase 3 S3 auth error | Missing CEPH credentials | Export `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY` before running |
-| Container cannot reach FTP | Docker network isolation | Pass `--network host` or verify DNS resolution inside the container |
+| Symptom                    | Cause                                | Fix                                                                                        |
+| -------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `connect_ftp() timeout`    | NCBI FTP may be slow or rate-limited | Retry and reduce `--threads` to 1                                                          |
+| Phase 3 shows 0 promoted   | Staging prefix or bucket mismatch    | Verify `--staging-path` matches the S3 upload path from Step 3d                            |
+| Phase 3 S3 auth error      | Missing CEPH credentials             | Export `AWS_ENDPOINT_URL`, `AWS_ACCESS_KEY_ID`, and `AWS_SECRET_ACCESS_KEY` before running |
+| Container cannot reach FTP | Docker network isolation             | Pass `--network host` or verify DNS resolution inside the container                        |
 
 ---
 
@@ -386,15 +384,15 @@ rm -rf staging/ output/
 
 Phase 2 downloads files matching `FILE_FILTERS` in [`src/cdm_data_loaders/datasets/ncbi_ftp/assembly.py`](https://github.com/kbase/cdm-data-loaders/blob/develop/src/cdm_data_loaders/datasets/ncbi_ftp/assembly.py) (plus `md5checksums.txt` for integrity verification):
 
-| Suffix | Content |
-| --- | --- |
-| `_genomic.fna.gz` | Genome nucleotide sequences |
-| `_genomic.gff.gz` | Genome annotations (GFF3) |
-| `_protein.faa.gz` | Protein sequences |
-| `_gene_ontology.gaf.gz` | GO annotations |
-| `_assembly_report.txt` | Assembly metadata |
-| `_assembly_stats.txt` | Assembly statistics |
-| `_assembly_regions.txt` | Assembly regions |
-| `_ani_contam_ranges.tsv` | ANI contamination ranges |
-| `_gene_expression_counts.txt.gz` | Gene expression counts |
+| Suffix                                      | Content                      |
+| ------------------------------------------- | ---------------------------- |
+| `_genomic.fna.gz`                           | Genome nucleotide sequences  |
+| `_genomic.gff.gz`                           | Genome annotations (GFF3)    |
+| `_protein.faa.gz`                           | Protein sequences            |
+| `_gene_ontology.gaf.gz`                     | GO annotations               |
+| `_assembly_report.txt`                      | Assembly metadata            |
+| `_assembly_stats.txt`                       | Assembly statistics          |
+| `_assembly_regions.txt`                     | Assembly regions             |
+| `_ani_contam_ranges.tsv`                    | ANI contamination ranges     |
+| `_gene_expression_counts.txt.gz`            | Gene expression counts       |
 | `_normalized_gene_expression_counts.txt.gz` | Normalized expression counts |

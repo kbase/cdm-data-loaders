@@ -3,7 +3,7 @@
 import importlib.resources
 import json
 from pathlib import Path
-from typing import Any, Final, Never
+from typing import Any, Final, Never, Self
 
 import httpx
 import jsonschema.exceptions
@@ -486,3 +486,74 @@ def test_check_jsonschema_document_fail_invalid_schemas(
     """Reject missing, non-string, unsupported, or metaschema-invalid JSON Schema documents."""
     with pytest.raises(exc_cls, match=match):
         check_jsonschema_document(bad_schema)
+
+
+def test_check_jsonschema_document_fail_disallowed_custom_xsv() -> None:
+    """Reject CUSTOM_META_SCHEMA_URI in check_jsonschema_document when allow_custom_xsv is False."""
+    with pytest.raises(ValueError, match=r"Custom metaschema cannot declare itself"):
+        check_jsonschema_document({"$schema": CUSTOM_META_SCHEMA_URI}, allow_custom_xsv=False)
+
+
+def test_register_xsv_validator_pass_idempotent() -> None:
+    """register_xsv_validator is idempotent across repeated calls."""
+    with preserve_xsv_metaschema_state():
+        register_xsv_validator()
+        first_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None)  # type: ignore[arg-type]
+        register_xsv_validator()
+        second_cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None)  # type: ignore[arg-type]
+        assert first_cls is not None
+        assert first_cls is second_cls
+
+
+def test_register_xsv_validator_pass_adds_missing_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """register_xsv_validator injects CUSTOM_META_SCHEMA_URI as $id when missing."""
+    no_id_dir = tmp_path / "xsv_config" / "0.1.0"
+    no_id_dir.mkdir(parents=True)
+    (no_id_dir / "schema.json").write_text(
+        json.dumps({"$schema": DRAFT_2020_12_SCHEMA_URI, "type": "object"}),
+        encoding="utf-8",
+    )
+    with preserve_xsv_metaschema_state():
+        monkeypatch.setattr(importlib.resources, "files", lambda _pkg: tmp_path)
+        register_xsv_validator()
+        cls = jsonschema.validators.validator_for({"$schema": CUSTOM_META_SCHEMA_URI}, default=None)  # type: ignore[arg-type]
+        assert cls is not None
+        assert cls.META_SCHEMA["$id"] == CUSTOM_META_SCHEMA_URI
+
+
+def test_load_xsv_meta_schema_fail_forwards_remote_url_and_rejects_self_reference(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """load_xsv_meta_schema forwards remote_url on fallback and rejects schemas declaring remote_url as $schema."""
+    custom_url = "https://example.org/custom-xsv/schema.json"
+    captured_urls: list[str] = []
+
+    class _FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"$schema": custom_url, "type": "object"}
+
+    class _FakeClient:
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def __enter__(self) -> Self:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def get(self, url: str) -> _FakeResponse:
+            captured_urls.append(url)
+            return _FakeResponse()
+
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+    with pytest.raises(ValueError, match=r"Custom metaschema cannot declare itself"):
+        load_xsv_meta_schema(local_schema_path=tmp_path / "missing.json", remote_url=custom_url)
+    assert captured_urls == [custom_url]

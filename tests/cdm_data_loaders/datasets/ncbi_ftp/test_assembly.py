@@ -1,9 +1,10 @@
 """Tests for ncbi_ftp.assembly module — path helpers, file filtering, and FTP assembly downloads."""
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from ftplib import FTP
 from pathlib import Path, PurePosixPath
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -251,3 +252,59 @@ def test_download_assembly_to_local_skips_and_unlinks_after_checksum_mismatch(tm
     assert result["files_skipped_checksum_mismatch"] == 1
     assert not (dest_dir / "GCF_000001215.4_genomic.fna.gz").exists()
     assert not (dest_dir / "GCF_000001215.4_genomic.fna.gz.md5").exists()
+
+
+def test_download_assembly_to_local_no_md5_manifest_and_keepalive_args(
+    tmp_path: Path,
+) -> None:
+    """download_assembly_to_local forwards ftp_host, retries=1, checksum_fn, and keepalive timestamps."""
+    mock_ftp = MagicMock(spec=FTP)
+    assembly_ftp_path = PurePosixPath("/") / "genomes" / "all" / ACC_PATH_215
+    keepalive_calls: list[float] = []
+    download_calls: list[tuple[PurePosixPath, int, str | None]] = []
+
+    def fake_keepalive(_ftp: FTP, last_ts: float) -> float:
+        keepalive_calls.append(last_ts)
+        return last_ts + 10.0
+
+    def fake_download(
+        _ftp: FTP,
+        remote: PurePosixPath,
+        local: Path,
+        *,
+        retries: int = 3,
+        checksum_fn: str | None = None,
+    ) -> str | None:
+        download_calls.append((remote, retries, checksum_fn))
+        local.write_bytes(b"data")
+        return None
+
+    with (
+        patch("cdm_data_loaders.datasets.ncbi_ftp.assembly.ftp_session", return_value=nullcontext(mock_ftp)) as m_sess,
+        patch(
+            "cdm_data_loaders.datasets.ncbi_ftp.assembly.ftp_list_dir",
+            return_value=[
+                PurePosixPath("GCF_000001215.4_genomic.fna.gz"),
+                PurePosixPath("GCF_000001215.4_assembly_stats.txt"),
+            ],
+        ),
+        patch("cdm_data_loaders.datasets.ncbi_ftp.assembly.ftp_noop_keepalive", side_effect=fake_keepalive),
+        patch("cdm_data_loaders.datasets.ncbi_ftp.assembly.ftp_download_file", side_effect=fake_download),
+        patch("cdm_data_loaders.datasets.ncbi_ftp.assembly.time.monotonic", side_effect=[100.0, 200.0, 300.0]),
+    ):
+        stats = download_assembly_to_local(assembly_ftp_path, tmp_path, ftp_host="ftp.custom.org")
+
+    m_sess.assert_called_once_with("ftp.custom.org", None)
+    assert stats == {
+        "accession": "GCF_000001215.4",
+        "assembly_dir": "GCF_000001215.4_Release_6_plus_ISO1_MT",
+        "files_downloaded": 2,
+        "files_skipped_checksum_mismatch": 0,
+        "files_without_checksum": 2,
+    }
+    assert keepalive_calls == [100.0, 200.0]
+    assert download_calls == [
+        (PurePosixPath("GCF_000001215.4_genomic.fna.gz"), 1, None),
+        (PurePosixPath("GCF_000001215.4_assembly_stats.txt"), 1, None),
+    ]
+    assert not (tmp_path / "raw_data" / ACC_PATH_215 / "md5checksums.txt").exists()

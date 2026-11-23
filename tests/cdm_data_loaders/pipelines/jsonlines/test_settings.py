@@ -29,6 +29,7 @@ from cdm_data_loaders.core.registry import (
     TransformRegistry,
 )
 from cdm_data_loaders.core.settings import CdmDataLoadersBase
+from cdm_data_loaders.core.transforms.settings_mixin import TransformSettingsMixin
 from cdm_data_loaders.datasets.ncbi_datasets.hooks import (
     ANNOTATION_REPORT_TABLE,
     DATASET_REPORT_TABLE,
@@ -991,7 +992,17 @@ def test_jsonl_pydantic_settings_fail_invalid_max_recursion_depth(
         )
 
 
-def test_build_output_schema_registry_pass_forwards_max_recursion_depth_and_by_alias() -> None:
+@pytest.mark.parametrize(
+    ("converter_kwargs", "expected_names"),
+    [
+        pytest.param({"max_recursion_depth": 1, "by_alias": True}, ["nodeId", "child"], id="custom-depth-and-alias"),
+        pytest.param({}, ["node_id", "child"], id="default-options"),
+    ],
+)
+def test_build_output_schema_registry_pass_forwards_max_recursion_depth_and_by_alias(
+    converter_kwargs: dict[str, Any],
+    expected_names: list[str],
+) -> None:
     """build_output_schema_registry forwards max_recursion_depth and by_alias to PydanticToPyArrow."""
 
     class RecursiveNode(BaseModel):
@@ -1001,7 +1012,32 @@ def test_build_output_schema_registry_pass_forwards_max_recursion_depth_and_by_a
     RecursiveNode.model_rebuild()
     registry = ModelRegistry(registry={"node": RecursiveNode})
 
-    schema_map = build_output_schema_registry(registry, max_recursion_depth=1, by_alias=True)
+    schema_map = build_output_schema_registry(registry, **converter_kwargs)
     assert schema_map is not None
-    expected = PydanticToPyArrow(max_recursion_depth=1, by_alias=True).convert(RecursiveNode)
+    expected = PydanticToPyArrow(**converter_kwargs).convert(RecursiveNode)
     assert schema_map.registry["node"].equals(expected, check_metadata=True)
+    assert schema_map.registry["node"].names == expected_names
+
+
+def test_jsonl_ingest_settings_resolve_entity_registry_schema_map_defaults(
+    test_defaults: dict[str, Any],
+) -> None:
+    """JsonlIngestSettings._resolve_entity_registry_schema_map defaults max_recursion_depth and by_alias=False."""
+
+    class PlainTransformSettings(JsonlIngestSettings, TransformSettingsMixin):
+        def resolve_entity_schema_map(self, registry: ModelRegistry) -> None:
+            self._resolve_entity_registry_schema_map(registry)
+
+    class AliasedItem(BaseModel):
+        item_id: str = Field(serialization_alias="itemId")
+
+    (test_defaults["input_dir"] / "node").mkdir(exist_ok=True)
+    settings = PlainTransformSettings(
+        **test_defaults,
+        dataset_name="test_ds",
+        loader_file_format="parquet",
+    )
+    registry = ModelRegistry(registry={"node": AliasedItem})
+    settings.resolve_entity_schema_map(registry)
+    assert settings.schema_map is not None
+    assert settings.schema_map.registry["node"].names == ["item_id"]

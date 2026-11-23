@@ -63,7 +63,7 @@ def test_get_checkm2_data_headers_only(test_data_dir: Path) -> None:
 
     with pytest.raises(
         RuntimeError,
-        match=re.escape("no valid data found in checkm2_file"),
+        match=f"^{re.escape('no valid data found in checkm2_file')}$",
     ):
         get_checkm2_data(full_path)
 
@@ -83,3 +83,18 @@ def test_get_checkm2_scores(key: str, test_data_dir: Path) -> None:
     """Test that checkm2 scores are correctly parsed."""
     results_dir = test_data_dir / f"results_{key}" / "quality_report.tsv"
     assert get_checkm2_data(results_dir) == RESULTS[key]["checkm2"]
+
+
+def test_get_checkm2_data_empty_metric_values(tmp_path: Path) -> None:
+    """Return None for empty completeness or contamination values."""
+    tsv_path = tmp_path / "quality_report.tsv"
+    tsv_path.write_text(
+        "Name\tCompleteness\tContamination\nbin_empty_contam\t95.5\t\nbin_empty_comp\t\t1.25\nbin_both_empty\t\t\n",
+        encoding="utf-8",
+    )
+
+    assert get_checkm2_data(tsv_path) == {
+        "bin_empty_contam": {"checkm2_completeness": 95.5, "checkm2_contamination": None},
+        "bin_empty_comp": {"checkm2_completeness": None, "checkm2_contamination": 1.25},
+        "bin_both_empty": {"checkm2_completeness": None, "checkm2_contamination": None},
+    }

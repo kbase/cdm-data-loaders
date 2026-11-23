@@ -312,3 +312,48 @@ def test_run_registry_ingest_pass_file_listing_multi_entity_skips_validation_and
         ],
         "matched_files": ["alpha/part.jsonl", "zeta/part.jsonl"],
     }
+
+
+def test_build_entity_resource_wires_raw_and_validated_options(
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+) -> None:
+    """build_entity_resource forwards raw resource name, max_table_nesting=0, and parallelized=True."""
+    settings = settings_factory()
+    with (
+        patch.object(
+            jsonlines_base_module,
+            "build_filesystem_resource",
+            wraps=jsonlines_base_module.build_filesystem_resource,
+        ) as mock_fs_resource,
+        patch.object(
+            jsonlines_base_module.dlt,
+            "transformer",
+            wraps=dlt.transformer,
+        ) as mock_transformer,
+    ):
+        build_entity_resource("widget", settings, _resolve_negative_count_error)
+
+    assert mock_fs_resource.call_args.kwargs["name"] == "widget_raw"
+    assert mock_fs_resource.call_args.kwargs["max_table_nesting"] == 0
+    assert mock_transformer.call_args.kwargs["parallelized"] is True
+
+
+def test_run_registry_ingest_falls_back_when_dataset_name_none(
+    settings_factory: Callable[..., JsonlPydanticIngestSettings],
+    widget_model: type[BaseModel],
+) -> None:
+    """run_registry_ingest falls back to default dataset_name when settings.dataset_name is None."""
+    settings = settings_factory().model_copy(update={"dataset_name": None})
+    mock_load_info = MagicMock(spec=LoadInfo)
+    with patch.object(jsonlines_base_module, "run_pipeline", return_value=mock_load_info) as mock_run_pipeline:
+        result = run_registry_ingest(
+            settings=settings,
+            registry={"widget": widget_model},
+            build_resource=lambda table_name, _entry, cfg: build_entity_resource(
+                table_name, cfg, _resolve_negative_count_error
+            ),
+            pipeline_name="fallback_pipe",
+        )
+
+    assert result is mock_load_info
+    assert mock_run_pipeline.call_args.kwargs["pipeline_kwargs"]["dataset_name"] == "jsonlines_pydantic"

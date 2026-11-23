@@ -20,6 +20,7 @@ from dlt.common.storages.load_package import (
     ParsedLoadJobFileName,
     TPackageJobState,
 )
+from dlt.extract.resource import DltResource
 from pydantic import ValidationError
 from requests import RequestException
 
@@ -1116,3 +1117,43 @@ def test_write_pipeline_report_pass_datetime_subclass_without_global_safe_dumper
             "pipeline_load_info_errs": None,
         },
     )
+
+
+def test_save_pipeline_metadata_sets_text_columns_on_load_info_resource(tmp_path: Path) -> None:
+    """save_pipeline_metadata configures text data_type on nullable metadata columns of _load_info."""
+    captured_resources: list[DltResource] = []
+
+    class _PipelineStub:
+        pipeline_name = TEST_PIPELINE_NAME
+        dataset_name = TEST_DATASET_NAME
+        last_trace = SimpleNamespace(started_at=MOCK_START_TIME, finished_at=MOCK_FINISH_TIME)
+
+        def run(self, resource: DltResource, **_kwargs: object) -> SimpleNamespace:
+            captured_resources.append(resource)
+            return SimpleNamespace(has_failed_jobs=False)
+
+    in_dir = tmp_path / "in"
+    in_dir.mkdir()
+    settings = CtsSettings(
+        input_dir=str(in_dir),
+        output_dir=tmp_path / "out",
+        use_destination="local_fs",
+    )
+    (tmp_path / "out" / PIPELINE_DIR_NAME).mkdir(parents=True, exist_ok=True)
+    load_info = create_load_info_one_completed_two_failed()
+
+    save_pipeline_metadata(settings, _PipelineStub(), load_info, err_msg=None)  # type: ignore[arg-type]
+
+    assert len(captured_resources) == 1
+    resource = captured_resources[0]
+    assert resource.max_table_nesting == 0
+    assert resource.columns == {
+        k: {"name": k, "data_type": "text"}
+        for k in [
+            "environment",
+            "staging_type",
+            "staging_name",
+            "staging_displayable_credentials",
+            "dataset_name",
+        ]
+    }

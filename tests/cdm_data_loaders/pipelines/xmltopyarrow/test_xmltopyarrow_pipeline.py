@@ -388,3 +388,18 @@ def test_pubmed_cli_pass_file_listing_skips_md5_sidecar_preprocessor(
             "pubmed25n0001.xml.gz",
         ],
     }
+
+
+def test_run_xmltopyarrow_pipeline_falls_back_to_pipeline_name_when_cli_prog_name_unset(
+    settings_factory: Callable[..., XmlToPyArrowSettings],
+) -> None:
+    """run_xmltopyarrow_pipeline falls back to PIPELINE_NAME when cli_prog_name is None."""
+
+    class NoProgXmlToPyArrowSettings(XmlToPyArrowSettings, cli_prog_name=None):
+        pass
+
+    base_settings = settings_factory()
+    no_prog_settings = NoProgXmlToPyArrowSettings.model_validate(
+        base_settings.model_dump(exclude=set(XmlToPyArrowSettings.model_computed_fields))
+    )
+    assert_core_run_pipeline_args(xmltopyarrow_module, run_xmltopyarrow_pipeline, no_prog_settings, PIPELINE_NAME)

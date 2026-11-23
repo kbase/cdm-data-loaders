@@ -2,6 +2,7 @@
 
 import functools
 from collections.abc import Callable
+from typing import Any
 
 import pyarrow as pa
 import pytest
@@ -15,6 +16,8 @@ from cdm_data_loaders.converters.exceptions.facades.jsonschema_to_pyarrow import
 )
 from cdm_data_loaders.converters.facades.jsonschema_to_pyarrow import (
     JSONSchemaToPyArrow,
+    generate_pyarrow_schema,
+    resolve_scalar_type,
 )
 from cdm_data_loaders.converters.facades.pydantic_to_pyarrow import PydanticToPyArrow
 from cdm_data_loaders.converters.facades.xsd_to_pyarrow import XsdToPyArrow
@@ -226,3 +229,30 @@ def test_strict_ref_helpers_fail_direct_alias_cycle(
             error_type=JSONSchemaToPyArrowError,
             error_by_code=ERROR_BY_CODE,
         )
+
+
+@pytest.mark.parametrize(
+    ("node", "expected"),
+    [
+        pytest.param({"type": "integer"}, (pa.int64(), "integer"), id="integer"),
+        pytest.param({"type": "string", "format": "date-time"}, (pa.string(), "string (date-time)"), id="date-time"),
+        pytest.param({"enum": ["a", "b"]}, (pa.string(), "string"), id="string-enum"),
+    ],
+)
+def test_resolve_scalar_type_pass(node: dict[str, Any], expected: tuple[pa.DataType, str]) -> None:
+    """resolve_scalar_type maps scalar JSON Schema nodes to PyArrow types and labels."""
+    assert resolve_scalar_type(node) == expected
+
+
+def test_resolve_scalar_type_fail_non_scalar() -> None:
+    """resolve_scalar_type rejects non-scalar JSON Schema nodes."""
+    with pytest.raises(JSONSchemaToPyArrowError):
+        resolve_scalar_type({"type": "object", "properties": {"a": {"type": "string"}}})
+
+
+def test_generate_pyarrow_schema_pass() -> None:
+    """generate_pyarrow_schema converts a JSON Schema object into a PyArrow schema."""
+    schema = base_object_schema(properties={"x": {"type": "boolean"}})
+    assert generate_pyarrow_schema(schema) == pa.schema(
+        [pa.field("x", pa.bool_(), metadata={"jsonschema_type": "boolean"})]
+    )

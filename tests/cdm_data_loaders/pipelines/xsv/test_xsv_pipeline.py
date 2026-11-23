@@ -4,6 +4,7 @@ These tests drive the real qsv binary (see the `qsv_cmd` fixture in conftest.py)
 skipped when qsv is not available on PATH or via the QSV_BIN env var.
 """
 
+import gzip
 import sys
 import threading
 from collections.abc import Callable
@@ -527,3 +528,89 @@ def test_run_xsv_pipeline_pass_file_listing_skips_qsv_and_writes_listing(
             "top.csv",
         ],
     }
+
+
+def test_process_xsv_file_pass_gzipped_csv(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+) -> None:
+    """Valid .csv.gz files are decompressed and loaded into the target table."""
+    settings = settings_factory(SIMPLE_SCHEMA, {})
+    work_paths = work_paths_factory(settings)
+
+    valid_gz = Path(settings.input_dir) / "good.csv.gz"
+    valid_gz.write_bytes(gzip.compress(b"number,name\n1,alice\n2,bob\n"))
+    results = list(_process_xsv_file(make_file_item(valid_gz), settings, work_paths))
+    assert len(results) == 1
+    assert results[0].meta.table_name == "my_table"
+    assert results[0].data.to_pylist() == [
+        {"number": 1, "name": "alice"},
+        {"number": 2, "name": "bob"},
+    ]
+
+
+def test_process_xsv_file_fail_corrupt_gzipped_csv_routes_to_rejected(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+) -> None:
+    """Corrupt .csv.gz files route an error record to _rejected."""
+    settings = settings_factory(SIMPLE_SCHEMA, {})
+    work_paths = work_paths_factory(settings)
+
+    bad_gz = Path(settings.input_dir) / "corrupt.csv.gz"
+    bad_gz.write_bytes(b"not-a-valid-gzip-stream")
+    results = list(_process_xsv_file(make_file_item(bad_gz), settings, work_paths))
+    assert [r.meta.table_name for r in results] == [REJECTED_TABLE_NAME]
+    (rejected,) = results[0].data.to_pylist()
+    assert rejected["table_name"] == "my_table"
+    assert rejected["source_file"] == "corrupt.csv.gz"
+    assert rejected["error_detail"]
+
+
+def test_process_xsv_file_pass_pyarrow_table_transform_routes_table_and_dict_outputs(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """PyArrow table transforms route pa.Table outputs directly and dict-list outputs through DictBuffer."""
+
+    def split_table(table: pa.Table) -> dict[str, pa.Table | list[dict[str, Any]]]:
+        return {
+            "my_table": table,
+            "my_table_summary": [{"count": table.num_rows}],
+        }
+
+    transforms_mod = register_temp_module(
+        monkeypatch,
+        "_test_xsv_pyarrow_transforms",
+        TABLE_TRANSFORMS={"my_table": split_table},
+    )
+    settings = settings_factory(
+        SIMPLE_SCHEMA,
+        {"data.csv": "number,name\n1,alice\n2,bob\n"},
+        transforms_module=transforms_mod,
+    )
+    work_paths = work_paths_factory(settings)
+
+    results = list(_process_xsv_file(make_file_item(Path(settings.input_dir) / "data.csv"), settings, work_paths))
+    by_table = {r.meta.table_name: r.data for r in results}
+
+    assert set(by_table) == {"my_table", "my_table_summary"}
+    assert isinstance(by_table["my_table"], pa.Table)
+    assert by_table["my_table"].to_pylist() == [
+        {"number": 1, "name": "alice"},
+        {"number": 2, "name": "bob"},
+    ]
+    assert by_table["my_table_summary"] == [{"count": 2}]
+
+
+def test_process_xsv_file_pass_empty_csv_produces_no_rows(
+    settings_factory: Callable[..., XsvIngestSettings],
+    work_paths_factory: Callable[[XsvIngestSettings], XsvWorkPaths],
+) -> None:
+    """A completely empty CSV yields no rows and no errors."""
+    settings = settings_factory(SIMPLE_SCHEMA, {"empty.csv": ""})
+    work_paths = work_paths_factory(settings)
+
+    results = list(_process_xsv_file(make_file_item(Path(settings.input_dir) / "empty.csv"), settings, work_paths))
+    assert results == []

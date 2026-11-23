@@ -3,6 +3,7 @@
 import gzip
 import logging
 from collections.abc import Generator
+from datetime import date
 from pathlib import Path
 from typing import Final
 from unittest.mock import MagicMock
@@ -26,7 +27,7 @@ from cdm_data_loaders.converters.facades.xsd_to_pyarrow import (
 )
 from cdm_data_loaders.core.buffer import DictBuffer
 from cdm_data_loaders.core.fields import BUFFER_SIZE, DEFAULTS, LOG_INTERVAL
-from cdm_data_loaders.core.registry import ArrowSchemaRegistry
+from cdm_data_loaders.core.registry import ArrowSchemaRegistry, TransformContext
 from cdm_data_loaders.pipelines.xmltopyarrow.processors import process_xml_file_to_pyarrow
 from cdm_data_loaders.pipelines.xmltopyarrow.settings import XmlToPyArrowSettings
 from cdm_data_loaders.utils.recursion import DEFAULT_MAX_RECURSION_DEPTH
@@ -613,3 +614,78 @@ def test_process_xml_file_to_pyarrow_pass_use_pyarrow_false_yields_lists_of_dict
         assert table_name == "people"
         assert isinstance(data, list)
         assert data == PEOPLE_XML_TO_PYARROW_PARSED[:2]
+
+
+def test_process_xml_file_to_pyarrow_pass_level_mode_applies_table_transform_and_source_file(
+    tmp_path: Path,
+) -> None:
+    """Level mode applies settings.get_table_transform(tag_name) and forwards source_file to TransformContext."""
+    file_path = write_xml_file(tmp_path, "catalog.xml", MULTI_ENTITY_XML)
+    settings = fake_xmltopyarrow_level_settings(xml_level=1)
+
+    def transform_book(row: dict[str, object], ctx: TransformContext) -> dict[str, list[dict[str, object]]]:
+        return {
+            "book": [{"_id": f"{row['_id']}:{Path(str(ctx.source_file)).name}", "title": str(row["title"]).upper()}],
+        }
+
+    settings.get_table_transform.side_effect = lambda name: transform_book if name == "book" else None
+    by_table = dict(table_and_data(process_xml_file_to_pyarrow(file_path, settings)))
+
+    assert by_table["book"].to_pylist() == [
+        {"_id": "b1:catalog.xml", "title": "DUNE"},
+        {"_id": "b2:catalog.xml", "title": "FOUNDATION"},
+    ]
+    assert by_table["magazine"].to_pylist() == [{"_id": "m1", "issue": 42}]
+
+
+def test_process_xml_file_to_pyarrow_pass_level_mode_coerces_transformed_records_against_schema_map(
+    tmp_path: Path,
+) -> None:
+    """Level mode forwards buffer.schema_map to route_and_coerce_record so string dates coerce for PyArrow."""
+    file_path = write_xml_file(tmp_path, "catalog.xml", MULTI_ENTITY_XML)
+    settings = fake_xmltopyarrow_level_settings(xml_level=1)
+    book_dates_schema = pa.schema([pa.field("_id", pa.string()), pa.field("published", pa.date32())])
+    assert settings.schema_map is not None
+    settings.schema_map = ArrowSchemaRegistry(
+        registry={**settings.schema_map.registry, "book_dates": book_dates_schema}
+    )
+
+    def transform_book(row: dict[str, object]) -> dict[str, list[dict[str, object]]]:
+        return {"book_dates": [{"_id": row["_id"], "published": "2026-01-15"}]}
+
+    settings.get_table_transform.side_effect = lambda name: transform_book if name == "book" else None
+    by_table = dict(table_and_data(process_xml_file_to_pyarrow(file_path, settings)))
+
+    assert by_table["book_dates"].schema.equals(book_dates_schema, check_metadata=True)
+    assert by_table["book_dates"].to_pylist() == [
+        {"_id": "b1", "published": date(2026, 1, 15)},
+        {"_id": "b2", "published": date(2026, 1, 15)},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("missing_attr", "expected_msg"),
+    [
+        pytest.param(
+            "table_name", "Expected table_name and xml_tag when xml_level is not set", id="missing-table-name"
+        ),
+        pytest.param("xml_tag", "Expected table_name and xml_tag when xml_level is not set", id="missing-xml-tag"),
+        pytest.param(
+            "xml_element_converter",
+            "Expected xml_element_converter when xml_level is not set",
+            id="missing-converter",
+        ),
+    ],
+)
+def test_process_xml_file_to_pyarrow_fail_missing_single_tag_fields(
+    tmp_path: Path,
+    missing_attr: str,
+    expected_msg: str,
+) -> None:
+    """process_xml_file_to_pyarrow raises RuntimeError when single-tag mode is missing required attributes."""
+    file_path = write_xml_file(tmp_path, "two.xml", PEOPLE_XML_2)
+    settings = fake_xmltopyarrow_settings()
+    setattr(settings, missing_attr, None)
+
+    with pytest.raises(RuntimeError, match=expected_msg):
+        list(process_xml_file_to_pyarrow(file_path, settings))

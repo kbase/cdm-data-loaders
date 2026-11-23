@@ -152,16 +152,25 @@ def test_run_xmltodict_pipeline_pass_filters_and_splits_with_transforms_module(
     ]
 
 
-def test_run_xmltodict_pipeline_uses_subclass_cli_prog_name(
+@pytest.mark.parametrize(
+    ("cli_prog_name", "expected_pipeline_name"),
+    [
+        pytest.param("preset_xmltodict", "preset_xmltodict", id="subclass-cli-prog-name"),
+        pytest.param(None, PIPELINE_NAME, id="unset-cli-prog-name-fallback"),
+    ],
+)
+def test_run_xmltodict_pipeline_resolves_pipeline_name(
     settings_factory: Callable[..., XmlToDictSettings],
+    cli_prog_name: str | None,
+    expected_pipeline_name: str,
 ) -> None:
-    """run_xmltodict_pipeline forwards a preset subclass cli_prog_name as pipeline_name."""
+    """run_xmltodict_pipeline uses subclass cli_prog_name or falls back to PIPELINE_NAME."""
 
-    class PresetXmlToDictSettings(XmlToDictSettings, cli_prog_name="preset_xmltodict"):
+    class CustomXmlToDictSettings(XmlToDictSettings, cli_prog_name=cli_prog_name):
         pass
 
     base_settings = settings_factory()
-    preset_settings = PresetXmlToDictSettings.model_validate(
+    custom_settings = CustomXmlToDictSettings.model_validate(
         base_settings.model_dump(exclude=set(XmlToDictSettings.model_computed_fields))
     )
-    assert_core_run_pipeline_args(xmltodict_module, run_xmltodict_pipeline, preset_settings, "preset_xmltodict")
+    assert_core_run_pipeline_args(xmltodict_module, run_xmltodict_pipeline, custom_settings, expected_pipeline_name)

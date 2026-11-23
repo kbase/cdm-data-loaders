@@ -292,14 +292,21 @@ def test_make_progress_bar_pass_update_advances_n_regardless_of_disable(disable:
 
 def test_make_progress_bar_fail_requires_keyword_arguments() -> None:
     """All parameters are keyword-only; calling with positional arguments raises TypeError."""
-    with pytest.raises(TypeError, match=r"make_progress_bar\(\) takes 0 positional arguments but 2 were given"):
+    with pytest.raises(TypeError, match=r"make_progress_bar.*? takes 0 positional arguments but 2 were given"):
         make_progress_bar(100, "test")  # type: ignore[misc,call-arg]
 
 
-@pytest.mark.parametrize("args", [{}, {"total": 10}, {"desc": "test"}])
+@pytest.mark.parametrize(
+    "args",
+    [
+        pytest.param({}, id="missing-both"),
+        pytest.param({"total": 10}, id="missing-desc"),
+        pytest.param({"desc": "test"}, id="missing-total"),
+    ],
+)
 def test_make_progress_bar_fail_missing_required_arguments(args: dict[str, int | str]) -> None:
     """Keywords 'total' and 'desc' are required; omitting them raises TypeError."""
-    regex = re.compile(r"make_progress_bar\(\) missing [12] required keyword-only arguments?")
+    regex = re.compile(r"make_progress_bar.*? missing [12] required keyword-only arguments?")
     with pytest.raises(TypeError, match=regex):
         make_progress_bar(**args)  # type: ignore[call-arg]
 

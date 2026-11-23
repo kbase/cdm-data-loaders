@@ -746,3 +746,104 @@ def test_download_assembly_summary_unknown_database() -> None:
     """Raise ValueError when database is neither refseq nor genbank."""
     with pytest.raises(ValueError, match="Unknown database: bogus"):
         download_assembly_summary(database="bogus")
+
+
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
+def test_scan_store_to_synthetic_summary_invokes_progress_callback(
+    mock_list_objects: MagicMock,
+) -> None:
+    """scan_store_to_synthetic_summary invokes progress_callback with (count, accession)."""
+    mock_list_objects.return_value = [
+        {"Key": "prefix/GCF_000001215.4_Release_6/file.gz", "LastModified": datetime(2024, 1, 1, tzinfo=UTC)},
+    ]
+    progress_calls: list[tuple[int, str]] = []
+
+    def _record_progress(count: int, acc: str) -> None:
+        progress_calls.append((count, acc))
+
+    scan_store_to_synthetic_summary(
+        PurePosixPath("test-bucket"),
+        PurePosixPath("prefix"),
+        "2024/01/31",
+        progress_callback=_record_progress,
+    )
+
+    assert progress_calls == [(1, "GCF_000001215.4")]
+
+
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
+def test_scan_store_to_synthetic_summary_logs_and_reraises_error(
+    mock_list_objects: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """scan_store_to_synthetic_summary logs an error and reraises when listing objects fails."""
+    mock_list_objects.side_effect = RuntimeError("s3 down")
+
+    with (
+        caplog.at_level("ERROR", logger="cdm_data_loaders.datasets.ncbi_ftp.manifest"),
+        pytest.raises(RuntimeError, match="s3 down"),
+    ):
+        scan_store_to_synthetic_summary(PurePosixPath("test-bucket"), PurePosixPath("prefix"), "2024/01/31")
+
+    assert "Error scanning store" in caplog.text
+
+
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.get_existing_object_info")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.ftp_retrieve_text")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.ftp_noop_keepalive", side_effect=lambda _f, t: t)
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.connect_ftp")
+@patch("cdm_data_loaders.datasets.ncbi_ftp.manifest.list_objects")
+def test_verify_transfer_candidates_custom_host_progress_and_debug_logs(
+    mock_list_objects: MagicMock,
+    mock_connect_ftp: MagicMock,
+    mock_keepalive: MagicMock,
+    mock_retrieve: MagicMock,
+    mock_obj_info: MagicMock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """verify_transfer_candidates forwards custom ftp_host, invokes progress_callback, and logs debug and info."""
+    custom_host = "ftp.mirror.example.org"
+    rec_match = AssemblyRecord(
+        accession="GCF_000001215.4",
+        status="latest",
+        seq_rel_date="2024/01/01",
+        ftp_url=f"https://{custom_host}/genomes/all/GCF/000/001/215/GCF_000001215.4_R6",
+        assembly_dir=PurePosixPath("GCF_000001215.4_R6"),
+    )
+    rec_mismatch = AssemblyRecord(
+        accession="GCF_000001405.40",
+        status="latest",
+        seq_rel_date="2024/01/01",
+        ftp_url=f"https://{custom_host}/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38",
+        assembly_dir=PurePosixPath("GCF_000001405.40_GRCh38"),
+    )
+    mock_list_objects.return_value = [{"Key": "k"}]
+    mock_connect_ftp.return_value = MagicMock()
+    digest = "a" * 32
+    mock_retrieve.side_effect = [
+        f"{digest}  ./GCF_000001215.4_R6_genomic.fna.gz\n",
+        f"{digest}  ./GCF_000001405.40_GRCh38_genomic.fna.gz\n",
+    ]
+    mock_obj_info.side_effect = [{"Metadata": {"md5": digest}}, None]
+
+    progress: list[tuple[int, int, str]] = []
+
+    def _record_progress(done: int, total: int, acc: str) -> None:
+        progress.append((done, total, acc))
+
+    with caplog.at_level("DEBUG", logger="cdm_data_loaders.datasets.ncbi_ftp.manifest"):
+        confirmed = verify_transfer_candidates(
+            ["GCF_000001215.4", "GCF_000001405.40"],
+            {"GCF_000001215.4": rec_match, "GCF_000001405.40": rec_mismatch},
+            PurePosixPath("test-bucket"),
+            PurePosixPath("prefix"),
+            ftp_host=custom_host,
+            progress_callback=_record_progress,
+        )
+
+    assert confirmed == ["GCF_000001405.40"]
+    assert mock_keepalive.called
+    assert progress == [(1, 2, "GCF_000001215.4"), (2, 2, "GCF_000001405.40")]
+    assert "Pruned GCF_000001215.4" in caplog.text
+    assert "File missing from store:" in caplog.text
+    assert "Checksum verification: 1 confirmed (0 missing from store), 1 pruned (of 2 candidates)" in caplog.text
