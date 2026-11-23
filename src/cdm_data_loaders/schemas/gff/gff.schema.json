@@ -49,19 +49,23 @@
             "anyOf": [
                 {
                     "description": "positive strand (relative to the landmark)",
-                    "title": "+"
+                    "title": "+",
+                    "const": "+"
                 },
                 {
                     "description": "negative strand (relative to the landmark)",
-                    "title": "-"
+                    "title": "-",
+                    "const": "-"
                 },
                 {
                     "description": "features that are not stranded",
-                    "title": "."
+                    "title": ".",
+                    "const": "."
                 },
                 {
                     "description": "features whose strandedness is relevant, but unknown",
-                    "title": "?"
+                    "title": "?",
+                    "const": "?"
                 }
             ]
         },
@@ -73,16 +77,20 @@
             ],
             "anyOf": [
                 {
-                    "title": "2"
+                    "title": "2",
+                    "const": 2
                 },
                 {
-                    "title": "1"
+                    "title": "1",
+                    "const": 1
                 },
                 {
-                    "title": "0"
+                    "title": "0",
+                    "const": 0
                 },
                 {
-                    "title": "."
+                    "title": ".",
+                    "const": "."
                 }
             ]
         },
